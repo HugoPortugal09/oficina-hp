@@ -23,6 +23,7 @@ import { MobileApp } from './pages/MobileApp';
 import { Login } from './pages/Login';
 
 import { db, STORAGE_KEYS } from './services/dbService';
+import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
 import type {
   NavigationTab,
   FolhaServico,
@@ -253,12 +254,38 @@ export default function App() {
     db.initSeed();
     loadAllData();
 
+    // 1. Initial Pull from PocketBase Cloud
+    syncPullFromCloud().then(() => {
+      loadAllData();
+    }).catch(() => {});
+
+    // 2. Realtime SSE Subscription from PocketBase
+    const unsubscribeRealtime = subscribeToRealtimeSync();
+
+    // 3. Listener for local database changes
     const handleDbChange = () => {
       loadAllData();
     };
 
+    // 4. Sync on Window Focus (when switching back to browser tab)
+    const handleWindowFocus = () => {
+      syncPullFromCloud().then(() => loadAllData()).catch(() => {});
+    };
+
+    // 5. Periodic Background Sync (every 8 seconds)
+    const syncInterval = setInterval(() => {
+      syncPullFromCloud().catch(() => {});
+    }, 8000);
+
     window.addEventListener('oficina_hp_db_changed', handleDbChange);
-    return () => window.removeEventListener('oficina_hp_db_changed', handleDbChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      unsubscribeRealtime();
+      clearInterval(syncInterval);
+      window.removeEventListener('oficina_hp_db_changed', handleDbChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   }, []);
 
   const handleScanComplete = (res: VisionScanResult) => {

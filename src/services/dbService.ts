@@ -15,6 +15,7 @@ import type {
   UserProfile
 } from '../types';
 import { USERS } from '../types';
+import { syncPushToCloud } from './pocketbaseSync';
 
 const STORAGE_KEYS = {
   EMPRESAS: 'oficina_hp_empresas',
@@ -44,8 +45,8 @@ const DEFAULT_CONFIG: ConfiguracaoOficina = {
   iban: 'PT50 0033 0000 1234 5678 9012 3',
   valorHoraPadrao: 38.5,
   ivaPadrao: 23,
-  pocketbaseUrl: 'http://127.0.0.1:8090',
-  ollamaUrl: 'http://127.0.0.1:11434',
+  pocketbaseUrl: 'https://oficina-hp-pocketbase.l1mamt.easypanel.host',
+  ollamaUrl: 'https://oficina-hp-ollama.l1mamt.easypanel.host',
   ollamaModel: 'llama3.2-vision'
 };
 
@@ -496,6 +497,10 @@ export const db = {
   save<T>(key: string, items: T[]): void {
     localStorage.setItem(key, JSON.stringify(items));
     notifyChange(key);
+    // Push automatically to PocketBase Cloud in background
+    syncPushToCloud(key, items).catch(err => {
+      console.warn('[Cloud Sync Push Background Error]', err);
+    });
   },
 
   getSingle<T>(key: string, id: string): T | undefined {

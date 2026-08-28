@@ -20,13 +20,17 @@ import {
   Edit,
   Shield,
   Briefcase,
-  Wrench
+  Wrench,
+  Cloud,
+  CloudUpload,
+  CloudDownload
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { checkPocketBaseConnection } from '../services/pocketbase';
+import { syncPullFromCloud, uploadAllLocalToCloud } from '../services/pocketbaseSync';
 import type { ConfiguracaoOficina, UserProfile, UserRole } from '../types';
 import { USERS } from '../types';
 
@@ -139,6 +143,9 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
+  const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+
   const handleTestPocketBase = async () => {
     setPbTesting(true);
     setPbResult(null);
@@ -146,6 +153,33 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     const res = await checkPocketBaseConnection(sanitizedUrl);
     setPbResult(res);
     setPbTesting(false);
+  };
+
+  const handleSyncPullFromCloud = async () => {
+    setIsCloudSyncing(true);
+    setSyncStatusMsg('A descarregar dados mais recentes do PocketBase...');
+    const ok = await syncPullFromCloud();
+    if (ok) {
+      setSyncStatusMsg('Base de dados sincronizada com o PocketBase com sucesso!');
+    } else {
+      setSyncStatusMsg('Não foi possível sincronizar com o PocketBase. Verifique se a coleção "app_data" existe no PocketBase com regras públicas.');
+    }
+    setIsCloudSyncing(false);
+    setTimeout(() => setSyncStatusMsg(null), 5000);
+  };
+
+  const handleUploadAllToCloud = async () => {
+    if (!confirm('Deseja enviar toda a sua base de dados atual para o PocketBase? Isto irá atualizar o servidor com os seus dados atuais.')) return;
+    setIsCloudSyncing(true);
+    setSyncStatusMsg('A carregar todos os registos para o PocketBase...');
+    const res = await uploadAllLocalToCloud();
+    if (res.success) {
+      setSyncStatusMsg(`Sucesso! ${res.count} tabelas/módulos enviados para o PocketBase.`);
+    } else {
+      setSyncStatusMsg(`Erro ao enviar: ${res.error}`);
+    }
+    setIsCloudSyncing(false);
+    setTimeout(() => setSyncStatusMsg(null), 6000);
   };
 
   const handleTestOllama = async () => {
@@ -419,6 +453,43 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
                     {pbResult.connected ? <ShieldCheck className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
                     {pbResult.connected ? 'Online' : 'Offline / Local'}
                   </span>
+                )}
+              </div>
+
+              {/* Cloud Synchronization Actions */}
+              <div className="pt-3 border-t border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                    <Cloud className="w-3.5 h-3.5 text-hp-400" /> Sincronização entre Dispositivos
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSyncPullFromCloud}
+                    disabled={isCloudSyncing}
+                    className="py-2 px-2.5 bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border border-hp-500/30 transition-all disabled:opacity-50"
+                  >
+                    <CloudDownload className="w-3.5 h-3.5" />
+                    Sincronizar Agora
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleUploadAllToCloud}
+                    disabled={isCloudSyncing}
+                    className="py-2 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 border border-slate-700 transition-all disabled:opacity-50"
+                  >
+                    <CloudUpload className="w-3.5 h-3.5" />
+                    Enviar Tudo p/ Nuvem
+                  </button>
+                </div>
+
+                {syncStatusMsg && (
+                  <p className="text-[10px] p-2 rounded-lg bg-hp-500/10 border border-hp-500/30 text-hp-300 font-medium animate-in fade-in">
+                    {syncStatusMsg}
+                  </p>
                 )}
               </div>
             </div>

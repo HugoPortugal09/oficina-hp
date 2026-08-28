@@ -66,6 +66,7 @@ import type {
   UserProfile
 } from '../types';
 import { getInitials } from '../types';
+import { syncPullFromCloud, subscribeToRealtimeSync } from '../services/pocketbaseSync';
 
 interface MobileAppProps {
   theme: 'dark' | 'light';
@@ -227,9 +228,39 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   useEffect(() => {
     loadData();
-    const handleDbChange = () => loadData();
+
+    // 1. Initial Pull from PocketBase Cloud
+    syncPullFromCloud().then(() => {
+      loadData();
+    }).catch(() => {});
+
+    // 2. Realtime SSE Subscription from PocketBase
+    const unsubscribeRealtime = subscribeToRealtimeSync();
+
+    // 3. Listener for local database changes
+    const handleDbChange = () => {
+      loadData();
+    };
+
+    // 4. Sync on Window Focus
+    const handleFocus = () => {
+      syncPullFromCloud().then(() => loadData()).catch(() => {});
+    };
+
+    // 5. Periodic Background Sync (every 8 seconds)
+    const syncInterval = setInterval(() => {
+      syncPullFromCloud().catch(() => {});
+    }, 8000);
+
     window.addEventListener('oficina_hp_db_changed', handleDbChange);
-    return () => window.removeEventListener('oficina_hp_db_changed', handleDbChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      unsubscribeRealtime();
+      clearInterval(syncInterval);
+      window.removeEventListener('oficina_hp_db_changed', handleDbChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handlePhotoCapture = (
