@@ -241,84 +241,55 @@ export const Navbar: React.FC<NavbarProps> = ({
             <ChevronDown className="w-3.5 h-3.5 opacity-60" />
           </button>
 
-          {/* User Selection Dropdown Menu */}
+          {/* User Profile Menu */}
           {isUserMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 bg-slate-950 border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 divide-y divide-slate-800">
-              <div className="px-2.5 py-1.5 mb-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Perfil de Utilizador Ativo
-                </span>
-                <p className="text-[11px] text-slate-300">
-                  Selecione o tipo de utilizador para testar as permissões:
-                </p>
+            <div className="absolute right-0 top-full mt-2 w-72 bg-slate-950 border border-slate-700/80 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-3">
+              <div className="flex items-start gap-3 pb-3 border-b border-slate-800">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shrink-0 shadow-md ${
+                  currentUser.role === 'administrador'
+                    ? 'bg-purple-600'
+                    : currentUser.role === 'gestor'
+                    ? 'bg-sky-600'
+                    : 'bg-amber-600'
+                }`}>
+                  {currentUser.avatar}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-xs font-bold text-white truncate">
+                    {currentUser.nome}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {currentUser.email}
+                  </p>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono uppercase inline-block mt-1 ${
+                    currentUser.role === 'administrador'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      : currentUser.role === 'gestor'
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}>
+                    {currentUser.role}
+                  </span>
+                </div>
               </div>
 
-              <div className="py-1 space-y-1">
-                {users.map(user => {
-                  const isSelected = user.id === currentUser.id;
-                  return (
-                    <button
-                      key={user.id}
-                      type="button"
-                      onClick={() => {
-                        onSelectUser(user);
-                        setIsUserMenuOpen(false);
-                      }}
-                      className={`w-full text-left p-2 rounded-xl transition-all flex items-start gap-2.5 ${
-                        isSelected
-                          ? 'bg-hp-600/20 border border-hp-500/40 text-white'
-                          : 'hover:bg-slate-900 text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs text-white shrink-0 mt-0.5 ${
-                        user.role === 'administrador'
-                          ? 'bg-purple-600'
-                          : user.role === 'gestor'
-                          ? 'bg-sky-600'
-                          : 'bg-amber-600'
-                      }`}>
-                        {user.avatar}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white truncate">
-                            {user.nome}
-                          </span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />}
-                        </div>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono uppercase inline-block mt-0.5 ${
-                          user.role === 'administrador'
-                            ? 'bg-purple-500/20 text-purple-300'
-                            : user.role === 'gestor'
-                            ? 'bg-sky-500/20 text-sky-300'
-                            : 'bg-amber-500/20 text-amber-300'
-                        }`}>
-                          {user.role}
-                        </span>
-                        <p className="text-[10px] text-slate-400 mt-1 leading-tight">
-                          {user.descricao}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                {currentUser.descricao}
               </div>
 
               {onLogout && (
-                <div className="pt-1.5 mt-1 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      onLogout();
-                    }}
-                    className="w-full py-2 px-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Terminar Sessão (Sair)
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    onLogout();
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Terminar Sessão
+                </button>
               )}
             </div>
           )}

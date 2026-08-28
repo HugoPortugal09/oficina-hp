@@ -88,8 +88,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return { gestao: true, dados: true, servicos: true, pecas: true };
   });
 
-  const [isUserSwitcherOpen, setIsUserSwitcherOpen] = useState(false);
-
   const toggleGroup = (groupId: string) => {
     setOpenGroups(prev => {
       const next = { ...prev, [groupId]: !prev[groupId] };
@@ -371,126 +369,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {/* Interactive User Switcher Card */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsUserSwitcherOpen(prev => !prev)}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-2xl border transition-all text-left group ${
+          <div
+              className={`w-full p-2.5 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 ${
                 currentUser.role === 'administrador'
-                  ? 'bg-purple-950/30 border-purple-500/40 hover:border-purple-400 shadow-sm'
+                  ? 'bg-purple-950/30 border-purple-500/40 shadow-sm'
                   : currentUser.role === 'gestor'
-                  ? 'bg-sky-950/30 border-sky-500/40 hover:border-sky-400 shadow-sm'
-                  : 'bg-amber-950/30 border-amber-500/40 hover:border-amber-400 shadow-sm'
+                  ? 'bg-sky-950/30 border-sky-500/40 shadow-sm'
+                  : 'bg-amber-950/30 border-amber-500/40 shadow-sm'
               }`}
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-md shrink-0 ${
-                currentUser.role === 'administrador'
-                  ? 'bg-purple-600 ring-2 ring-purple-400/40'
-                  : currentUser.role === 'gestor'
-                  ? 'bg-sky-600 ring-2 ring-sky-400/40'
-                  : 'bg-amber-600 ring-2 ring-amber-400/40'
-              }`}>
-                {currentUser.avatar}
-              </div>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-md shrink-0 ${
+                  currentUser.role === 'administrador'
+                    ? 'bg-purple-600 ring-2 ring-purple-400/40'
+                    : currentUser.role === 'gestor'
+                    ? 'bg-sky-600 ring-2 ring-sky-400/40'
+                    : 'bg-amber-600 ring-2 ring-amber-400/40'
+                }`}>
+                  {currentUser.avatar}
+                </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-slate-100 truncate">{currentUser.nome}</p>
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${
-                    currentUser.role === 'administrador'
-                      ? 'bg-purple-500/20 text-purple-300'
-                      : currentUser.role === 'gestor'
-                      ? 'bg-sky-500/20 text-sky-300'
-                      : 'bg-amber-500/20 text-amber-300'
-                  }`}>
-                    {currentUser.role}
-                  </span>
-                  <span className="text-[9px] text-slate-400 truncate">Trocar ▾</span>
-                </div>
-              </div>
-            </button>
-
-            {/* User Dropdown in Sidebar */}
-            {isUserSwitcherOpen && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-slate-950 border border-slate-700/90 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 space-y-1 divide-y divide-slate-800">
-                <div className="px-2 py-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Alternar Tipo de Utilizador
-                  </span>
-                </div>
-
-                <div className="pt-1 space-y-1">
-                  {users.map(user => {
-                    const isSelected = user.id === currentUser.id;
-                    return (
-                      <button
-                        key={user.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectUser(user);
-                          setIsUserSwitcherOpen(false);
-                        }}
-                        className={`w-full text-left p-2 rounded-xl transition-all flex items-start gap-2.5 ${
-                          isSelected
-                            ? 'bg-hp-600/20 border border-hp-500/40 text-white'
-                            : 'hover:bg-slate-900 text-slate-300'
-                        }`}
-                      >
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs text-white shrink-0 mt-0.5 ${
-                          user.role === 'administrador'
-                            ? 'bg-purple-600'
-                            : user.role === 'gestor'
-                            ? 'bg-sky-600'
-                            : 'bg-amber-600'
-                        }`}>
-                          {user.avatar}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-white truncate">
-                              {user.nome}
-                            </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />}
-                          </div>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono uppercase inline-block mt-0.5 ${
-                            user.role === 'administrador'
-                              ? 'bg-purple-500/20 text-purple-300'
-                              : user.role === 'gestor'
-                              ? 'bg-sky-500/20 text-sky-300'
-                              : 'bg-amber-500/20 text-amber-300'
-                          }`}>
-                            {user.role}
-                          </span>
-                          <p className="text-[10px] text-slate-400 mt-1 leading-tight">
-                            {user.descricao}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {onLogout && (
-                  <div className="pt-2 mt-2 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUserSwitcherOpen(false);
-                        onLogout();
-                      }}
-                      className="w-full py-2 px-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Terminar Sessão
-                    </button>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${
+                      currentUser.role === 'administrador'
+                        ? 'bg-purple-500/20 text-purple-300'
+                        : currentUser.role === 'gestor'
+                        ? 'bg-sky-500/20 text-sky-300'
+                        : 'bg-amber-500/20 text-amber-300'
+                    }`}>
+                      {currentUser.role}
+                    </span>
                   </div>
-                )}
+                </div>
               </div>
-            )}
-          </div>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Terminar Sessão"
+                  className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </div>
         </div>
       </aside>
     </>
