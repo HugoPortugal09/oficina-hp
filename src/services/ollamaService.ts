@@ -15,7 +15,7 @@ export async function processImageWithOllama(
 ): Promise<VisionScanResult> {
   const startTime = Date.now();
   const config = db.getConfig();
-  const ollamaUrl = config.ollamaUrl || 'http://127.0.0.1:11434';
+  const ollamaUrl = (config.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
   const model = config.ollamaModel || 'llama3.2-vision';
 
   // Clean base64 string

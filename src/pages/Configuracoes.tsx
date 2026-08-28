@@ -139,7 +139,8 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
   const handleTestPocketBase = async () => {
     setPbTesting(true);
     setPbResult(null);
-    const res = await checkPocketBaseConnection(config.pocketbaseUrl);
+    const sanitizedUrl = (config.pocketbaseUrl || '').trim().replace(/\/+$/, '');
+    const res = await checkPocketBaseConnection(sanitizedUrl);
     setPbResult(res);
     setPbTesting(false);
   };
@@ -147,17 +148,18 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
   const handleTestOllama = async () => {
     setOllamaTesting(true);
     setOllamaResult(null);
+    const sanitizedUrl = (config.ollamaUrl || '').trim().replace(/\/+$/, '');
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${config.ollamaUrl}/api/tags`, { signal: controller.signal });
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`${sanitizedUrl}/api/tags`, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         const models = (data.models || []).map((m: any) => m.name).join(', ');
         setOllamaResult({
           connected: true,
-          message: `Ollama conectado! Modelos disponíveis: ${models || 'Nenhum modelo descarregado'}`
+          message: `Ollama conectado com sucesso! Modelos ativos: ${models || 'Nenhum modelo descarregado'}`
         });
       } else {
         setOllamaResult({ connected: false, message: `Ollama HTTP ${res.status}` });
@@ -165,7 +167,7 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     } catch (err: any) {
       setOllamaResult({
         connected: false,
-        message: 'Servidor Ollama não alcançável (A aplicação continuará a funcionar com o scanner heurístico local)'
+        message: 'Servidor Ollama não alcançável via CORS. Certifique-se de que definiu OLLAMA_ORIGINS=* no Easypanel.'
       });
     } finally {
       setOllamaTesting(false);
