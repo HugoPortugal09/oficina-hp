@@ -1,0 +1,79 @@
+[
+  {
+    "id": "col_empresas",
+    "name": "empresas",
+    "type": "base",
+    "system": false,
+    "schema": [
+      { "name": "nome", "type": "text", "required": true },
+      { "name": "nif", "type": "text", "required": false },
+      { "name": "moradaSede", "type": "text", "required": false },
+      { "name": "telefone", "type": "text", "required": false },
+      { "name": "email", "type": "email", "required": false },
+      { "name": "estaleiros", "type": "json", "required": false }
+    ]
+  },
+  {
+    "id": "col_equipamentos",
+    "name": "equipamentos",
+    "type": "base",
+    "system": false,
+    "schema": [
+      { "name": "matricula", "type": "text", "required": true },
+      { "name": "marca", "type": "text", "required": false },
+      { "name": "modelo", "type": "text", "required": false },
+      { "name": "nSerie", "type": "text", "required": false },
+      { "name": "ano", "type": "number", "required": false },
+      { "name": "tipo", "type": "text", "required": false },
+      { "name": "kmsAtuais", "type": "number", "required": false },
+      { "name": "horasAtuais", "type": "number", "required": false },
+      { "name": "empresaId", "type": "text", "required": false },
+      { "name": "notas", "type": "text", "required": false }
+    ]
+  },
+  {
+    "id": "col_folhas_servico",
+    "name": "folhas_servico",
+    "type": "base",
+    "system": false,
+    "schema": [
+      { "name": "numero", "type": "text", "required": true },
+      { "name": "tipo", "type": "text", "required": true },
+      { "name": "data", "type": "text", "required": true },
+      { "name": "status", "type": "text", "required": true },
+      { "name": "empresaId", "type": "text", "required": false },
+      { "name": "equipamentoId", "type": "text", "required": false },
+      { "name": "matricula", "type": "text", "required": true },
+      { "name": "marca", "type": "text", "required": false },
+      { "name": "modelo", "type": "text", "required": false },
+      { "name": "kmsAtuais", "type": "number", "required": false },
+      { "name": "horasAtuais", "type": "number", "required": false },
+      { "name": "localizacao", "type": "text", "required": false },
+      { "name": "anomalias", "type": "text", "required": false },
+      { "name": "servicos", "type": "json", "required": false },
+      { "name": "pecas", "type": "json", "required": false },
+      { "name": "mensagens", "type": "json", "required": false },
+      { "name": "fotos", "type": "file", "required": false }
+    ]
+  },
+  {
+    "id": "col_propostas",
+    "name": "propostas",
+    "type": "base",
+    "system": false,
+    "schema": [
+      { "name": "numero", "type": "text", "required": true },
+      { "name": "data", "type": "text", "required": true },
+      { "name": "dataValidade", "type": "text", "required": true },
+      { "name": "status", "type": "text", "required": true },
+      { "name": "empresaId", "type": "text", "required": false },
+      { "name": "nomeEmpresa", "type": "text", "required": true },
+      { "name": "matricula", "type": "text", "required": false },
+      { "name": "descricao", "type": "text", "required": false },
+      { "name": "linhas", "type": "json", "required": true },
+      { "name": "totalSemIva", "type": "number", "required": true },
+      { "name": "totalIva", "type": "number", "required": true },
+      { "name": "totalComIva", "type": "number", "required": true }
+    ]
+  }
+]
