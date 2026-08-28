@@ -3,11 +3,122 @@ import type {
   FolhaServico,
   ServicoItem,
   PecaItem,
+  PecaCatalogo,
   Equipamento,
   Empresa,
   TipoServico
 } from '../types';
 import { db, STORAGE_KEYS } from './dbService';
+
+export function normalizePlate(plate: string): string {
+  if (!plate) return '';
+  return plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+export function formatPlate(raw: string): string {
+  const clean = normalizePlate(raw);
+  if (clean.length === 6) {
+    return `${clean.slice(0, 2)}-${clean.slice(2, 4)}-${clean.slice(4, 6)}`;
+  }
+  return raw.trim().toUpperCase();
+}
+
+export function levenshtein(a: string, b: string): number {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+export function findBestMatchingEquipment(
+  rawDetected: string,
+  equipments?: Equipamento[]
+): Equipamento | undefined {
+  if (!rawDetected) return undefined;
+  const list = equipments && equipments.length > 0 ? equipments : db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+  if (!list || list.length === 0) return undefined;
+
+  const clean = normalizePlate(rawDetected);
+  if (!clean) return undefined;
+
+  // 1. Exact normalized match
+  const exact = list.find(e => normalizePlate(e.matricula) === clean);
+  if (exact) return exact;
+
+  // 2. Substring match
+  const sub = list.find(e => {
+    const norm = normalizePlate(e.matricula);
+    return norm.includes(clean) || (clean.length >= 5 && clean.includes(norm));
+  });
+  if (sub) return sub;
+
+  // 3. Levenshtein fuzzy match (distance <= 2 for 6-char plates)
+  let bestMatch: Equipamento | undefined = undefined;
+  let minDistance = 999;
+  for (const eq of list) {
+    const norm = normalizePlate(eq.matricula);
+    const dist = levenshtein(clean, norm);
+    if (dist <= 2 && dist < minDistance) {
+      minDistance = dist;
+      bestMatch = eq;
+    }
+  }
+  return bestMatch;
+}
+
+export function findBestMatchingPart(
+  rawRef?: string,
+  rawName?: string,
+  catalog?: PecaCatalogo[]
+): PecaCatalogo | undefined {
+  const list = catalog && catalog.length > 0 ? catalog : db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO);
+  if (!list || list.length === 0) return undefined;
+
+  const cleanRef = rawRef ? rawRef.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+  const cleanName = rawName ? rawName.toLowerCase().trim() : '';
+
+  if (cleanRef && cleanRef.length >= 3) {
+    const exactRef = list.find(p => p.referencia.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === cleanRef);
+    if (exactRef) return exactRef;
+
+    const subRef = list.find(p => {
+      const pRef = p.referencia.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      return pRef.includes(cleanRef) || cleanRef.includes(pRef);
+    });
+    if (subRef) return subRef;
+  }
+
+  if (cleanName && cleanName.length >= 3) {
+    const exactName = list.find(p =>
+      p.designacao.toLowerCase().includes(cleanName) || cleanName.includes(p.designacao.toLowerCase())
+    );
+    if (exactName) return exactName;
+
+    const words = cleanName.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0) {
+      const matchWords = list.find(p => {
+        const pName = p.designacao.toLowerCase();
+        return words.every(w => pName.includes(w));
+      });
+      if (matchWords) return matchWords;
+    }
+  }
+
+  return undefined;
+}
 
 export async function processImageWithOllama(
   base64Image: string,
@@ -15,17 +126,30 @@ export async function processImageWithOllama(
 ): Promise<VisionScanResult> {
   const startTime = Date.now();
   const config = db.getConfig();
-  const ollamaUrl = (config.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
+  const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
   const model = config.ollamaModel || 'llama3.2-vision';
 
-  // Clean base64 string
   const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+
+  const knownEquipments = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+  const knownPlates = knownEquipments.map(e => e.matricula).filter(Boolean);
+  const knownCatalog = db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO);
+  const knownParts = knownCatalog.slice(0, 40).map(p => `${p.referencia} (${p.designacao})`);
 
   let prompt = '';
   if (mode === 'matricula') {
-    prompt = `Analisa a imagem e extrai a matrícula do veículo/equipamento. 
-Formato comum português: XX-XX-XX, 00-AA-00, 00-00-AA, AA-00-AA ou europeu.
-Responde estritamente em formato JSON:
+    prompt = `És um leitor OCR de alta precisão especializado em matrículas de veículos em Portugal e Europa.
+Analisa a fotografia e extrai a matrícula exata visível.
+
+Matrículas registadas na base de dados da oficina:
+[${knownPlates.join(', ')}]
+
+Instruções:
+- Formato comum em Portugal: XX-XX-XX (ex: 00-AA-00, AA-00-AA, 00-00-AA).
+- Se a matrícula na imagem corresponder ou for idêntica a uma das matrículas da base de dados, usa exatamente a matrícula oficial registada.
+- Extrai também a marca e modelo se forem visíveis.
+
+Responde ESTRITAMENTE em formato JSON:
 {
   "matricula": "XX-XX-XX",
   "marca": "Nome da marca se visível",
@@ -34,8 +158,8 @@ Responde estritamente em formato JSON:
   "confianca": 0.95
 }`;
   } else if (mode === 'odometro') {
-    prompt = `Analisa a imagem do painel ou contador do veículo/máquina.
-Extrai a leitura de quilómetros (Km) e/ou horas de trabalho (Horas).
+    prompt = `Analisa a imagem do painel, mostrador ou contador do veículo/máquina.
+Extrai o valor numérico de quilómetros (Km) e/ou horas de trabalho (Horas) visível no visor.
 Responde estritamente em formato JSON:
 {
   "odometroKm": 123450,
@@ -43,18 +167,29 @@ Responde estritamente em formato JSON:
   "confianca": 0.90
 }`;
   } else if (mode === 'peca') {
-    prompt = `Analisa a imagem desta peça mecânica/industrial ou etiqueta de referência.
-Identifica a designação, número de referência ou código de barras/código gravado.
-Responde estritamente em formato JSON:
+    prompt = `És um especialista em peças mecânicas e industriais de oficina.
+Analisa a imagem da peça, embalagem ou etiqueta de referência.
+
+Catálogo de peças registadas na oficina:
+[${knownParts.join(', ')}]
+
+Instruções:
+- Lê com precisão qualquer código, referência gravada (ex: Bosch, Mahle, Valeo, OEM) ou etiqueta.
+- Se a peça na imagem corresponder a um item do catálogo acima, utiliza exatamente a referência e designação do catálogo.
+
+Responde ESTRITAMENTE em formato JSON:
 {
   "referencia": "REF123",
   "designacao": "Nome da peça",
   "categoria": "Motor/Travagem/Filtração/Hidráulica/Outro",
-  "anomaliasVisuais": ["Rachadura", "Desgaste", "Fuga de óleo"]
+  "anomaliasVisuais": ["Dano visível se existir"]
 }`;
   } else {
     prompt = `És um perito mecânico de oficina e frotas. Analisa a fotografia detalhadamente.
-Extrai qualquer informação relevante: matrícula visível, marca/modelo, leitura de odómetro/horas, código de peça ou anomalias/danos visíveis.
+Base de dados de matrículas conhecidas: [${knownPlates.join(', ')}]
+Catálogo de peças conhecidas: [${knownParts.slice(0, 20).join(', ')}]
+
+Extrai qualquer informação relevante: matrícula visível, marca/modelo, leitura de odómetro/horas, código/referência de peça ou anomalias/danos visíveis.
 Responde estritamente em formato JSON válido:
 {
   "matricula": "XX-XX-XX",
@@ -64,6 +199,8 @@ Responde estritamente em formato JSON válido:
   "odometroHoras": 0,
   "numeroSerie": "",
   "pecasSugeridas": [],
+  "referenciaPeca": "",
+  "designacaoPeca": "",
   "anomaliasVisuais": [],
   "textoExtraido": "Todo o texto legível",
   "confianca": 0.9
@@ -72,7 +209,7 @@ Responde estritamente em formato JSON válido:
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
@@ -96,68 +233,55 @@ Responde estritamente em formato JSON válido:
     const data = await response.json();
     const parsed = JSON.parse(data.response || '{}');
 
+    let rawPlate = parsed.matricula || parsed.plate || '';
+    let matchedEq: Equipamento | undefined = undefined;
+    if (rawPlate) {
+      matchedEq = findBestMatchingEquipment(rawPlate, knownEquipments);
+      if (matchedEq) {
+        rawPlate = matchedEq.matricula;
+      } else {
+        rawPlate = formatPlate(rawPlate);
+      }
+    }
+
+    let refPeca = parsed.referencia || parsed.referenciaPeca;
+    let desPeca = parsed.designacao || parsed.designacaoPeca;
+    const matchedPart = findBestMatchingPart(refPeca, desPeca, knownCatalog);
+    if (matchedPart) {
+      refPeca = matchedPart.referencia;
+      desPeca = matchedPart.designacao;
+    }
+
     return {
       sucesso: true,
-      matricula: parsed.matricula || parsed.plate,
-      odometroKm: parsed.odometroKm || parsed.kilometers,
-      odometroHoras: parsed.odometroHoras || parsed.hours,
-      tipoEquipamento: parsed.tipo || parsed.tipoEquipamento,
-      marcaModelo: parsed.marcaModelo || (parsed.marca ? `${parsed.marca} ${parsed.modelo || ''}`.trim() : undefined),
-      numeroSerie: parsed.numeroSerie || parsed.serialNumber,
-      pecasSugeridas: parsed.pecasSugeridas || (parsed.designacao ? [parsed.designacao] : []),
+      matricula: rawPlate || undefined,
+      odometroKm: typeof parsed.odometroKm === 'number' && parsed.odometroKm > 0 ? parsed.odometroKm : undefined,
+      odometroHoras: typeof parsed.odometroHoras === 'number' && parsed.odometroHoras > 0 ? parsed.odometroHoras : undefined,
+      tipoEquipamento: matchedEq?.tipo || parsed.tipo || parsed.tipoEquipamento,
+      marcaModelo: matchedEq ? `${matchedEq.marca} ${matchedEq.modelo}` : parsed.marcaModelo || (parsed.marca ? `${parsed.marca} ${parsed.modelo || ''}`.trim() : undefined),
+      numeroSerie: matchedEq?.numeroSerie || parsed.numeroSerie,
+      pecasSugeridas: desPeca ? [desPeca] : (parsed.pecasSugeridas || []),
       anomaliasVisuais: parsed.anomaliasVisuais || [],
       textoExtraido: parsed.textoExtraido || data.response,
-      confianca: parsed.confianca || 0.88,
+      confianca: parsed.confianca || 0.90,
       tempoProcessamentoMs: Date.now() - startTime,
       origem: 'ollama',
       imagemBase64: base64Image
     };
   } catch (err: any) {
-    // Graceful fallback to client-side heuristic simulation / OCR scanner
+    console.warn('[Ollama Vision Error]', err?.message || err);
     return fallbackLocalVision(base64Image, mode, startTime);
   }
 }
 
 function fallbackLocalVision(base64Image: string, mode: string, startTime: number): VisionScanResult {
-  // Simulate smart visual detection with high utility default extraction if Ollama is not local
-  const samplePlates = ['AA-45-ZZ', '12-XT-98', '98-BB-12', '44-HP-77', '73-QA-50'];
-  const randomPlate = samplePlates[Math.floor(Math.random() * samplePlates.length)];
-
-  if (mode === 'matricula') {
-    return {
-      sucesso: true,
-      matricula: randomPlate,
-      marcaModelo: 'Viatura Detetada',
-      tipoEquipamento: 'Ligeiro / Furgão',
-      confianca: 0.85,
-      tempoProcessamentoMs: Date.now() - startTime,
-      origem: 'ocr_local',
-      imagemBase64: base64Image
-    };
-  }
-
-  if (mode === 'odometro') {
-    return {
-      sucesso: true,
-      odometroKm: 145200,
-      odometroHoras: 3200,
-      confianca: 0.82,
-      tempoProcessamentoMs: Date.now() - startTime,
-      origem: 'ocr_local',
-      imagemBase64: base64Image
-    };
-  }
-
   return {
-    sucesso: true,
-    matricula: randomPlate,
-    odometroKm: 145200,
-    tipoEquipamento: 'Viatura de Frota',
-    anomaliasVisuais: ['Desgaste evidente', 'Necessita verificação de filtros'],
-    confianca: 0.80,
+    sucesso: false,
+    confianca: 0,
     tempoProcessamentoMs: Date.now() - startTime,
     origem: 'ocr_local',
-    imagemBase64: base64Image
+    imagemBase64: base64Image,
+    textoExtraido: 'Não foi possível contactar o servidor Ollama ou imagem sem texto legível.'
   };
 }
 
@@ -415,10 +539,15 @@ export async function classifyAndProcessImageWithOllama(
   imageIndex = 0
 ): Promise<AutoPhotoAnalysisItem> {
   const config = db.getConfig();
-  const ollamaUrl = config.ollamaUrl || 'http://127.0.0.1:11434';
+  const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
   const model = config.ollamaModel || 'llama3.2-vision';
 
   const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+
+  const knownEquipments = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+  const knownPlates = knownEquipments.map(e => e.matricula).filter(Boolean);
+  const knownCatalog = db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO);
+  const knownParts = knownCatalog.slice(0, 40).map(p => `${p.referencia} (${p.designacao})`);
 
   const prompt = `És um sistema perito de visão computacional de oficina mecânica e frotas industriais.
 Analisa a fotografia e CLASSIFICA-A AUTOMATICAMENTE num dos seguintes tipos:
@@ -427,6 +556,14 @@ Analisa a fotografia e CLASSIFICA-A AUTOMATICAMENTE num dos seguintes tipos:
 3. "peca" se a foto for de uma peça mecânica, consumível, filtro, correia, óleo ou etiqueta de referência.
 4. "dano" se a foto mostrar uma avaria, peça partida, desgaste excessivo ou fuga.
 5. "geral" se for uma foto geral da viatura.
+
+Base de dados da oficina:
+- Matrículas conhecidas: [${knownPlates.join(', ')}]
+- Peças no catálogo: [${knownParts.join(', ')}]
+
+Instruções fundamentais:
+- Se identificares uma matrícula na foto, compara com a lista de matrículas conhecidas e utiliza o formato e valor exato.
+- Se identificares uma peça ou etiqueta de referência, utiliza a referência exata do catálogo.
 
 Responde ESTRITAMENTE em formato JSON:
 {
@@ -444,7 +581,7 @@ Responde ESTRITAMENTE em formato JSON:
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
@@ -467,10 +604,30 @@ Responde ESTRITAMENTE em formato JSON:
 
     let tipo: 'matricula' | 'odometro' | 'peca' | 'dano' | 'geral' = p.tipoDetectado || 'geral';
     if (!p.tipoDetectado) {
-      if (p.matricula && p.matricula.length >= 6) tipo = 'matricula';
+      if (p.matricula && p.matricula.length >= 4) tipo = 'matricula';
       else if (p.odometroKm > 0 || p.odometroHoras > 0) tipo = 'odometro';
       else if (p.referenciaPeca || p.designacaoPeca) tipo = 'peca';
       else if (p.anomaliasVisuais && p.anomaliasVisuais.length > 0) tipo = 'dano';
+    }
+
+    let detectedPlate = p.matricula;
+    let detectedMarcaModelo = p.marcaModelo;
+    if (detectedPlate) {
+      const eqMatch = findBestMatchingEquipment(detectedPlate, knownEquipments);
+      if (eqMatch) {
+        detectedPlate = eqMatch.matricula;
+        detectedMarcaModelo = `${eqMatch.marca} ${eqMatch.modelo}`;
+      } else {
+        detectedPlate = formatPlate(detectedPlate);
+      }
+    }
+
+    let refPeca = p.referenciaPeca;
+    let desPeca = p.designacaoPeca;
+    const partMatch = findBestMatchingPart(refPeca, desPeca, knownCatalog);
+    if (partMatch) {
+      refPeca = partMatch.referencia;
+      desPeca = partMatch.designacao;
     }
 
     const labelMap: Record<string, string> = {
@@ -485,70 +642,34 @@ Responde ESTRITAMENTE em formato JSON:
       imagemBase64: base64Image,
       tipoDetectado: tipo,
       labelTipo: labelMap[tipo] || '📸 Foto',
-      matricula: p.matricula,
-      marcaModelo: p.marcaModelo,
-      odometroKm: typeof p.odometroKm === 'number' ? p.odometroKm : undefined,
-      odometroHoras: typeof p.odometroHoras === 'number' ? p.odometroHoras : undefined,
-      referenciaPeca: p.referenciaPeca,
-      designacaoPeca: p.designacaoPeca,
+      matricula: detectedPlate,
+      marcaModelo: detectedMarcaModelo,
+      odometroKm: typeof p.odometroKm === 'number' && p.odometroKm > 0 ? p.odometroKm : undefined,
+      odometroHoras: typeof p.odometroHoras === 'number' && p.odometroHoras > 0 ? p.odometroHoras : undefined,
+      referenciaPeca: refPeca,
+      designacaoPeca: desPeca,
       anomaliasVisuais: Array.isArray(p.anomaliasVisuais) ? p.anomaliasVisuais : undefined,
-      descricaoBreve: p.descricaoBreve || `${labelMap[tipo]} identificada`,
-      confianca: p.confianca || 0.9
+      descricaoBreve: p.descricaoBreve || (detectedPlate ? `Matrícula: ${detectedPlate}` : desPeca ? `Peça: ${desPeca}` : `${labelMap[tipo]} identificada`),
+      confianca: p.confianca || 0.90
     };
-  } catch (err) {
+  } catch (err: any) {
+    console.warn('[Classify Image Error]', err?.message || err);
     return fallbackAutoClassify(base64Image, imageIndex);
   }
 }
 
 function fallbackAutoClassify(base64Image: string, index: number): AutoPhotoAnalysisItem {
-  // Heuristic mock when Ollama is not connected locally
-  const samplePlates = ['44-HP-77', '12-XT-98', '98-BB-12', 'AA-45-ZZ', '73-QA-50'];
-  const plate = samplePlates[index % samplePlates.length];
-
-  if (index === 0) {
-    return {
-      imagemBase64: base64Image,
-      tipoDetectado: 'matricula',
-      labelTipo: '🚗 Matrícula',
-      matricula: plate,
-      marcaModelo: 'Renault Master 2.3 dCi',
-      descricaoBreve: `Matrícula detetada: ${plate}`,
-      confianca: 0.94
-    };
-  } else if (index === 1) {
-    return {
-      imagemBase64: base64Image,
-      tipoDetectado: 'odometro',
-      labelTipo: '⏱️ Odómetro / Horas',
-      odometroKm: 145200,
-      odometroHoras: 2350,
-      descricaoBreve: 'Leitura de odómetro: 145.200 Km | 2.350 H',
-      confianca: 0.91
-    };
-  } else if (index === 2) {
-    return {
-      imagemBase64: base64Image,
-      tipoDetectado: 'peca',
-      labelTipo: '🔩 Peça / Material',
-      referenciaPeca: 'FIL-1029',
-      designacaoPeca: 'Filtro de Óleo Cartucho',
-      descricaoBreve: 'Peça identificada: Filtro de Óleo [FIL-1029]',
-      confianca: 0.89
-    };
-  } else {
-    return {
-      imagemBase64: base64Image,
-      tipoDetectado: 'dano',
-      labelTipo: '⚠️ Dano / Anomalia',
-      anomaliasVisuais: ['Desgaste acentuado nas pastilhas dianteiras', 'Vestígios de óleo na tampa'],
-      descricaoBreve: 'Anomalia: Desgaste evidente nas pastilhas',
-      confianca: 0.87
-    };
-  }
+  return {
+    imagemBase64: base64Image,
+    tipoDetectado: 'geral',
+    labelTipo: '📸 Vista Geral',
+    descricaoBreve: `Fotografia ${index + 1} anexada`,
+    confianca: 0.70
+  };
 }
 
 export interface AiFolhaGenerationInput {
-  fotos?: string[]; // ALL photos uploaded at once
+  fotos?: string[];
   fotoMatricula?: string;
   fotoOdometro?: string;
   fotosPecas?: string[];
@@ -578,6 +699,14 @@ export async function transformPhotosToFolhaWithOllama(
   const newNum = db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
   const now = new Date().toISOString().split('T')[0];
 
+  const allEquipments = input.equipamentos && input.equipamentos.length > 0
+    ? input.equipamentos
+    : db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+  const allCompanies = input.empresas && input.empresas.length > 0
+    ? input.empresas
+    : db.get<Empresa>(STORAGE_KEYS.EMPRESAS);
+  const allCatalog = db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO);
+
   let detectedPlate = '';
   let detectedMarca = '';
   let detectedModelo = '';
@@ -590,7 +719,6 @@ export async function transformPhotosToFolhaWithOllama(
   const allRawPhotos: string[] = [];
   const analiseFotos: AutoPhotoAnalysisItem[] = [];
 
-  // Gather all input photos
   if (input.fotos && input.fotos.length > 0) {
     allRawPhotos.push(...input.fotos);
   }
@@ -611,15 +739,26 @@ export async function transformPhotosToFolhaWithOllama(
     });
   }
 
-  // Analyze each photo autonomously with Ollama
+  const userNotes = input.textoDescritivo || '';
+  if (userNotes) {
+    for (const eq of allEquipments) {
+      if (userNotes.toUpperCase().includes(normalizePlate(eq.matricula)) || userNotes.toUpperCase().includes(eq.matricula.toUpperCase())) {
+        detectedPlate = eq.matricula;
+        detectedMarca = eq.marca;
+        detectedModelo = eq.modelo;
+        detectedTipo = eq.tipo;
+        break;
+      }
+    }
+  }
+
   for (let i = 0; i < allRawPhotos.length; i++) {
     const photoBase64 = allRawPhotos[i];
     const analysis = await classifyAndProcessImageWithOllama(photoBase64, i);
     analiseFotos.push(analysis);
 
-    // 1. License plate extraction
-    if (analysis.tipoDetectado === 'matricula' || analysis.matricula) {
-      if (!detectedPlate && analysis.matricula) {
+    if (analysis.matricula) {
+      if (!detectedPlate) {
         detectedPlate = analysis.matricula;
         if (analysis.marcaModelo) {
           const parts = analysis.marcaModelo.split(' ');
@@ -629,53 +768,73 @@ export async function transformPhotosToFolhaWithOllama(
       }
     }
 
-    // 2. Odometer / Hourmeter extraction
-    if (analysis.tipoDetectado === 'odometro' || analysis.odometroKm || analysis.odometroHoras) {
-      if (analysis.odometroKm && analysis.odometroKm > 0 && detectedKms === 0) {
-        detectedKms = analysis.odometroKm;
-      }
-      if (analysis.odometroHoras && analysis.odometroHoras > 0 && detectedHours === 0) {
-        detectedHours = analysis.odometroHoras;
-      }
+    if (analysis.odometroKm && analysis.odometroKm > 0 && detectedKms === 0) {
+      detectedKms = analysis.odometroKm;
+    }
+    if (analysis.odometroHoras && analysis.odometroHoras > 0 && detectedHours === 0) {
+      detectedHours = analysis.odometroHoras;
     }
 
-    // 3. Parts & Materials extraction
-    if (analysis.tipoDetectado === 'peca' || analysis.referenciaPeca || analysis.designacaoPeca) {
-      const designacao = analysis.designacaoPeca || analysis.descricaoBreve || 'Peça Identificada por IA';
+    if (analysis.referenciaPeca || analysis.designacaoPeca) {
       const ref = analysis.referenciaPeca || 'PEC-IA';
-      if (!detectedParts.some(p => p.referencia === ref && p.designacao === designacao)) {
+      const designacao = analysis.designacaoPeca || 'Peça Identificada';
+      const catalogMatch = findBestMatchingPart(ref, designacao, allCatalog);
+
+      const finalRef = catalogMatch?.referencia || ref;
+      const finalDesignacao = catalogMatch?.designacao || designacao;
+      const finalPreco = catalogMatch?.precoVenda || 0;
+
+      if (!detectedParts.some(p => p.referencia === finalRef && p.designacao === finalDesignacao)) {
         detectedParts.push({
           id: db.generateId('pec'),
-          referencia: ref,
-          designacao: designacao,
+          referencia: finalRef,
+          designacao: finalDesignacao,
           qtd: 1,
+          precoUnitario: finalPreco > 0 ? finalPreco : undefined,
           concluido: false,
-          isLivre: true
+          isLivre: !catalogMatch
         });
       }
     }
 
-    // 4. Anomalies & Damages extraction
     if (analysis.anomaliasVisuais && analysis.anomaliasVisuais.length > 0) {
       detectedAnomalies.push(...analysis.anomaliasVisuais);
     }
   }
 
-  // Match with existing Equipment and Company in system
-  const matchedEquip = input.equipamentos?.find(
-    e => e.matricula.toUpperCase() === detectedPlate.toUpperCase()
-  );
+  if (userNotes) {
+    for (const catPart of allCatalog) {
+      if (
+        userNotes.toLowerCase().includes(catPart.designacao.toLowerCase()) ||
+        userNotes.toUpperCase().includes(catPart.referencia.toUpperCase())
+      ) {
+        if (!detectedParts.some(p => p.referencia === catPart.referencia)) {
+          detectedParts.push({
+            id: db.generateId('pec'),
+            referencia: catPart.referencia,
+            designacao: catPart.designacao,
+            qtd: 1,
+            precoUnitario: catPart.precoVenda,
+            concluido: false,
+            isLivre: false
+          });
+        }
+      }
+    }
+  }
 
+  const matchedEquip = findBestMatchingEquipment(detectedPlate, allEquipments);
   const matchedEmpresa = matchedEquip
-    ? input.empresas?.find(emp => emp.id === matchedEquip.empresaId)
-    : input.empresas?.[0];
+    ? allCompanies.find(emp => emp.id === matchedEquip.empresaId)
+    : allCompanies[0];
 
-  const finalPlate = detectedPlate || matchedEquip?.matricula || (input.equipamentos?.[0]?.matricula || '44-HP-77');
-  const finalKms = detectedKms > 0 ? detectedKms : (matchedEquip?.kmsAtuais || 145200);
-  const finalHours = detectedHours > 0 ? detectedHours : (matchedEquip?.horasAtuais || 2350);
+  const finalPlate = matchedEquip?.matricula || (detectedPlate ? formatPlate(detectedPlate) : '');
+  const finalMarca = matchedEquip?.marca || detectedMarca || '';
+  const finalModelo = matchedEquip?.modelo || detectedModelo || '';
+  const finalTipo = matchedEquip?.tipo || detectedTipo || 'Ligeiro';
+  const finalKms = detectedKms > 0 ? detectedKms : (matchedEquip?.kmsAtuais || 0);
+  const finalHours = detectedHours > 0 ? detectedHours : (matchedEquip?.horasAtuais || 0);
 
-  // Generate intelligent service operations based on detected parts and user notes
-  const userNotes = input.textoDescritivo || '';
   if (userNotes.toLowerCase().includes('óleo') || userNotes.toLowerCase().includes('revisão') || detectedParts.some(p => p.designacao.toLowerCase().includes('óleo') || p.designacao.toLowerCase().includes('filtro'))) {
     detectedServices.push({
       id: db.generateId('srv'),
@@ -709,28 +868,6 @@ export async function transformPhotosToFolhaWithOllama(
     });
   }
 
-  // If no parts were detected, add oil & filter by default if requested in notes
-  if (detectedParts.length === 0 && (userNotes.toLowerCase().includes('óleo') || userNotes.toLowerCase().includes('revisão'))) {
-    detectedParts.push(
-      {
-        id: db.generateId('pec'),
-        referencia: 'OLEO-5W30',
-        designacao: 'Óleo Motor 5W30 Sintético (5L)',
-        qtd: 1,
-        concluido: false,
-        isLivre: true
-      },
-      {
-        id: db.generateId('pec'),
-        referencia: 'FIL-OLEO',
-        designacao: 'Filtro de Óleo Cartucho',
-        qtd: 1,
-        concluido: false,
-        isLivre: true
-      }
-    );
-  }
-
   const combinedAnomalies = [
     ...detectedAnomalies,
     ...(userNotes ? [userNotes] : [])
@@ -746,11 +883,11 @@ export async function transformPhotosToFolhaWithOllama(
     empresaId: matchedEmpresa?.id || matchedEquip?.empresaId || '',
     equipamentoId: matchedEquip?.id || '',
     matricula: finalPlate,
-    marca: detectedMarca || matchedEquip?.marca || 'Renault',
-    modelo: detectedModelo || matchedEquip?.modelo || 'Master 2.3 dCi',
+    marca: finalMarca,
+    modelo: finalModelo,
     kmsAtuais: finalKms,
     horasAtuais: finalHours,
-    localizacao: 'GRAUMP - Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha',
+    localizacao: 'Oficina Principal HP',
     localizacaoTipo: 'oficina',
     distanciaKms: 0,
     anomalias: combinedAnomalies || 'Diagnóstico e manutenção geral.',
@@ -762,22 +899,22 @@ export async function transformPhotosToFolhaWithOllama(
       {
         id: db.generateId('msg'),
         user: 'Assistente IA Mobile (Ollama)',
-        text: `Folha gerada automaticamente a partir de ${allRawPhotos.length} foto(s) classificadas autonomamente pela IA.`,
+        text: `Folha gerada a partir de ${allRawPhotos.length} foto(s) com correspondência à base de dados da oficina.`,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ],
     fotos: allRawPhotos,
     fotosCliente: [],
-    notasCliente: userNotes || 'Serviço de manutenção efetuado com peças e componentes inspecionados.',
-    notasInternas: `[Criada via Mobile AI] Matrícula: ${finalPlate}. Odómetro: ${finalKms} Kms (${finalHours} H). ${userNotes ? `Notas: "${userNotes}"` : ''}`,
-    previsaoRevisaoKms: finalKms + 15000,
-    previsaoRevisaoHoras: finalHours + 500,
+    notasCliente: userNotes || 'Serviço de manutenção com peças e componentes inspecionados.',
+    notasInternas: `[Criada via IA] Matrícula: ${finalPlate || 'N/A'}. Odómetro: ${finalKms} Kms (${finalHours} H). ${userNotes ? `Notas: "${userNotes}"` : ''}`,
+    previsaoRevisaoKms: finalKms > 0 ? finalKms + 15000 : undefined,
+    previsaoRevisaoHoras: finalHours > 0 ? finalHours + 500 : undefined,
     equipamentoFuncionando: 'Sim',
     equipamentoOperacional: 'Sim',
     equipamentoFinalizado: 'Não'
   };
 
-  const summary = `Folha ${newNum} gerada com sucesso para ${finalPlate} (${finalKms} Kms) com ${detectedServices.length} serviço(s) e ${detectedParts.length} peça(s) extraídas por IA.`;
+  const summary = `Folha ${newNum} gerada para ${finalPlate || 'Viatura'} (${finalKms} Kms) com ${detectedServices.length} serviço(s) e ${detectedParts.length} peça(s) reconhecidas.`;
 
   return {
     sucesso: true,
