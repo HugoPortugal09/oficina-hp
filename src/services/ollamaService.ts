@@ -259,7 +259,7 @@ Responde estritamente em formato JSON válido:
       odometroHoras: typeof parsed.odometroHoras === 'number' && parsed.odometroHoras > 0 ? parsed.odometroHoras : undefined,
       tipoEquipamento: matchedEq?.tipo || parsed.tipo || parsed.tipoEquipamento,
       marcaModelo: matchedEq ? `${matchedEq.marca} ${matchedEq.modelo}` : parsed.marcaModelo || (parsed.marca ? `${parsed.marca} ${parsed.modelo || ''}`.trim() : undefined),
-      numeroSerie: matchedEq?.numeroSerie || parsed.numeroSerie,
+      numeroSerie: matchedEq?.nSerie || parsed.numeroSerie,
       pecasSugeridas: desPeca ? [desPeca] : (parsed.pecasSugeridas || []),
       anomaliasVisuais: parsed.anomaliasVisuais || [],
       textoExtraido: parsed.textoExtraido || data.response,
