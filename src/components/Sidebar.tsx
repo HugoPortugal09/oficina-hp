@@ -31,7 +31,8 @@ import {
   Timer,
   Shield,
   Briefcase,
-  Check
+  Check,
+  LogOut
 } from 'lucide-react';
 import type { NavigationTab, UserProfile } from '../types';
 import { USERS } from '../types';
@@ -48,6 +49,7 @@ interface SidebarProps {
   currentUser: UserProfile;
   onSelectUser: (user: UserProfile) => void;
   users?: UserProfile[];
+  onLogout?: () => void;
 }
 
 interface MenuItem {
@@ -75,7 +77,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   openFolhasCount,
   currentUser,
   onSelectUser,
-  users = USERS
+  users = USERS,
+  onLogout
 }) => {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
@@ -469,6 +472,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     );
                   })}
                 </div>
+
+                {onLogout && (
+                  <div className="pt-2 mt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserSwitcherOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full py-2 px-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Terminar Sessão
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -57,6 +57,7 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     id: '',
     nome: '',
     email: '',
+    password: '',
     role: 'tecnico',
     avatar: '',
     descricao: ''
@@ -67,6 +68,7 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
       id: db.generateId('usr'),
       nome: '',
       email: '',
+      password: '123',
       role: 'tecnico',
       avatar: '',
       descricao: ''
@@ -89,6 +91,7 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
       id: editingUser.id || db.generateId('usr'),
       nome: editingUser.nome.trim(),
       email: editingUser.email?.trim() || '',
+      password: editingUser.password?.trim() || (editingUser.role === 'administrador' ? 'admin' : '123'),
       role: (editingUser.role as UserRole) || 'tecnico',
       avatar: avatar,
       descricao: editingUser.descricao?.trim() || (
@@ -683,6 +686,17 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
                   value={editingUser.email || ''}
                   onChange={e => setEditingUser(prev => ({ ...prev, email: e.target.value }))}
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Palavra-passe de Acesso *</label>
+                <input
+                  type="text"
+                  placeholder="ex: password123"
+                  value={editingUser.password || ''}
+                  onChange={e => setEditingUser(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500 font-mono"
                 />
               </div>
 

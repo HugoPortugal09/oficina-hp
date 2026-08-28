@@ -17,7 +17,8 @@ import {
   Briefcase,
   Wrench,
   Check,
-  ChevronDown
+  ChevronDown,
+  LogOut
 } from 'lucide-react';
 import type { NavigationTab, UserProfile } from '../types';
 import { USERS } from '../types';
@@ -36,6 +37,7 @@ interface NavbarProps {
   currentUser: UserProfile;
   onSelectUser: (user: UserProfile) => void;
   users?: UserProfile[];
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -50,7 +52,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSwitchToMobile,
   currentUser,
   onSelectUser,
-  users = USERS
+  users = USERS,
+  onLogout
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -301,6 +304,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                   );
                 })}
               </div>
+
+              {onLogout && (
+                <div className="pt-1.5 mt-1 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full py-2 px-2.5 rounded-xl text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Terminar Sessão (Sair)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

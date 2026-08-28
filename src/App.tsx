@@ -20,6 +20,7 @@ import { Planeamento } from './pages/Planeamento';
 import { TemposResposta } from './pages/TemposResposta';
 import { Configuracoes } from './pages/Configuracoes';
 import { MobileApp } from './pages/MobileApp';
+import { Login } from './pages/Login';
 
 import { db, STORAGE_KEYS } from './services/dbService';
 import type {
@@ -79,19 +80,47 @@ export default function App() {
   // Active User Profile State (Administrador, Gestor, Técnico)
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
     try {
-      const savedId = localStorage.getItem('oficina_hp_active_user_id');
+      const savedId = localStorage.getItem('oficina_hp_session_user_id') || localStorage.getItem('oficina_hp_active_user_id');
       if (savedId) {
-        const found = USERS.find(u => u.id === savedId);
+        const fromDb = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || USERS;
+        const found = fromDb.find(u => u.id === savedId);
         if (found) return found;
       }
     } catch {}
     return USERS[0]; // Administrador por defeito
   });
 
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      const savedSession = localStorage.getItem('oficina_hp_session_user_id');
+      return Boolean(savedSession);
+    } catch {
+      return false;
+    }
+  });
+
+  const handleLogin = (user: UserProfile) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    try {
+      localStorage.setItem('oficina_hp_session_user_id', user.id);
+      localStorage.setItem('oficina_hp_active_user_id', user.id);
+    } catch {}
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem('oficina_hp_session_user_id');
+    } catch {}
+  };
+
   const handleSelectUser = (user: UserProfile) => {
     setCurrentUser(user);
     try {
       localStorage.setItem('oficina_hp_active_user_id', user.id);
+      localStorage.setItem('oficina_hp_session_user_id', user.id);
     } catch {}
     if (user.role !== 'administrador' && activeTab === 'configuracoes') {
       setActiveTab('dashboard');
@@ -319,12 +348,19 @@ export default function App() {
     setActiveTab('oficina');
   };
 
+  // If not authenticated, render Login Screen
+  if (!isAuthenticated) {
+    return <Login utilizadores={utilizadores} onLogin={handleLogin} theme={theme} />;
+  }
+
   if (isMobileRoute) {
     return (
       <MobileApp
         theme={theme}
         onToggleTheme={toggleTheme}
         onSwitchToDesktop={navigateToDesktop}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
     );
   }
@@ -354,6 +390,7 @@ export default function App() {
         currentUser={currentUser}
         onSelectUser={handleSelectUser}
         users={utilizadores}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -372,6 +409,7 @@ export default function App() {
           currentUser={currentUser}
           onSelectUser={handleSelectUser}
           users={utilizadores}
+          onLogout={handleLogout}
         />
 
         {/* Dynamic Page Container */}

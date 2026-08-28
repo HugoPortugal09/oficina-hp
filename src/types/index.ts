@@ -388,6 +388,7 @@ export interface UserProfile {
   role: UserRole;
   avatar: string;
   email: string;
+  password?: string;
   descricao: string;
 }
 
@@ -407,6 +408,7 @@ export const USERS: UserProfile[] = [
     role: 'administrador',
     avatar: 'HP',
     email: 'hugo.portugal@oficinahp.pt',
+    password: 'admin',
     descricao: 'Acesso total a todas as áreas, peças, serviços e Configurações & IA'
   },
   {
@@ -415,6 +417,7 @@ export const USERS: UserProfile[] = [
     role: 'gestor',
     avatar: 'GO',
     email: 'gestor@oficinahp.pt',
+    password: '123',
     descricao: 'Acesso geral. Apenas leitura em Peças e Serviços (exceto Tarefas onde pode editar)'
   },
   {
@@ -423,6 +426,7 @@ export const USERS: UserProfile[] = [
     role: 'tecnico',
     avatar: 'TO',
     email: 'tecnico@oficinahp.pt',
+    password: '123',
     descricao: 'Acesso operacional. Sem acesso a Orçamentos e sem preços visíveis nas peças'
   }
 ];

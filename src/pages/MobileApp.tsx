@@ -38,7 +38,9 @@ import {
   Truck,
   Info,
   SlidersHorizontal,
-  FileText
+  FileText,
+  LogOut,
+  FolderOpen
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -60,7 +62,8 @@ import type {
   StatusFolhaServico,
   ServicoItem,
   PecaItem,
-  Estaleiro
+  Estaleiro,
+  UserProfile
 } from '../types';
 import { getInitials } from '../types';
 
@@ -68,6 +71,8 @@ interface MobileAppProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onSwitchToDesktop: () => void;
+  currentUser?: UserProfile;
+  onLogout?: () => void;
 }
 
 type MobileTab = 'folhas' | 'ia-wizard' | 'nova-manual' | 'consultas' | 'pecas' | 'tarefas';
@@ -77,7 +82,9 @@ type PecasSubTab = 'catalogo-pecas' | 'pedidos-pecas';
 export const MobileApp: React.FC<MobileAppProps> = ({
   theme,
   onToggleTheme,
-  onSwitchToDesktop
+  onSwitchToDesktop,
+  currentUser,
+  onLogout
 }) => {
   const [activeTab, setActiveTab] = useState<MobileTab>('folhas');
   const [consultaSubTab, setConsultaSubTab] = useState<ConsultaSubTab>('equipamentos');
@@ -912,6 +919,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             <Monitor className="w-4 h-4" />
             <span className="hidden xs:inline">Desktop</span>
           </button>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="p-2.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 transition-colors"
+              title="Terminar Sessão (Sair)"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </header>
 
