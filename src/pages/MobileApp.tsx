@@ -1895,6 +1895,34 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
             {/* Main All-in-One Upload Area */}
             <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+              {/* Optional Quick Plate Selector */}
+              {equipamentos.length > 0 && (
+                <div className="space-y-1.5 pb-2.5 border-b border-slate-800">
+                  <label className="text-[11px] font-bold text-slate-400 block uppercase flex items-center justify-between">
+                    <span>Viatura / Matrícula (Opcional)</span>
+                    <span className="text-[10px] text-hp-400 font-normal">Toque para selecionar</span>
+                  </label>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {equipamentos.map(eq => (
+                      <button
+                        key={eq.id}
+                        type="button"
+                        onClick={() => {
+                          setPlateQuery(eq.matricula);
+                          setAiVoiceNotes(prev => {
+                            const clean = prev.replace(/\(Viatura:[^)]+\)/g, '').trim();
+                            return `${clean} (Viatura: ${eq.matricula} - ${eq.marca} ${eq.modelo})`.trim();
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-hp-600/30 text-xs font-mono font-bold text-slate-200 hover:text-white border border-slate-700 hover:border-hp-500/50 whitespace-nowrap active:scale-95 transition-all"
+                      >
+                        🚗 {eq.matricula}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black uppercase text-white flex items-center gap-2">
                   <Camera className="w-4 h-4 text-hp-400" />

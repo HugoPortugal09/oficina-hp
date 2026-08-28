@@ -120,6 +120,42 @@ export function findBestMatchingPart(
   return undefined;
 }
 
+export async function compressImageForAI(base64Str: string, maxDimension = 1024, quality = 0.85): Promise<string> {
+  if (typeof window === 'undefined' || !base64Str || !base64Str.startsWith('data:image')) {
+    return base64Str;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(base64Str);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const compressed = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressed);
+    };
+    img.onerror = () => resolve(base64Str);
+    img.src = base64Str;
+  });
+}
+
 export async function processImageWithOllama(
   base64Image: string,
   mode: 'matricula' | 'odometro' | 'peca' | 'geral' = 'geral'
@@ -129,7 +165,9 @@ export async function processImageWithOllama(
   const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
   const model = config.ollamaModel || 'llama3.2-vision';
 
-  const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+  // Downscale and compress image to avoid server timeouts and tensor memory exhaustion
+  const readyImage = await compressImageForAI(base64Image, 1024, 0.85);
+  const cleanBase64 = readyImage.replace(/^data:image\/[a-z]+;base64,/, '');
 
   const knownEquipments = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
   const knownPlates = knownEquipments.map(e => e.matricula).filter(Boolean);
@@ -219,7 +257,11 @@ Responde estritamente em formato JSON válido:
         prompt: prompt,
         images: [cleanBase64],
         stream: false,
-        format: 'json'
+        format: 'json',
+        options: {
+          temperature: 0.0,
+          num_predict: 400
+        }
       }),
       signal: controller.signal
     });
@@ -542,7 +584,9 @@ export async function classifyAndProcessImageWithOllama(
   const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
   const model = config.ollamaModel || 'llama3.2-vision';
 
-  const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+  // Downscale and compress image to avoid server timeouts and tensor memory exhaustion
+  const readyImage = await compressImageForAI(base64Image, 1024, 0.85);
+  const cleanBase64 = readyImage.replace(/^data:image\/[a-z]+;base64,/, '');
 
   const knownEquipments = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
   const knownPlates = knownEquipments.map(e => e.matricula).filter(Boolean);
@@ -591,7 +635,11 @@ Responde ESTRITAMENTE em formato JSON:
         prompt: prompt,
         images: [cleanBase64],
         stream: false,
-        format: 'json'
+        format: 'json',
+        options: {
+          temperature: 0.0,
+          num_predict: 400
+        }
       }),
       signal: controller.signal
     });
