@@ -203,14 +203,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveBanner, setSaveBanner] = useState<string | null>(null);
 
-  // File Input Refs for direct native camera capture
+  // File Input Refs for direct native camera capture & gallery
   const allAiPhotosInputRef = useRef<HTMLInputElement>(null);
+  const allAiCameraInputRef = useRef<HTMLInputElement>(null);
   const matriculaInputRef = useRef<HTMLInputElement>(null);
   const odometroInputRef = useRef<HTMLInputElement>(null);
   const pecasInputRef = useRef<HTMLInputElement>(null);
   const manualPhotoInputRef = useRef<HTMLInputElement>(null);
+  const manualCameraInputRef = useRef<HTMLInputElement>(null);
   const newEquipPhotoInputRef = useRef<HTMLInputElement>(null);
   const selectedFolhaPhotoInputRef = useRef<HTMLInputElement>(null);
+  const selectedFolhaCameraInputRef = useRef<HTMLInputElement>(null);
 
   const loadData = () => {
     setFolhas(db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO));
@@ -1766,15 +1769,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   <span className="text-xs font-bold text-slate-400 block uppercase">
                     Fotos ({selectedFolha.fotos?.length || 0})
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => selectedFolhaPhotoInputRef.current?.click()}
-                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-hp-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-700 transition-all"
-                  >
-                    <Camera className="w-3.5 h-3.5" /> + Foto
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => selectedFolhaCameraInputRef.current?.click()}
+                      className="px-2 py-1 bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 rounded-xl text-[11px] font-bold flex items-center gap-1 border border-hp-500/30 transition-all"
+                    >
+                      <Camera className="w-3.5 h-3.5" /> Câmara
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectedFolhaPhotoInputRef.current?.click()}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1 border border-slate-700 transition-all"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" /> Galeria
+                    </button>
+                  </div>
                   <input
                     ref={selectedFolhaPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleSelectedFolhaPhotoCapture}
+                    className="hidden"
+                  />
+                  <input
+                    ref={selectedFolhaCameraInputRef}
                     type="file"
                     accept="image/*"
                     capture="environment"
@@ -1862,29 +1882,62 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 )}
               </div>
 
-              {/* Big tactile button to capture/upload ALL photos */}
-              <button
-                type="button"
-                onClick={() => allAiPhotosInputRef.current?.click()}
-                className="w-full py-6 px-4 rounded-2xl border-2 border-dashed border-hp-500/50 bg-hp-600/10 hover:bg-hp-600/20 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-2 text-center"
-              >
-                <div className="w-14 h-14 rounded-2xl bg-hp-600/20 flex items-center justify-center text-hp-400 shadow-inner">
-                  <Upload className="w-7 h-7" />
-                </div>
-                <div>
-                  <span className="font-extrabold text-sm text-white block">
-                    {aiPhotos.length === 0 ? 'Tirar / Carregar Todas as Fotos' : '+ Adicionar Mais Fotos'}
-                  </span>
-                  <span className="text-[11px] text-hp-300 opacity-90 block mt-0.5">
-                    Selecione várias fotos da galeria ou câmara de uma só vez
-                  </span>
-                </div>
-              </button>
+              {/* Two clear buttons: Direct Camera OR Photo Gallery */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* 1. Direct Camera Button */}
+                <button
+                  type="button"
+                  onClick={() => allAiCameraInputRef.current?.click()}
+                  className="p-4 rounded-2xl border-2 border-hp-500/50 bg-hp-600/15 hover:bg-hp-600/25 active:scale-[0.97] transition-all flex flex-col items-center justify-center gap-2 text-center shadow-lg shadow-hp-600/10"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-hp-600/30 flex items-center justify-center text-hp-300">
+                    <Camera className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-white block">
+                      Tirar com Câmara
+                    </span>
+                    <span className="text-[10px] text-hp-300 font-medium block mt-0.5">
+                      Abrir câmara direta
+                    </span>
+                  </div>
+                </button>
+
+                {/* 2. Photo Gallery / Files Button */}
+                <button
+                  type="button"
+                  onClick={() => allAiPhotosInputRef.current?.click()}
+                  className="p-4 rounded-2xl border-2 border-slate-700 bg-slate-900/90 hover:bg-slate-800 active:scale-[0.97] transition-all flex flex-col items-center justify-center gap-2 text-center shadow-lg"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-sky-400">
+                    <ImageIcon className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <span className="font-extrabold text-xs text-white block">
+                      Escolher da Galeria
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                      Álbum / Várias fotos
+                    </span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Gallery Input: Multiple images without forced camera */}
               <input
                 ref={allAiPhotosInputRef}
                 type="file"
                 accept="image/*"
                 multiple
+                onChange={e => handlePhotoCapture(e, 'all-ai')}
+                className="hidden"
+              />
+
+              {/* Camera Input: Direct camera capture */}
+              <input
+                ref={allAiCameraInputRef}
+                type="file"
+                accept="image/*"
                 capture="environment"
                 onChange={e => handlePhotoCapture(e, 'all-ai')}
                 className="hidden"
@@ -2589,18 +2642,34 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     ))}
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => manualPhotoInputRef.current?.click()}
-                  className="w-full py-3 rounded-2xl border border-slate-700 bg-slate-950 text-slate-300 text-xs font-bold flex items-center justify-center gap-2"
-                >
-                  <Camera className="w-4 h-4 text-hp-400" /> Tirar / Anexar Fotografia
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => manualCameraInputRef.current?.click()}
+                    className="py-2.5 px-3 rounded-2xl border border-hp-500/40 bg-hp-600/15 text-hp-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <Camera className="w-4 h-4 text-hp-400" /> Tirar Foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => manualPhotoInputRef.current?.click()}
+                    className="py-2.5 px-3 rounded-2xl border border-slate-700 bg-slate-900 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <ImageIcon className="w-4 h-4 text-sky-400" /> Galeria
+                  </button>
+                </div>
                 <input
                   ref={manualPhotoInputRef}
                   type="file"
                   accept="image/*"
                   multiple
+                  onChange={e => handlePhotoCapture(e, 'manual')}
+                  className="hidden"
+                />
+                <input
+                  ref={manualCameraInputRef}
+                  type="file"
+                  accept="image/*"
                   capture="environment"
                   onChange={e => handlePhotoCapture(e, 'manual')}
                   className="hidden"
