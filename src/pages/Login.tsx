@@ -1,5 +1,5 @@
-﻿import React, { useState } from 'react';
-import { Wrench, Shield, Lock, Mail, Eye, EyeOff, CheckCircle2, User, KeyRound, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { Wrench, Shield, Lock, Mail, Eye, EyeOff, KeyRound } from 'lucide-react';
 import type { UserProfile } from '../types';
 
 interface LoginProps {
@@ -50,12 +50,6 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
       setIsLoading(false);
       onLogin(user);
     }, 400);
-  };
-
-  const handleQuickSelect = (user: UserProfile) => {
-    setEmail(user.email);
-    setPassword(user.password || (user.role === 'administrador' ? 'admin' : '123'));
-    setError(null);
   };
 
   return (
@@ -174,48 +168,6 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
               )}
             </button>
           </form>
-
-          {/* Quick Access Profiles Selector */}
-          <div className="pt-4 border-t border-slate-800/80 space-y-3">
-            <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
-              <span>Perfis de Acesso Rápido</span>
-              <span className="text-[10px] text-hp-400 font-mono">1-Clique</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              {utilizadores.slice(0, 3).map(u => {
-                const isSelected = email === u.email;
-                return (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => handleQuickSelect(u)}
-                    className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 ${
-                      isSelected
-                        ? 'bg-hp-500/20 border-hp-500/50 text-white'
-                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="w-7 h-7 rounded-lg bg-hp-500/20 border border-hp-500/30 flex items-center justify-center text-xs font-black font-mono text-hp-300">
-                      {u.avatar || 'U'}
-                    </div>
-                    <div className="w-full truncate text-[11px] font-bold">
-                      {u.nome.split(' ')[0]}
-                    </div>
-                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
-                      u.role === 'administrador'
-                        ? 'bg-purple-500/20 text-purple-300'
-                        : u.role === 'gestor'
-                        ? 'bg-blue-500/20 text-blue-300'
-                        : 'bg-emerald-500/20 text-emerald-300'
-                    }`}>
-                      {u.role === 'administrador' ? 'Admin' : u.role === 'gestor' ? 'Gestor' : 'Téc'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
