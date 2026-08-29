@@ -7,8 +7,8 @@ import type {
   Equipamento,
   Empresa,
   TipoServico
-} from '../types';
 import { db, STORAGE_KEYS } from './dbService';
+import { runLocalOCROnImage } from './ocrEngine';
 
 export function normalizePlate(plate: string): string {
   if (!plate) return '';
@@ -582,7 +582,15 @@ export async function classifyAndProcessImageWithOllama(
 ): Promise<AutoPhotoAnalysisItem> {
   const config = db.getConfig();
   const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
-  const model = config.ollamaModel || 'llama3.2-vision';
+  const model = config.ollamaModel || 'oficina-vision';
+
+  // 1. Run ultra-fast, rotation-aware client-side OCR (0 deg & 90 deg for vertical stickers / plates)
+  let localOcr: any = null;
+  try {
+    localOcr = await runLocalOCROnImage(base64Image);
+  } catch (e) {
+    console.warn('[Local OCR Scan Error]', e);
+  }
 
   // Downscale and compress image to avoid server timeouts and tensor memory exhaustion
   const readyImage = await compressImageForAI(base64Image, 1024, 0.85);
@@ -595,19 +603,19 @@ export async function classifyAndProcessImageWithOllama(
 
   const prompt = `És um sistema perito de visão computacional de oficina mecânica e frotas industriais.
 Analisa a fotografia e CLASSIFICA-A AUTOMATICAMENTE num dos seguintes tipos:
-1. "matricula" se a foto for focada na matrícula ou frente/traseira de um veículo/máquina.
+1. "matricula" se a foto for focada na matrícula (mesmo em fundo amarelo/branco) ou frente/traseira de um veículo/máquina.
 2. "odometro" se a foto for do mostrador de quilómetros (Km) ou contador de horas (Horas).
-3. "peca" se a foto for de uma peça mecânica, consumível, filtro, correia, óleo ou etiqueta de referência.
+3. "peca" se a foto for de uma peça mecânica, cavilha, autocolante, etiqueta adesiva, consumível, filtro ou código de referência (ex: HA-XXX-XXX).
 4. "dano" se a foto mostrar uma avaria, peça partida, desgaste excessivo ou fuga.
 5. "geral" se for uma foto geral da viatura.
+
+ATENÇÃO CRÍTICA:
+- O texto na etiqueta ou peça pode estar na vertical, de lado ou rodado a 90 graus (ao longo de tubos, cilindros ou autocolantes brancos). Lê atentamente em todas as direções.
+- Se a matrícula for amarela ou branca portuguesa (ex: 72-TZ-38), extrai os 6 carateres com traços.
 
 Base de dados da oficina:
 - Matrículas conhecidas: [${knownPlates.join(', ')}]
 - Peças no catálogo: [${knownParts.join(', ')}]
-
-Instruções fundamentais:
-- Se identificares uma matrícula na foto, compara com a lista de matrículas conhecidas e utiliza o formato e valor exato.
-- Se identificares uma peça ou etiqueta de referência, utiliza a referência exata do catálogo.
 
 Responde ESTRITAMENTE em formato JSON:
 {
@@ -620,7 +628,7 @@ Responde ESTRITAMENTE em formato JSON:
   "designacaoPeca": "Nome da peça",
   "anomaliasVisuais": ["Dano ou avaria visível"],
   "descricaoBreve": "Resumo em português do que está na foto",
-  "confianca": 0.92
+  "confianca": 0.95
 }`;
 
   try {
@@ -646,20 +654,22 @@ Responde ESTRITAMENTE em formato JSON:
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const p = JSON.parse(data.response || '{}');
-
-    let tipo: 'matricula' | 'odometro' | 'peca' | 'dano' | 'geral' = p.tipoDetectado || 'geral';
-    if (!p.tipoDetectado) {
-      if (p.matricula && p.matricula.length >= 4) tipo = 'matricula';
-      else if (p.odometroKm > 0 || p.odometroHoras > 0) tipo = 'odometro';
-      else if (p.referenciaPeca || p.designacaoPeca) tipo = 'peca';
-      else if (p.anomaliasVisuais && p.anomaliasVisuais.length > 0) tipo = 'dano';
+    let p: any = {};
+    if (response.ok) {
+      const data = await response.json();
+      try {
+        p = JSON.parse(data.response || '{}');
+      } catch (e) {
+        p = {};
+      }
     }
 
-    let detectedPlate = p.matricula;
-    let detectedMarcaModelo = p.marcaModelo;
+    // Combine local OCR detection with Ollama output
+    let detectedPlate = localOcr?.detectedPlate || p.matricula;
+    let detectedMarcaModelo = localOcr?.matchedEquipment
+      ? `${localOcr.matchedEquipment.marca} ${localOcr.matchedEquipment.modelo}`
+      : p.marcaModelo;
+
     if (detectedPlate) {
       const eqMatch = findBestMatchingEquipment(detectedPlate, knownEquipments);
       if (eqMatch) {
@@ -670,12 +680,22 @@ Responde ESTRITAMENTE em formato JSON:
       }
     }
 
-    let refPeca = p.referenciaPeca;
-    let desPeca = p.designacaoPeca;
+    let refPeca = localOcr?.detectedPartRef || p.referenciaPeca;
+    let desPeca = localOcr?.detectedPartName || p.designacaoPeca;
     const partMatch = findBestMatchingPart(refPeca, desPeca, knownCatalog);
     if (partMatch) {
       refPeca = partMatch.referencia;
       desPeca = partMatch.designacao;
+    }
+
+    let tipo: 'matricula' | 'odometro' | 'peca' | 'dano' | 'geral' = p.tipoDetectado || 'geral';
+    if (detectedPlate) {
+      tipo = 'matricula';
+    } else if (refPeca || desPeca) {
+      tipo = 'peca';
+    } else if (!p.tipoDetectado) {
+      if (p.odometroKm > 0 || p.odometroHoras > 0 || localOcr?.odometerKm) tipo = 'odometro';
+      else if (p.anomaliasVisuais && p.anomaliasVisuais.length > 0) tipo = 'dano';
     }
 
     const labelMap: Record<string, string> = {
@@ -692,21 +712,43 @@ Responde ESTRITAMENTE em formato JSON:
       labelTipo: labelMap[tipo] || '📸 Foto',
       matricula: detectedPlate,
       marcaModelo: detectedMarcaModelo,
-      odometroKm: typeof p.odometroKm === 'number' && p.odometroKm > 0 ? p.odometroKm : undefined,
+      odometroKm: typeof p.odometroKm === 'number' && p.odometroKm > 0 ? p.odometroKm : localOcr?.odometerKm,
       odometroHoras: typeof p.odometroHoras === 'number' && p.odometroHoras > 0 ? p.odometroHoras : undefined,
       referenciaPeca: refPeca,
       designacaoPeca: desPeca,
       anomaliasVisuais: Array.isArray(p.anomaliasVisuais) ? p.anomaliasVisuais : undefined,
-      descricaoBreve: p.descricaoBreve || (detectedPlate ? `Matrícula: ${detectedPlate}` : desPeca ? `Peça: ${desPeca}` : `${labelMap[tipo]} identificada`),
-      confianca: p.confianca || 0.90
+      descricaoBreve: p.descricaoBreve || (detectedPlate ? `Matrícula: ${detectedPlate}` : desPeca ? `Peça: ${refPeca ? `[${refPeca}] ` : ''}${desPeca}` : `${labelMap[tipo]} identificada`),
+      confianca: detectedPlate || refPeca ? 0.98 : (p.confianca || 0.90)
     };
   } catch (err: any) {
-    console.warn('[Classify Image Error]', err?.message || err);
-    return fallbackAutoClassify(base64Image, imageIndex);
+    console.warn('[Classify Image Error, using Local OCR Fallback]', err?.message || err);
+    return fallbackAutoClassify(base64Image, imageIndex, localOcr);
   }
 }
 
-function fallbackAutoClassify(base64Image: string, index: number): AutoPhotoAnalysisItem {
+function fallbackAutoClassify(base64Image: string, index: number, localOcr?: any): AutoPhotoAnalysisItem {
+  if (localOcr?.detectedPlate) {
+    return {
+      imagemBase64: base64Image,
+      tipoDetectado: 'matricula',
+      labelTipo: '🚗 Matrícula',
+      matricula: localOcr.detectedPlate,
+      marcaModelo: localOcr.matchedEquipment ? `${localOcr.matchedEquipment.marca} ${localOcr.matchedEquipment.modelo}` : undefined,
+      descricaoBreve: `Matrícula: ${localOcr.detectedPlate}`,
+      confianca: 0.98
+    };
+  }
+  if (localOcr?.detectedPartRef || localOcr?.detectedPartName) {
+    return {
+      imagemBase64: base64Image,
+      tipoDetectado: 'peca',
+      labelTipo: '🔩 Peça / Material',
+      referenciaPeca: localOcr.detectedPartRef,
+      designacaoPeca: localOcr.detectedPartName,
+      descricaoBreve: `Peça: ${localOcr.detectedPartRef ? `[${localOcr.detectedPartRef}] ` : ''}${localOcr.detectedPartName || ''}`.trim(),
+      confianca: 0.95
+    };
+  }
   return {
     imagemBase64: base64Image,
     tipoDetectado: 'geral',
