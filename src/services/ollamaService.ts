@@ -7,6 +7,7 @@ import type {
   Equipamento,
   Empresa,
   TipoServico
+} from '../types';
 import { db, STORAGE_KEYS } from './dbService';
 import { runLocalOCROnImage } from './ocrEngine';
 
