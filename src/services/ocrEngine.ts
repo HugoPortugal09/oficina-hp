@@ -1,4 +1,4 @@
-﻿import { createWorker } from 'tesseract.js';
+import { createWorker } from 'tesseract.js';
 import { db, STORAGE_KEYS } from './dbService';
 import type { Equipamento, PecaCatalogo } from '../types';
 import { findBestMatchingEquipment, findBestMatchingPart, formatPlate, normalizePlate } from './ollamaService';
@@ -110,7 +110,7 @@ export async function runLocalOCROnImage(base64Image: string): Promise<LocalOCRR
       fullText = `${fullText}\n${text90}`;
     }
 
-    const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines: string[] = fullText.split('\n').map((l: string) => l.trim()).filter(Boolean);
 
     let foundPlate: string | undefined = undefined;
     let foundPartRef: string | undefined = undefined;
