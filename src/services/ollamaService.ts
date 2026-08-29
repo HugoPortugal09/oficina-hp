@@ -863,9 +863,12 @@ export async function transformPhotosToFolhaWithOllama(
     }
   }
 
-  for (let i = 0; i < allRawPhotos.length; i++) {
-    const photoBase64 = allRawPhotos[i];
-    const analysis = await classifyAndProcessImageWithOllama(photoBase64, i);
+  // Analyze all photos concurrently in parallel to reduce processing time
+  const analysisResults = await Promise.all(
+    allRawPhotos.map((photoBase64, i) => classifyAndProcessImageWithOllama(photoBase64, i))
+  );
+
+  for (const analysis of analysisResults) {
     analiseFotos.push(analysis);
 
     if (analysis.matricula) {
