@@ -1,4 +1,4 @@
-import { createWorker } from 'tesseract.js';
+﻿import { createWorker } from 'tesseract.js';
 import { db, STORAGE_KEYS } from './dbService';
 import type { Equipamento, PecaCatalogo } from '../types';
 import { findBestMatchingEquipment, findBestMatchingPart, formatPlate, normalizePlate } from './ollamaService';
@@ -8,8 +8,13 @@ let workerPromise: Promise<any> | null = null;
 async function getOCRWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const worker = await createWorker('por+eng');
-      return worker;
+      try {
+        const worker = await createWorker('eng');
+        return worker;
+      } catch (err) {
+        console.warn('[OCR Worker Init Failed]', err);
+        return null;
+      }
     })();
   }
   return workerPromise;
@@ -86,15 +91,15 @@ export interface LocalOCRResult {
   confidence: number;
 }
 
-/**
- * Extracts license plates and part references with multi-orientation OCR (0 deg & 90 deg)
- */
-export async function runLocalOCROnImage(base64Image: string): Promise<LocalOCRResult> {
+async function doOCRScan(base64Image: string): Promise<LocalOCRResult> {
   const knownEquipments = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
   const knownCatalog = db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO);
 
   try {
     const worker = await getOCRWorker();
+    if (!worker) {
+      return { rawText: '', confidence: 0 };
+    }
 
     // 1. Try normal orientation 0 deg
     const img0 = await getRotatedCanvasBase64(base64Image, 0);
@@ -102,7 +107,7 @@ export async function runLocalOCROnImage(base64Image: string): Promise<LocalOCRR
     let fullText = res0.data.text || '';
 
     // 2. If no clear plate or part ref found, try 90 deg rotation (essential for vertical labels & cylinders)
-    const hasClearCode = /(?:[A-Z0-9]{2}-[A-Z0-9]{2}-[A-Z0-9]{2}|HA-\d+|REF|FIL|GRAUMP)/i.test(fullText);
+    const hasClearCode = /(?:[A-Z0-9]{2}-[A-Z0-9]{2}-[A-Z0-9]{2}|HA-\d+|REF|FIL|GRAUMP|CAVILHA|INDICADOR)/i.test(fullText);
     if (!hasClearCode) {
       const img90 = await getRotatedCanvasBase64(base64Image, 90);
       const res90 = await worker.recognize(img90);
@@ -185,4 +190,15 @@ export async function runLocalOCROnImage(base64Image: string): Promise<LocalOCRR
       confidence: 0
     };
   }
+}
+
+/**
+ * Extracts license plates and part references with multi-orientation OCR (0 deg & 90 deg)
+ * Safely wraps with a 6-second timeout to prevent any UI blocking.
+ */
+export async function runLocalOCROnImage(base64Image: string): Promise<LocalOCRResult> {
+  const timeoutPromise = new Promise<LocalOCRResult>((resolve) =>
+    setTimeout(() => resolve({ rawText: '', confidence: 0 }), 6000)
+  );
+  return Promise.race([doOCRScan(base64Image), timeoutPromise]);
 }

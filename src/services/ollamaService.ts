@@ -636,7 +636,7 @@ Responde ESTRITAMENTE em formato JSON:
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    const response = await fetch(`${ollamaUrl}/api/generate`, {
+    let response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -652,6 +652,26 @@ Responde ESTRITAMENTE em formato JSON:
       }),
       signal: controller.signal
     });
+
+    if (response.status === 404 && model !== 'llama3.2-vision') {
+      console.warn(`[Ollama Model ${model} 404, falling back to llama3.2-vision]`);
+      response = await fetch(`${ollamaUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama3.2-vision',
+          prompt: prompt,
+          images: [cleanBase64],
+          stream: false,
+          format: 'json',
+          options: {
+            temperature: 0.0,
+            num_predict: 400
+          }
+        }),
+        signal: controller.signal
+      });
+    }
 
     clearTimeout(timeoutId);
 
