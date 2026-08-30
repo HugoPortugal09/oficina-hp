@@ -11,7 +11,7 @@ import {
   Sparkles,
   FileText,
   Truck,
-  PackageAlert,
+  AlertCircle,
   Calendar,
   AlertTriangle,
   X,
@@ -178,7 +178,7 @@ export const Automacoes: React.FC = () => {
       case 'email_planeamento':
         return <Calendar className="w-5 h-5 text-sky-400" />;
       case 'alerta_stock':
-        return <PackageAlert className="w-5 h-5 text-amber-400" />;
+        return <AlertCircle className="w-5 h-5 text-amber-400" />;
       case 'alerta_revisao':
         return <Truck className="w-5 h-5 text-indigo-400" />;
       case 'notificacao_cliente':
