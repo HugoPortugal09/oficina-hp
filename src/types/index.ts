@@ -400,6 +400,7 @@ export interface UserProfile {
 
 export interface RolePermissions {
   canAccessConfig: boolean;
+  canAccessAutomacoes: boolean;
   canAccessPropostas: boolean;
   canEditPecas: boolean;
   canEditServicos: boolean;
@@ -415,7 +416,7 @@ export const USERS: UserProfile[] = [
     avatar: 'HP',
     email: 'hugo.portugal@oficinahp.pt',
     password: 'admin',
-    descricao: 'Acesso total a todas as áreas, peças, serviços e Configurações & IA'
+    descricao: 'Acesso total a todas as áreas, peças, serviços, Automações e Configurações'
   },
   {
     id: 'u_gestor',
@@ -442,6 +443,7 @@ export function getPermissionsForRole(role: UserRole): RolePermissions {
     case 'administrador':
       return {
         canAccessConfig: true,
+        canAccessAutomacoes: true,
         canAccessPropostas: true,
         canEditPecas: true,
         canEditServicos: true,
@@ -451,6 +453,7 @@ export function getPermissionsForRole(role: UserRole): RolePermissions {
     case 'gestor':
       return {
         canAccessConfig: false,
+        canAccessAutomacoes: false,
         canAccessPropostas: true,
         canEditPecas: false, // Não pode alterar nada no menu Peças
         canEditServicos: false, // Não pode alterar nada no menu Serviços...
@@ -460,6 +463,7 @@ export function getPermissionsForRole(role: UserRole): RolePermissions {
     case 'tecnico':
       return {
         canAccessConfig: false,
+        canAccessAutomacoes: false,
         canAccessPropostas: false, // Sem acesso aos orçamentos
         canEditPecas: true,
         canEditServicos: true,

@@ -598,7 +598,19 @@ export default function App() {
           )}
 
           {activeTab === 'automacoes' && (
-            <Automacoes />
+            currentUser.role === 'administrador' ? (
+              <Automacoes />
+            ) : (
+              <div className="p-12 text-center bg-slate-900/60 border border-slate-800 rounded-3xl space-y-4 max-w-lg mx-auto mt-8">
+                <div className="w-16 h-16 rounded-2xl bg-purple-500/20 border border-purple-500/30 text-purple-400 flex items-center justify-center mx-auto text-3xl shadow-lg">
+                  👑
+                </div>
+                <h3 className="text-xl font-bold text-white">Acesso Exclusivo ao Administrador</h3>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  O Centro de Automações e Disparos Programados de Email é de uso restrito da administração da Oficina HP.
+                </p>
+              </div>
+            )
           )}
 
           {activeTab === 'tempos-resposta' && (
