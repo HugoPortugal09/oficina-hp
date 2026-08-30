@@ -548,6 +548,51 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
               </div>
             </div>
           </GlassCard>
+
+          {/* Email Automático & Planeamento Semanal */}
+          <GlassCard>
+            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800">
+              <Mail className="w-5 h-5 text-sky-400" />
+              <div>
+                <h3 className="text-sm font-bold text-white">Email Automático & Planeamento</h3>
+                <p className="text-[11px] text-slate-400">Envio automático do mapa semanal às Segundas às 07:30</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Email Emissor (Gmail / SMTP)</label>
+                <input
+                  type="email"
+                  value={config.emailEmissor || 'oficinahpapp@gmail.com'}
+                  onChange={e => setConfig(prev => ({ ...prev, emailEmissor: e.target.value }))}
+                  placeholder="oficinahpapp@gmail.com"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Destinatário do Planeamento</label>
+                <input
+                  type="email"
+                  value={config.emailDestinatarioPlaneamento || 'hugo@grau-maquinaria.com'}
+                  onChange={e => setConfig(prev => ({ ...prev, emailDestinatarioPlaneamento: e.target.value }))}
+                  placeholder="hugo@grau-maquinaria.com"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-emerald-300">Automação Ativa (Segundas às 07:30)</span>
+                </div>
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-md font-bold">
+                  Ativo
+                </span>
+              </div>
+            </div>
+          </GlassCard>
         </div>
 
         {/* Save Bar */}

@@ -361,6 +361,11 @@ export interface ConfiguracaoOficina {
   pocketbaseToken?: string;
   ollamaUrl: string;
   ollamaModel: string;
+  // Envio de Emails Automáticos & Planeamento Semanal
+  emailEmissor?: string;
+  emailAppPassword?: string;
+  emailDestinatarioPlaneamento?: string;
+  emailPlaneamentoAtivo?: boolean;
 }
 
 export interface VisionScanResult {

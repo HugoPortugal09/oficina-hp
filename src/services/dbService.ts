@@ -47,7 +47,11 @@ const DEFAULT_CONFIG: ConfiguracaoOficina = {
   ivaPadrao: 23,
   pocketbaseUrl: 'https://oficina-hp-pocketbase.l1mamt.easypanel.host',
   ollamaUrl: 'https://oficina-hp-ollama.l1mamt.easypanel.host',
-  ollamaModel: 'minicpm-v'
+  ollamaModel: 'minicpm-v',
+  emailEmissor: 'oficinahpapp@gmail.com',
+  emailAppPassword: 'ewhzzvysccrptkns',
+  emailDestinatarioPlaneamento: 'hugo@grau-maquinaria.com',
+  emailPlaneamentoAtivo: true
 };
 
 const INITIAL_EMPRESAS: Empresa[] = [
