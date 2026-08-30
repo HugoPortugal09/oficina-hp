@@ -47,7 +47,7 @@ const DEFAULT_CONFIG: ConfiguracaoOficina = {
   ivaPadrao: 23,
   pocketbaseUrl: 'https://oficina-hp-pocketbase.l1mamt.easypanel.host',
   ollamaUrl: 'https://oficina-hp-ollama.l1mamt.easypanel.host',
-  ollamaModel: 'llama3.2-vision'
+  ollamaModel: 'minicpm-v'
 };
 
 const INITIAL_EMPRESAS: Empresa[] = [

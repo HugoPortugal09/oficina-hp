@@ -164,7 +164,7 @@ export async function processImageWithOllama(
   const startTime = Date.now();
   const config = db.getConfig();
   const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
-  const model = config.ollamaModel || 'llama3.2-vision';
+  const model = config.ollamaModel || 'minicpm-v';
 
   // Downscale and compress image to avoid server timeouts and tensor memory exhaustion
   const readyImage = await compressImageForAI(base64Image, 1024, 0.85);
@@ -207,33 +207,29 @@ Responde estritamente em formato JSON:
 }`;
   } else if (mode === 'peca') {
     prompt = `És um especialista em peças mecânicas e industriais de oficina.
-Analisa a imagem da peça, embalagem ou etiqueta de referência.
+Analisa a imagem da peça, embalagem ou etiqueta de referência. Lê mesmo texto na vertical ou rodado.
 
 Catálogo de peças registadas na oficina:
 [${knownParts.join(', ')}]
 
 Instruções:
-- Lê com precisão qualquer código, referência gravada (ex: Bosch, Mahle, Valeo, OEM) ou etiqueta.
+- Lê com precisão qualquer código, referência gravada (ex: HA-149-617, HA-106-074, Bosch, Mahle) ou etiqueta.
 - Se a peça na imagem corresponder a um item do catálogo acima, utiliza exatamente a referência e designação do catálogo.
 
 Responde ESTRITAMENTE em formato JSON:
 {
-  "referencia": "REF123",
+  "referencia": "Código da peça",
   "designacao": "Nome da peça",
-  "categoria": "Motor/Travagem/Filtração/Hidráulica/Outro",
-  "anomaliasVisuais": ["Dano visível se existir"]
+  "confianca": 0.95
 }`;
   } else {
-    prompt = `És um perito mecânico de oficina e frotas. Analisa a fotografia detalhadamente.
-Base de dados de matrículas conhecidas: [${knownPlates.join(', ')}]
-Catálogo de peças conhecidas: [${knownParts.slice(0, 20).join(', ')}]
-
-Extrai qualquer informação relevante: matrícula visível, marca/modelo, leitura de odómetro/horas, código/referência de peça ou anomalias/danos visíveis.
-Responde estritamente em formato JSON válido:
+    prompt = `Analisa a fotografia geral de manutenção do veículo ou equipamento.
+Extrai todas as informações visíveis: matrícula, odómetro, peças e anomalias.
+Responde estritamente em formato JSON:
 {
-  "matricula": "XX-XX-XX",
-  "marcaModelo": "Marca e Modelo",
-  "tipoEquipamento": "Tipo de máquina ou viatura",
+  "matricula": "",
+  "tipo": "Ligeiro/Pesado/Máquina",
+  "marcaModelo": "",
   "odometroKm": 0,
   "odometroHoras": 0,
   "numeroSerie": "",
@@ -248,7 +244,7 @@ Responde estritamente em formato JSON válido:
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
@@ -276,7 +272,7 @@ Responde estritamente em formato JSON válido:
     const data = await response.json();
     const parsed = JSON.parse(data.response || '{}');
 
-    let rawPlate = parsed.matricula || parsed.plate || '';
+    let rawPlate = parsed.matricula || parsed.plate || parsed.Matrícula || '';
     let matchedEq: Equipamento | undefined = undefined;
     if (rawPlate) {
       matchedEq = findBestMatchingEquipment(rawPlate, knownEquipments);
@@ -287,8 +283,8 @@ Responde estritamente em formato JSON válido:
       }
     }
 
-    let refPeca = parsed.referencia || parsed.referenciaPeca;
-    let desPeca = parsed.designacao || parsed.designacaoPeca;
+    let refPeca = parsed.referencia || parsed.referenciaPeca || parsed.referência || parsed.ref;
+    let desPeca = parsed.designacao || parsed.designacaoPeca || parsed.designação || parsed.descricao;
     const matchedPart = findBestMatchingPart(refPeca, desPeca, knownCatalog);
     if (matchedPart) {
       refPeca = matchedPart.referencia;
@@ -583,7 +579,7 @@ export async function classifyAndProcessImageWithOllama(
 ): Promise<AutoPhotoAnalysisItem> {
   const config = db.getConfig();
   const ollamaUrl = (config.ollamaUrl || 'https://oficina-hp-ollama.l1mamt.easypanel.host').trim().replace(/\/+$/, '');
-  const model = config.ollamaModel || 'oficina-vision';
+  const model = config.ollamaModel || 'minicpm-v';
 
   // 1. Run ultra-fast, rotation-aware client-side OCR (0 deg & 90 deg for vertical stickers / plates)
   let localOcr: any = null;
@@ -634,7 +630,7 @@ Responde ESTRITAMENTE em formato JSON:
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     let response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
@@ -653,13 +649,13 @@ Responde ESTRITAMENTE em formato JSON:
       signal: controller.signal
     });
 
-    if (response.status === 404 && model !== 'llama3.2-vision') {
-      console.warn(`[Ollama Model ${model} 404, falling back to llama3.2-vision]`);
+    if (response.status === 404 && model !== 'minicpm-v') {
+      console.warn(`[Ollama Model ${model} 404, falling back to minicpm-v]`);
       response = await fetch(`${ollamaUrl}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama3.2-vision',
+          model: 'minicpm-v',
           prompt: prompt,
           images: [cleanBase64],
           stream: false,
@@ -685,8 +681,12 @@ Responde ESTRITAMENTE em formato JSON:
       }
     }
 
+    const rawPlate = p.matricula || p.plate || p.Matrícula || p.license_plate || '';
+    const rawRef = p.referenciaPeca || p.referencia || p.referência || p.ref || '';
+    const rawDes = p.designacaoPeca || p.designacao || p.designação || p.descricao || '';
+
     // Combine local OCR detection with Ollama output
-    let detectedPlate = localOcr?.detectedPlate || p.matricula;
+    let detectedPlate = localOcr?.detectedPlate || rawPlate;
     let detectedMarcaModelo = localOcr?.matchedEquipment
       ? `${localOcr.matchedEquipment.marca} ${localOcr.matchedEquipment.modelo}`
       : p.marcaModelo;
@@ -701,8 +701,8 @@ Responde ESTRITAMENTE em formato JSON:
       }
     }
 
-    let refPeca = localOcr?.detectedPartRef || p.referenciaPeca;
-    let desPeca = localOcr?.detectedPartName || p.designacaoPeca;
+    let refPeca = localOcr?.detectedPartRef || rawRef;
+    let desPeca = localOcr?.detectedPartName || rawDes;
     const partMatch = findBestMatchingPart(refPeca, desPeca, knownCatalog);
     if (partMatch) {
       refPeca = partMatch.referencia;
