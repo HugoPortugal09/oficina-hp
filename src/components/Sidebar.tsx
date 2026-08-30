@@ -32,7 +32,8 @@ import {
   Shield,
   Briefcase,
   Check,
-  LogOut
+  LogOut,
+  Zap
 } from 'lucide-react';
 import type { NavigationTab, UserProfile } from '../types';
 import { USERS } from '../types';
@@ -106,6 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'atividade-semanal', label: 'Atividade Semanal', icon: <Calendar className="w-4 h-4 text-emerald-400" /> },
         { id: 'planeamento', label: 'Planeamento', icon: <CalendarCheck className="w-4 h-4 text-sky-400" /> },
+        { id: 'automacoes', label: 'Automações', icon: <Zap className="w-4 h-4 text-purple-400" />, badge: 'IA' },
         { id: 'tempos-resposta', label: 'Tempos de Resposta', icon: <Timer className="w-4 h-4 text-orange-400" /> },
       ]
     },

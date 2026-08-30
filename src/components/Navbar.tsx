@@ -102,6 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     contratos: { title: 'Contratos de Manutenção', subtitle: 'Avenças preventivas e planos periódicos' },
     'atividade-semanal': { title: 'Atividade Semanal & Produção', subtitle: 'Registo e acompanhamento visual semanal de serviços, peças e tarefas' },
     planeamento: { title: 'Planeamento & Visitas', subtitle: 'Agendamento de folhas de serviço abertas e gestão de visitas aos clientes' },
+    automacoes: { title: 'Centro de Automações & Disparos', subtitle: 'Gestão de envios automáticos, relatórios semanais por email e alertas' },
     'tempos-resposta': { title: 'Tempos de Resposta & Imobilização', subtitle: 'Tempo de imobilização em oficina e acompanhamento de requisições' },
     configuracoes: { title: 'Configurações do Sistema', subtitle: 'Dados da oficina, PocketBase, Ollama e cópias de segurança' },
   };

@@ -12,7 +12,8 @@ import type {
   VisitaCliente,
   ConfiguracaoOficina,
   StatusFolhaServico,
-  UserProfile
+  UserProfile,
+  AutomacaoItem
 } from '../types';
 import { USERS } from '../types';
 import { syncPushToCloud } from './pocketbaseSync';
@@ -30,6 +31,7 @@ const STORAGE_KEYS = {
   TAREFAS: 'oficina_hp_tarefas',
   VISITAS: 'oficina_hp_visitas',
   UTILIZADORES: 'oficina_hp_utilizadores',
+  AUTOMACOES: 'oficina_hp_automacoes',
   CONFIGURACAO: 'oficina_hp_configuracao',
 };
 
@@ -487,6 +489,66 @@ const INITIAL_TAREFAS: Tarefa[] = [
   }
 ];
 
+const INITIAL_AUTOMACOES: AutomacaoItem[] = [
+  {
+    id: 'auto_001',
+    nome: 'Envio do Planeamento Semanal em PDF',
+    descricao: 'Envia automaticamente o mapa semanal com folhas de serviço, visitas e lista de folhas em aberto para a direção técnica.',
+    tipo: 'email_planeamento',
+    frequencia: 'Todas as Segundas-feiras às 07:30',
+    cronExpr: '30 7 * * 1',
+    ativo: true,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email'],
+    anexoTipo: 'pdf',
+    icone: 'Calendar',
+    ultimoDisparo: 'Hoje às 00:30',
+    proximoDisparo: 'Segunda-feira às 07:30'
+  },
+  {
+    id: 'auto_002',
+    nome: 'Alerta de Ruptura / Stock Mínimo de Peças',
+    descricao: 'Dispara um aviso por email quando qualquer artigo do catálogo atinge ou fica abaixo do stock mínimo de segurança.',
+    tipo: 'alerta_stock',
+    frequencia: 'Diário (às 08:00)',
+    cronExpr: '0 8 * * *',
+    ativo: true,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email', 'notificacao'],
+    anexoTipo: 'nenhum',
+    icone: 'PackageAlert',
+    ultimoDisparo: 'Ontem às 08:00',
+    proximoDisparo: 'Amanhã às 08:00'
+  },
+  {
+    id: 'auto_003',
+    nome: 'Lembrete de Revisão Preventiva por Kms / Horas',
+    descricao: 'Analisa as viaturas e equipamentos da frota e envia aviso quando faltarem menos de 1.000 Km ou 50 Horas para a próxima revisão.',
+    tipo: 'alerta_revisao',
+    frequencia: 'Semanal (Sextas-feiras às 17:00)',
+    cronExpr: '0 17 * * 5',
+    ativo: false,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email'],
+    anexoTipo: 'pdf',
+    icone: 'Truck',
+    proximoDisparo: 'Sexta-feira às 17:00'
+  },
+  {
+    id: 'auto_004',
+    nome: 'Notificação ao Cliente de Obra Concluída',
+    descricao: 'Envia um email automático ao cliente da viatura quando a Folha de Serviço passa para o estado "FEITO - Faturar" ou "Finalizado".',
+    tipo: 'notificacao_cliente',
+    frequencia: 'Instantâneo (Ao alterar estado)',
+    ativo: false,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email'],
+    anexoTipo: 'pdf',
+    icone: 'CheckCircle2',
+    proximoDisparo: 'Em tempo real'
+  }
+];
+
 export const db = {
   get<T>(key: string): T[] {
     try {
@@ -627,6 +689,9 @@ export const db = {
     }
     if (!localStorage.getItem(STORAGE_KEYS.UTILIZADORES)) {
       this.save(STORAGE_KEYS.UTILIZADORES, USERS);
+    }
+    if (!localStorage.getItem(STORAGE_KEYS.AUTOMACOES)) {
+      this.save(STORAGE_KEYS.AUTOMACOES, INITIAL_AUTOMACOES);
     }
     if (!localStorage.getItem(STORAGE_KEYS.CONFIGURACAO)) {
       localStorage.setItem(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(DEFAULT_CONFIG));

@@ -14,6 +14,7 @@ export type NavigationTab =
   | 'contratos'
   | 'atividade-semanal'
   | 'planeamento'
+  | 'automacoes'
   | 'tempos-resposta'
   | 'configuracoes';
 
@@ -476,4 +477,27 @@ export function getInitials(name?: string): string {
   if (parts.length === 0) return 'HP';
   if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export type TipoAutomacao = 
+  | 'email_planeamento' 
+  | 'alerta_stock' 
+  | 'alerta_revisao' 
+  | 'notificacao_cliente'
+  | 'whatsapp_resumo';
+
+export interface AutomacaoItem {
+  id: string;
+  nome: string;
+  descricao: string;
+  tipo: TipoAutomacao;
+  frequencia: string;
+  cronExpr?: string;
+  ativo: boolean;
+  destinatarios: string[]; // Lista de emails que recebem esta automação
+  canaisEnvio: ('email' | 'whatsapp' | 'notificacao')[];
+  ultimoDisparo?: string;
+  proximoDisparo?: string;
+  anexoTipo?: 'pdf' | 'excel' | 'nenhum';
+  icone?: string;
 }

@@ -17,6 +17,7 @@ import { Contratos } from './pages/Contratos';
 import { Tarefas } from './pages/Tarefas';
 import { AtividadeSemanal } from './pages/AtividadeSemanal';
 import { Planeamento } from './pages/Planeamento';
+import { Automacoes } from './pages/Automacoes';
 import { TemposResposta } from './pages/TemposResposta';
 import { Configuracoes } from './pages/Configuracoes';
 import { MobileApp } from './pages/MobileApp';
@@ -594,6 +595,10 @@ export default function App() {
               onUpdateFolha={handleUpdateFolhaDirect}
               onSelectFolha={handleSelectFolhaDirect}
             />
+          )}
+
+          {activeTab === 'automacoes' && (
+            <Automacoes />
           )}
 
           {activeTab === 'tempos-resposta' && (
