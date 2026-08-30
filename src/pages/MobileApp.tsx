@@ -2273,6 +2273,30 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     <span className="font-sans text-slate-400">Peças identificadas:</span>
                     <span className="text-emerald-400 font-bold">{aiResult.folha.pecas?.length || 0}</span>
                   </div>
+
+                  {/* Detalhe de Peças Identificadas */}
+                  {aiResult.folha.pecas && aiResult.folha.pecas.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800 space-y-1.5 font-sans">
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
+                        🔩 Peças & Materiais Detetados ({aiResult.folha.pecas.length}):
+                      </span>
+                      <div className="space-y-1">
+                        {aiResult.folha.pecas.map((pec, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                            <div className="min-w-0 pr-2">
+                              <span className="font-mono font-bold text-white block truncate">{pec.referencia}</span>
+                              <span className="text-[11px] text-slate-400 block truncate">{pec.designacao}</span>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-mono font-bold text-emerald-400 text-xs">
+                                {pec.precoUnitario ? `${pec.precoUnitario.toFixed(2)} €` : 'Qtd: 1'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2">
