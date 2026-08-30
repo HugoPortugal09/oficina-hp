@@ -23,7 +23,8 @@ import {
   Wrench,
   Cloud,
   CloudUpload,
-  CloudDownload
+  CloudDownload,
+  Mail
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Modal } from '../components/Modal';
