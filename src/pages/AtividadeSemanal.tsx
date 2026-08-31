@@ -275,21 +275,25 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
     
     // Oficina
     const ofFolhas = totalFolhas.filter(f => f.rawFolha?.tipo === 'Oficina');
+    const ofNovos = ofFolhas.filter(f => f.rawFolha?.dataEntradaOficina && f.rawFolha.dataEntradaOficina >= weekStartStr && f.rawFolha.dataEntradaOficina <= weekEndStr).length || ofFolhas.length;
     const ofConcluidas = ofFolhas.filter(f => f.concluido).length;
     const ofAbertas = ofFolhas.length - ofConcluidas;
 
     // Assistência Técnica
     const atFolhas = totalFolhas.filter(f => f.rawFolha?.tipo === 'Assistência Técnica');
+    const atNovos = atFolhas.filter(f => f.rawFolha?.dataEntradaOficina && f.rawFolha.dataEntradaOficina >= weekStartStr && f.rawFolha.dataEntradaOficina <= weekEndStr).length || atFolhas.length;
     const atConcluidas = atFolhas.filter(f => f.concluido).length;
     const atAbertas = atFolhas.length - atConcluidas;
 
     // Contratos
     const ctFolhas = totalFolhas.filter(f => f.rawFolha?.tipo === 'Contrato');
+    const ctNovos = ctFolhas.filter(f => f.rawFolha?.dataEntradaOficina && f.rawFolha.dataEntradaOficina >= weekStartStr && f.rawFolha.dataEntradaOficina <= weekEndStr).length;
     const ctConcluidas = ctFolhas.filter(f => f.concluido).length;
     const ctAbertas = ctFolhas.length - ctConcluidas;
 
     // Tarefas
     const totalTarefas = currentWeekActivities.filter(a => a.tipo === 'tarefa');
+    const tarefasNovas = totalTarefas.filter(t => t.rawTarefa?.dataCriacao && t.rawTarefa.dataCriacao >= weekStartStr && t.rawTarefa.dataCriacao <= weekEndStr).length || totalTarefas.length;
     const tarefasConcluidas = totalTarefas.filter(t => t.concluido).length;
     const tarefasAbertas = totalTarefas.length - tarefasConcluidas;
 
@@ -298,19 +302,23 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
     const totalPecas = totalFolhas.reduce((acc, f) => acc + (f.qtdPecas || 0), 0);
 
     return {
+      ofNovos,
       ofAbertas,
       ofConcluidas,
+      atNovos,
       atAbertas,
       atConcluidas,
+      ctNovos,
       ctAbertas,
       ctConcluidas,
+      tarefasNovas,
       tarefasAbertas,
       tarefasConcluidas,
       totalHoras,
       totalPecas,
       totalFolhasCount: totalFolhas.length
     };
-  }, [currentWeekActivities]);
+  }, [currentWeekActivities, weekStartStr, weekEndStr]);
 
   return (
     <div className="space-y-3.5 animate-in fade-in duration-300">
@@ -366,7 +374,7 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         </div>
       </div>
 
-      {/* Categorized Weekly Metrics KPIs Banner */}
+      {/* Categorized Weekly Metrics KPIs Banner (Novos, Abertos, Concluídos) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Oficina */}
         <GlassCard className="p-3 border-sky-500/30">
@@ -376,14 +384,15 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
               <Wrench className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1">
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
-              {weekMetrics.ofConcluidas}
-            </span>
-            <span className="text-xs font-bold text-emerald-400 ml-1">concluídos</span>
+          <div className="mt-2 text-xs font-mono font-bold text-white flex items-center gap-1.5 flex-wrap">
+            <span className="text-sky-300 font-extrabold text-sm">{weekMetrics.ofNovos}</span> Novos
+            <span className="text-slate-500">|</span>
+            <span className="text-amber-300 font-extrabold text-sm">{weekMetrics.ofAbertas}</span> Abertos
+            <span className="text-slate-500">|</span>
+            <span className="text-emerald-400 font-extrabold text-sm">{weekMetrics.ofConcluidas}</span> Concluídos
           </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {weekMetrics.ofAbertas} em aberto / em curso
+          <span className="text-[10px] text-slate-400 block mt-1">
+            Produção em Oficina
           </span>
         </GlassCard>
 
@@ -395,14 +404,15 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
               <Truck className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1">
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
-              {weekMetrics.atConcluidas}
-            </span>
-            <span className="text-xs font-bold text-emerald-400 ml-1">concluídos</span>
+          <div className="mt-2 text-xs font-mono font-bold text-white flex items-center gap-1.5 flex-wrap">
+            <span className="text-amber-300 font-extrabold text-sm">{weekMetrics.atNovos}</span> Novos
+            <span className="text-slate-500">|</span>
+            <span className="text-amber-300 font-extrabold text-sm">{weekMetrics.atAbertas}</span> Abertos
+            <span className="text-slate-500">|</span>
+            <span className="text-emerald-400 font-extrabold text-sm">{weekMetrics.atConcluidas}</span> Concluídos
           </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {weekMetrics.atAbertas} em aberto / no terreno
+          <span className="text-[10px] text-slate-400 block mt-1">
+            Intervenções no Terreno
           </span>
         </GlassCard>
 
@@ -414,14 +424,15 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
               <FileText className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1">
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
-              {weekMetrics.ctConcluidas}
-            </span>
-            <span className="text-xs font-bold text-emerald-400 ml-1">concluídos</span>
+          <div className="mt-2 text-xs font-mono font-bold text-white flex items-center gap-1.5 flex-wrap">
+            <span className="text-emerald-300 font-extrabold text-sm">{weekMetrics.ctNovos}</span> Novos
+            <span className="text-slate-500">|</span>
+            <span className="text-amber-300 font-extrabold text-sm">{weekMetrics.ctAbertas}</span> Abertos
+            <span className="text-slate-500">|</span>
+            <span className="text-emerald-400 font-extrabold text-sm">{weekMetrics.ctConcluidas}</span> Concluídos
           </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {weekMetrics.ctAbertas} em aberto / periódicos
+          <span className="text-[10px] text-slate-400 block mt-1">
+            Manutenções Contratuais
           </span>
         </GlassCard>
 
@@ -433,14 +444,15 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
               <CheckSquare className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-1">
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
-              {weekMetrics.tarefasConcluidas}
-            </span>
-            <span className="text-xs font-bold text-emerald-400 ml-1">concluídas</span>
+          <div className="mt-2 text-xs font-mono font-bold text-white flex items-center gap-1.5 flex-wrap">
+            <span className="text-purple-300 font-extrabold text-sm">{weekMetrics.tarefasNovas}</span> Novas
+            <span className="text-slate-500">|</span>
+            <span className="text-amber-300 font-extrabold text-sm">{weekMetrics.tarefasAbertas}</span> Abertas
+            <span className="text-slate-500">|</span>
+            <span className="text-emerald-400 font-extrabold text-sm">{weekMetrics.tarefasConcluidas}</span> Concluídas
           </div>
-          <span className="text-[10px] text-slate-400 block mt-0.5">
-            {weekMetrics.tarefasAbertas} pendentes
+          <span className="text-[10px] text-slate-400 block mt-1">
+            Tarefas Internas de Oficina
           </span>
         </GlassCard>
       </div>
