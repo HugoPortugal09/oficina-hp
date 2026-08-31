@@ -580,6 +580,7 @@ export default function App() {
               equipamentos={equipamentos}
               clientes={clientes}
               onSelectFolha={handleSelectFolhaDirect}
+              currentUser={currentUser}
             />
           )}
 

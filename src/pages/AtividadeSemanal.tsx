@@ -38,6 +38,7 @@ interface AtividadeSemanalProps {
   equipamentos: Equipamento[];
   clientes: Cliente[];
   onSelectFolha?: (folha: FolhaServico) => void;
+  currentUser?: import('../types').UserProfile;
 }
 
 interface ActivityItem {
@@ -102,8 +103,10 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
   empresas,
   equipamentos,
   clientes,
-  onSelectFolha
+  onSelectFolha,
+  currentUser
 }) => {
+  const isAdmin = currentUser?.role === 'administrador';
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [selectedTipo, setSelectedTipo] = useState<'TODOS' | 'folhas' | 'tarefas' | 'concluidos'>('TODOS');
@@ -269,17 +272,43 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
   // Week metrics
   const weekMetrics = useMemo(() => {
     const totalFolhas = currentWeekActivities.filter(a => a.tipo === 'folha');
-    const folhasConcluidas = totalFolhas.filter(a => a.concluido).length;
+    
+    // Oficina
+    const ofFolhas = totalFolhas.filter(f => f.rawFolha?.tipo === 'Oficina');
+    const ofConcluidas = ofFolhas.filter(f => f.concluido).length;
+    const ofAbertas = ofFolhas.length - ofConcluidas;
+
+    // Assistência Técnica
+    const atFolhas = totalFolhas.filter(f => f.rawFolha?.tipo === 'Assistência Técnica');
+    const atConcluidas = atFolhas.filter(f => f.concluido).length;
+    const atAbertas = atFolhas.length - atConcluidas;
+
+    // Contratos
+    const ctFolhas = totalFolhas.filter(f => f.rawFolha?.tipo === 'Contrato');
+    const ctConcluidas = ctFolhas.filter(f => f.concluido).length;
+    const ctAbertas = ctFolhas.length - ctConcluidas;
+
+    // Tarefas
+    const totalTarefas = currentWeekActivities.filter(a => a.tipo === 'tarefa');
+    const tarefasConcluidas = totalTarefas.filter(t => t.concluido).length;
+    const tarefasAbertas = totalTarefas.length - tarefasConcluidas;
+
+    // Horas e Peças (para Administrador)
     const totalHoras = totalFolhas.reduce((acc, s) => acc + (s.horas || 0), 0);
     const totalPecas = totalFolhas.reduce((acc, f) => acc + (f.qtdPecas || 0), 0);
-    const totalTarefas = currentWeekActivities.filter(a => a.tipo === 'tarefa').length;
 
     return {
+      ofAbertas,
+      ofConcluidas,
+      atAbertas,
+      atConcluidas,
+      ctAbertas,
+      ctConcluidas,
+      tarefasAbertas,
+      tarefasConcluidas,
       totalHoras,
-      folhasConcluidas,
-      totalFolhasCount: totalFolhas.length,
       totalPecas,
-      totalTarefas
+      totalFolhasCount: totalFolhas.length
     };
   }, [currentWeekActivities]);
 
@@ -337,69 +366,98 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         </div>
       </div>
 
-      {/* Weekly Metrics KPIs Banner */}
+      {/* Categorized Weekly Metrics KPIs Banner */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Oficina */}
+        <GlassCard className="p-3 border-sky-500/30">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-sky-400 block">Oficina</span>
+            <div className="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-400">
+              <Wrench className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-1">
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
+              {weekMetrics.ofConcluidas}
+            </span>
+            <span className="text-xs font-bold text-emerald-400 ml-1">concluídos</span>
+          </div>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {weekMetrics.ofAbertas} em aberto / em curso
+          </span>
+        </GlassCard>
+
+        {/* Assistência Técnica */}
+        <GlassCard className="p-3 border-amber-500/30">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-amber-400 block">Assistência Técnica</span>
+            <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Truck className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-1">
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
+              {weekMetrics.atConcluidas}
+            </span>
+            <span className="text-xs font-bold text-emerald-400 ml-1">concluídos</span>
+          </div>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {weekMetrics.atAbertas} em aberto / no terreno
+          </span>
+        </GlassCard>
+
+        {/* Contratos */}
         <GlassCard className="p-3 border-emerald-500/30">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-slate-400 block">Folhas de Serviço</span>
+            <span className="text-[11px] font-bold text-emerald-400 block">Contratos</span>
             <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
               <FileText className="w-3.5 h-3.5" />
             </div>
           </div>
-          <h3 className="text-xl sm:text-2xl font-extrabold font-mono text-white mt-1">
-            {weekMetrics.totalFolhasCount}
-          </h3>
-          <span className="text-[10px] text-slate-400">
-            {weekMetrics.folhasConcluidas} concluídas a verde
-          </span>
-        </GlassCard>
-
-        <GlassCard className="p-3 border-emerald-500/30">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-slate-400 block">Horas Trabalhadas</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
+          <div className="mt-1">
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
+              {weekMetrics.ctConcluidas}
+            </span>
+            <span className="text-xs font-bold text-emerald-400 ml-1">concluídos</span>
           </div>
-          <h3 className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400 mt-1">
-            {weekMetrics.totalHoras.toFixed(1)}h
-          </h3>
-          <span className="text-[10px] text-slate-400">
-            Mão-de-obra total somada
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {weekMetrics.ctAbertas} em aberto / periódicos
           </span>
         </GlassCard>
 
-        <GlassCard className="p-3 border-indigo-500/30">
+        {/* Tarefas */}
+        <GlassCard className="p-3 border-purple-500/30">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-slate-400 block">Peças Aplicadas</span>
-            <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Package className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <h3 className="text-xl sm:text-2xl font-extrabold font-mono text-indigo-300 mt-1">
-            {weekMetrics.totalPecas}{' '}
-            <span className="text-xs text-slate-400 font-normal">unidades</span>
-          </h3>
-          <span className="text-[10px] text-slate-400">
-            Nas folhas desta semana
-          </span>
-        </GlassCard>
-
-        <GlassCard className="p-3 border-amber-500/30">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-slate-400 block">Tarefas Concluídas</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <span className="text-[11px] font-bold text-purple-400 block">Tarefas</span>
+            <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
               <CheckSquare className="w-3.5 h-3.5" />
             </div>
           </div>
-          <h3 className="text-xl sm:text-2xl font-extrabold font-mono text-amber-300 mt-1">
-            {weekMetrics.totalTarefas}
-          </h3>
-          <span className="text-[10px] text-emerald-400 font-semibold">
-            ✓ Finalizadas esta semana
+          <div className="mt-1">
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white">
+              {weekMetrics.tarefasConcluidas}
+            </span>
+            <span className="text-xs font-bold text-emerald-400 ml-1">concluídas</span>
+          </div>
+          <span className="text-[10px] text-slate-400 block mt-0.5">
+            {weekMetrics.tarefasAbertas} pendentes
           </span>
         </GlassCard>
       </div>
+
+      {/* Admin Extra Metrics: Horas e Peças (Apenas para Administrador) */}
+      {isAdmin && (
+        <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs text-slate-300">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-400" />
+            <span>Total Mão-de-Obra na Semana: <strong className="text-white font-mono">{weekMetrics.totalHoras.toFixed(1)}h</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-indigo-400" />
+            <span>Total Peças Aplicadas: <strong className="text-white font-mono">{weekMetrics.totalPecas} unidades</strong></span>
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -495,7 +553,7 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
 
                 <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1 pt-1 border-t border-slate-800/60">
                   <span>{dayActivities.length} {dayActivities.length === 1 ? 'registo' : 'registos'}</span>
-                  {dayHours > 0 && <span className="text-emerald-400 font-bold">{dayHours.toFixed(1)}h</span>}
+                  {isAdmin && dayHours > 0 && <span className="text-emerald-400 font-bold">{dayHours.toFixed(1)}h</span>}
                 </div>
               </div>
 
@@ -585,25 +643,27 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
                           {item.descricao}
                         </p>
 
-                        {/* Footer: Technician, Hours, Summary */}
+                        {/* Footer: Technician, and (if Admin) Hours and Summary */}
                         <div className="pl-1.5 mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-400 font-mono">
                           <span className="flex items-center gap-1 truncate max-w-[110px]">
                             <User className="w-2.5 h-2.5 text-slate-500 shrink-0" />
                             <span className="truncate">{item.tecnico}</span>
                           </span>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {item.horas !== undefined && item.horas > 0 && (
-                              <span className={`font-bold ${isGreen ? 'text-emerald-400' : 'text-hp-400'}`}>
-                                {item.horas}h
-                              </span>
-                            )}
-                            {item.qtdPecas !== undefined && item.qtdPecas > 0 && (
-                              <span className="text-indigo-300 font-bold">
-                                {item.qtdPecas} pçs
-                              </span>
-                            )}
-                          </div>
+                          {isAdmin && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {item.horas !== undefined && item.horas > 0 && (
+                                <span className={`font-bold ${isGreen ? 'text-emerald-400' : 'text-hp-400'}`}>
+                                  {item.horas}h
+                                </span>
+                              )}
+                              {item.qtdPecas !== undefined && item.qtdPecas > 0 && (
+                                <span className="text-indigo-300 font-bold">
+                                  {item.qtdPecas} pçs
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
