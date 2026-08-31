@@ -485,6 +485,7 @@ export function getInitials(name?: string): string {
 
 export type TipoAutomacao = 
   | 'email_planeamento' 
+  | 'email_atividade_semanal'
   | 'alerta_stock' 
   | 'alerta_revisao' 
   | 'notificacao_cliente'

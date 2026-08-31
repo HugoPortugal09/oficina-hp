@@ -506,6 +506,21 @@ const INITIAL_AUTOMACOES: AutomacaoItem[] = [
     proximoDisparo: 'Segunda-feira às 07:30'
   },
   {
+    id: 'auto_001_b',
+    nome: 'Quadro de Atividade Semanal & Produção em PDF',
+    descricao: 'Envia o relatório semanal de produção consolidado (serviços e tarefas concluídas/abertas) aos domingos.',
+    tipo: 'email_atividade_semanal',
+    frequencia: 'Todos os Domingos às 09:00',
+    cronExpr: '0 9 * * 0',
+    ativo: true,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email'],
+    anexoTipo: 'pdf',
+    icone: 'Activity',
+    ultimoDisparo: 'Hoje às 01:00',
+    proximoDisparo: 'Domingo às 09:00'
+  },
+  {
     id: 'auto_002',
     nome: 'Alerta de Ruptura / Stock Mínimo de Peças',
     descricao: 'Dispara um aviso por email quando qualquer artigo do catálogo atinge ou fica abaixo do stock mínimo de segurança.',

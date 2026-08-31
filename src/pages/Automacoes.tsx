@@ -13,6 +13,7 @@ import {
   Truck,
   AlertCircle,
   Calendar,
+  Activity,
   AlertTriangle,
   X,
   PlusCircle,
@@ -177,6 +178,8 @@ export const Automacoes: React.FC = () => {
     switch (tipo) {
       case 'email_planeamento':
         return <Calendar className="w-5 h-5 text-sky-400" />;
+      case 'email_atividade_semanal':
+        return <Activity className="w-5 h-5 text-emerald-400" />;
       case 'alerta_stock':
         return <AlertCircle className="w-5 h-5 text-amber-400" />;
       case 'alerta_revisao':
