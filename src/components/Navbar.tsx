@@ -89,7 +89,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const titles: Record<NavigationTab, { title: string; subtitle: string }> = {
     dashboard: { title: 'Dashboard Operacional', subtitle: 'Métricas, KPIs e visão geral em tempo real' },
     mapa: { title: 'Mapa de Serviços', subtitle: 'Localização geográfica de clientes com pedidos e intervenções em aberto' },
-    oficina: { title: 'Folhas de Serviço & Obra', subtitle: 'Registo e acompanhamento técnico de intervenções' },
+    oficina: { title: 'Folhas de Serviço', subtitle: 'Registo e acompanhamento técnico de intervenções' },
+    'folhas-obra': { title: 'Folhas de Obra (Ambiente de Testes)', subtitle: 'Módulo de testes e desenvolvimento experimental de folhas de obra' },
     kanban: { title: 'Quadro Kanban da Oficina', subtitle: 'Fluxo visual de trabalho e distribuição de tarefas' },
     tarefas: { title: 'Gestão de Tarefas', subtitle: 'Atribuição, prioridades, datas limite e registo de conclusão' },
     propostas: { title: 'Orçamentos & Propostas', subtitle: 'Criação dinâmica de propostas comerciais e orçamentação' },

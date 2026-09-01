@@ -116,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Wrench className="w-3.5 h-3.5 text-hp-400" />,
       items: [
         { id: 'oficina', label: 'Folhas de Serviços', icon: <Wrench className="w-4 h-4" /> },
+        { id: 'folhas-obra', label: 'Folhas de Obra', icon: <Wrench className="w-4 h-4 text-emerald-400" />, badge: 'Teste' },
         { id: 'tarefas', label: 'Tarefas', icon: <CheckSquare className="w-4 h-4" /> },
         { id: 'contratos', label: 'Contratos de Manutenção', icon: <FileCheck2 className="w-4 h-4" /> },
         // Orçamentos ocultos para Técnico
