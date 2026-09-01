@@ -2,7 +2,6 @@ export type NavigationTab =
   | 'dashboard'
   | 'mapa'
   | 'oficina'
-  | 'folhas-obra'
   | 'kanban'
   | 'tarefas'
   | 'propostas'

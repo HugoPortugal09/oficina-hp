@@ -33,7 +33,8 @@ import {
   Receipt,
   MapPin,
   Navigation,
-  UserCheck
+  UserCheck,
+  FileText
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -75,25 +76,65 @@ interface OficinaProps {
   currentUser?: UserProfile;
 }
 
-const ALL_STATUSES: StatusFolhaServico[] = [
+const AT_STATUSES: StatusFolhaServico[] = [
   'AT - Pedido de Assistência',
+  'AT - Enviar proposta',
   'AT - Agendar – Sem requisição',
   'AT - Agendar – Com requisição',
   'AT - Agendado',
   'AT - Aguardar requisição',
-  'AT - Com requisição - Aguardar peças',
+  'AT - Com requisição - Aguardar peças'
+];
+
+const OF_STATUSES: StatusFolhaServico[] = [
   'OF - Fazer orçamento',
   'OF - Orçamento Enviado – Aguardar resposta',
   'OF - Com requisição - Aguardar agenda',
   'OF - Com requisição - Aguardar viatura',
   'OF - Com requisição - Aguardar peças',
-  'CT - Contrato',
+  'OF - Sem requisição - Aguardar peças'
+];
+
+const CT_STATUSES: StatusFolhaServico[] = [
+  'CT - Contrato'
+];
+
+const FEITO_STATUSES: StatusFolhaServico[] = [
   'FEITO - Faturar',
   'FEITO - Aguardar Requisição',
   'FEITO - Submeter Garantia',
   'FEITO - Aguardar Garantia',
   'FEITO - Faturado'
 ];
+
+const ALL_STATUSES: StatusFolhaServico[] = [
+  ...AT_STATUSES,
+  ...OF_STATUSES,
+  ...CT_STATUSES,
+  ...FEITO_STATUSES
+];
+
+function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
+  let baseStatuses: StatusFolhaServico[] = [];
+  if (tipo === 'Assistência Técnica') {
+    baseStatuses = [...AT_STATUSES];
+  } else if (tipo === 'Oficina') {
+    baseStatuses = [...OF_STATUSES];
+  } else if (tipo === 'Contrato') {
+    baseStatuses = [...CT_STATUSES];
+  } else {
+    // Garantia, Entrega e Formação
+    baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
+  }
+
+  if (isAdmin) {
+    baseStatuses = [...baseStatuses, ...FEITO_STATUSES];
+  } else if (currentStatus && currentStatus.startsWith('FEITO') && !baseStatuses.includes(currentStatus)) {
+    baseStatuses = [...baseStatuses, currentStatus];
+  }
+
+  return Array.from(new Set(baseStatuses));
+}
 
 const GRAUMP_LOCATION = 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)';
 
@@ -347,9 +388,11 @@ export const Oficina: React.FC<OficinaProps> = ({
       numero: newNum,
       tipo: 'Oficina',
       data: now,
+      dataAbertura: now,
       dataEntradaOficina: now,
       dataRequisicao: '',
       dataConclusao: '',
+      guiaAT: '',
       status: 'OF - Com requisição - Aguardar agenda',
       empresaId: '',
       equipamentoId: '',
@@ -381,6 +424,49 @@ export const Oficina: React.FC<OficinaProps> = ({
     });
     setPlateQuery('');
     setIsModalOpen(true);
+  };
+
+  const handleTipoChange = (newTipo: TipoServico) => {
+    const isOficina = newTipo === 'Oficina';
+    const isAT = newTipo === 'Assistência Técnica';
+    const isContrato = newTipo === 'Contrato';
+
+    let defaultStatus: StatusFolhaServico = 'OF - Com requisição - Aguardar agenda';
+    if (isAT) defaultStatus = 'AT - Pedido de Assistência';
+    else if (isContrato) defaultStatus = 'CT - Contrato';
+
+    setEditingFolha(prev => ({
+      ...prev,
+      tipo: newTipo,
+      localizacao: isOficina ? GRAUMP_LOCATION : (prev.localizacao === GRAUMP_LOCATION ? '' : prev.localizacao),
+      localizacaoTipo: isOficina ? 'oficina' : prev.localizacaoTipo,
+      distanciaKms: isOficina ? 0 : prev.distanciaKms,
+      status: prev.status?.startsWith('FEITO') ? prev.status : defaultStatus,
+      matricula: newTipo === 'Contrato' && prev.equipamentoId && !contractEquipIds.includes(prev.equipamentoId)
+        ? '' : prev.matricula
+    }));
+  };
+
+  const handleEquipamentoFinalizadoChange = (finalizado: 'Sim' | 'Não') => {
+    if (finalizado === 'Sim') {
+      const now = new Date().toISOString().split('T')[0];
+      setEditingFolha(prev => ({
+        ...prev,
+        equipamentoFinalizado: 'Sim',
+        status: 'FEITO - Faturar',
+        dataConclusao: prev.dataConclusao || now
+      }));
+    } else {
+      setEditingFolha(prev => ({
+        ...prev,
+        equipamentoFinalizado: 'Não',
+        status: prev.tipo === 'Assistência Técnica'
+          ? 'AT - Agendado'
+          : prev.tipo === 'Contrato'
+          ? 'CT - Contrato'
+          : 'OF - Com requisição - Aguardar agenda'
+      }));
+    }
   };
 
   const handleSelectPlateItem = (eq: Equipamento) => {
@@ -785,6 +871,14 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   // Parts lines (Price-free for Workshop Technical Sheet)
   const handleAddPart = (isAdicional: boolean = false) => {
+    const isExcluded = editingFolha.tipo === 'Oficina' || editingFolha.tipo === 'Entrega e Formação';
+    if (!isExcluded && !editingFolha.guiaAT) {
+      const guiaPrompt = window.prompt('Deseja introduzir o Nº da Guia AT para este serviço com aplicação de peças? (Opcional, deixe em branco para avançar):');
+      if (guiaPrompt && guiaPrompt.trim()) {
+        setEditingFolha(prev => ({ ...prev, guiaAT: guiaPrompt.trim() }));
+      }
+    }
+
     const newPart: PecaItem = {
       id: db.generateId('pec'),
       designacao: '',
@@ -1242,20 +1336,12 @@ export const Oficina: React.FC<OficinaProps> = ({
             </div>
 
             {/* Top Row: Meta Info & Status */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate-950/60 rounded-2xl border border-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-slate-950/60 rounded-2xl border border-slate-800">
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Tipo de Serviço</label>
                 <select
                   value={editingFolha.tipo || 'Oficina'}
-                  onChange={e => {
-                    const newTipo = e.target.value as TipoServico;
-                    setEditingFolha(prev => ({
-                      ...prev,
-                      tipo: newTipo,
-                      matricula: newTipo === 'Contrato' && prev.equipamentoId && !contractEquipIds.includes(prev.equipamentoId)
-                        ? '' : prev.matricula
-                    }));
-                  }}
+                  onChange={e => handleTipoChange(e.target.value as TipoServico)}
                   className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 >
                   <option value="Oficina">Oficina</option>
@@ -1267,13 +1353,20 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">Estado / Etapa Kanban</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-400 block">Estado / Etapa Kanban</label>
+                  {currentUser?.role !== 'administrador' && (
+                    <span className="text-[9px] text-slate-500 font-mono" title="Estados FEITO reservados a Administrador">
+                      Restrito
+                    </span>
+                  )}
+                </div>
                 <select
-                  value={editingFolha.status || 'OF - Com requisição - Aguardar agenda'}
+                  value={editingFolha.status || (editingFolha.tipo === 'Assistência Técnica' ? 'AT - Pedido de Assistência' : 'OF - Com requisição - Aguardar agenda')}
                   onChange={e => handleStatusChange(e.target.value as StatusFolhaServico)}
                   className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 >
-                  {ALL_STATUSES.map(s => (
+                  {getAvailableStatusesForFolha(editingFolha.tipo, currentUser?.role === 'administrador', editingFolha.status).map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
@@ -1288,19 +1381,38 @@ export const Oficina: React.FC<OficinaProps> = ({
                   className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 />
               </div>
-            </div>
 
-            {/* Dates: Entrada Oficina, Requisição, Conclusão */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/80 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1 font-medium">Data de Entrada Oficina</label>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Data de Abertura <span className="text-[10px] text-emerald-400 font-mono">(Automática)</span>
+                </label>
                 <input
-                  type="date"
-                  value={editingFolha.dataEntradaOficina || ''}
-                  onChange={e => setEditingFolha(prev => ({ ...prev, dataEntradaOficina: e.target.value }))}
-                  className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                  type="text"
+                  readOnly
+                  disabled
+                  value={editingFolha.dataAbertura || editingFolha.data || new Date().toISOString().split('T')[0]}
+                  className="w-full py-1.5 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono cursor-not-allowed"
                 />
               </div>
+            </div>
+
+            {/* Dates: Entrada Oficina, Requisição, Conclusão (Disponíveis apenas para Oficina, Contrato ou Garantia) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/80 text-xs">
+              {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
+                <div>
+                  <label className="text-slate-400 block mb-1 font-medium">Data de Entrada Oficina</label>
+                  <input
+                    type="date"
+                    value={editingFolha.dataEntradaOficina || ''}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, dataEntradaOficina: e.target.value }))}
+                    className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                  />
+                </div>
+              ) : (
+                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-800/50 flex items-center text-slate-500 italic text-[11px]">
+                  Entrada oficina N/A ({editingFolha.tipo})
+                </div>
+              )}
 
               <div>
                 <label className="text-slate-400 block mb-1 font-medium">Data de Requisição</label>
@@ -1312,15 +1424,21 @@ export const Oficina: React.FC<OficinaProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Data de Conclusão</label>
-                <input
-                  type="date"
-                  value={editingFolha.dataConclusao || ''}
-                  onChange={e => setEditingFolha(prev => ({ ...prev, dataConclusao: e.target.value }))}
-                  className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                />
-              </div>
+              {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
+                <div>
+                  <label className="text-slate-400 block mb-1 font-medium">Data de Conclusão</label>
+                  <input
+                    type="date"
+                    value={editingFolha.dataConclusao || ''}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, dataConclusao: e.target.value }))}
+                    className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                  />
+                </div>
+              ) : (
+                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-800/50 flex items-center text-slate-500 italic text-[11px]">
+                  Conclusão oficina N/A ({editingFolha.tipo})
+                </div>
+              )}
             </div>
 
             {/* Vehicle & Customer Section */}
@@ -1956,7 +2074,27 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
             </div>
 
-            {/* 5. NOTAS PARA O CLIENTE (Depois das Peças Adicionais) */}
+            {/* 5. Nº GUIA AT (Depois do campo Peças & Materiais Adicionais) */}
+            <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-hp-400" />
+                  Nº Guia AT
+                </label>
+                <span className="text-[10px] text-slate-400">
+                  Guia de Transporte / Assistência Técnica
+                </span>
+              </div>
+              <input
+                type="text"
+                placeholder="Ex: GAT-2026-00123 ou Nº de documento de saída..."
+                value={editingFolha.guiaAT || ''}
+                onChange={e => setEditingFolha(prev => ({ ...prev, guiaAT: e.target.value }))}
+                className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:border-hp-500"
+              />
+            </div>
+
+            {/* 6. NOTAS PARA O CLIENTE (Depois das Peças Adicionais e Guia AT) */}
             <div className="p-4 bg-slate-950/40 rounded-2xl border border-slate-800 space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
@@ -2136,7 +2274,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                 <div className="flex items-center gap-1 p-0.5 bg-slate-950 rounded-lg border border-slate-800">
                   <button
                     type="button"
-                    onClick={() => setEditingFolha(prev => ({ ...prev, equipamentoFinalizado: 'Sim' }))}
+                    onClick={() => handleEquipamentoFinalizadoChange('Sim')}
                     className={`py-1 px-3 rounded text-xs font-bold transition-all ${
                       editingFolha.equipamentoFinalizado === 'Sim'
                         ? 'bg-emerald-600 text-white shadow'
@@ -2147,7 +2285,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setEditingFolha(prev => ({ ...prev, equipamentoFinalizado: 'Não' }))}
+                    onClick={() => handleEquipamentoFinalizadoChange('Não')}
                     className={`py-1 px-3 rounded text-xs font-bold transition-all ${
                       editingFolha.equipamentoFinalizado !== 'Sim'
                         ? 'bg-slate-700 text-white shadow'

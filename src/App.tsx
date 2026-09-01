@@ -5,7 +5,6 @@ import { CameraScannerModal } from './components/CameraScannerModal';
 import { Dashboard } from './pages/Dashboard';
 import { MapaPortugal } from './pages/MapaPortugal';
 import { Oficina } from './pages/Oficina';
-import { FolhasObra } from './pages/FolhasObra';
 import { Kanban } from './pages/Kanban';
 import { Propostas } from './pages/Propostas';
 import { Empresas } from './pages/Empresas';
@@ -469,21 +468,6 @@ export default function App() {
 
           {activeTab === 'oficina' && (
             <Oficina
-              folhas={folhas}
-              empresas={empresas}
-              equipamentos={equipamentos}
-              clientes={clientes}
-              catalogoPecas={pecas}
-              contratos={contratos}
-              onOpenScanner={() => setIsScannerOpen(true)}
-              selectedFolhaToOpen={selectedFolha}
-              onClearSelectedFolha={() => setSelectedFolha(null)}
-              currentUser={currentUser}
-            />
-          )}
-
-          {activeTab === 'folhas-obra' && (
-            <FolhasObra
               folhas={folhas}
               empresas={empresas}
               equipamentos={equipamentos}
