@@ -230,6 +230,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   // AI Multi-Photo Transformation State
   const [aiPhotos, setAiPhotos] = useState<string[]>([]);
+  const [aiTipoServico, setAiTipoServico] = useState<TipoServico>('Oficina');
   const [aiMatriculaPhoto, setAiMatriculaPhoto] = useState<string | null>(null);
   const [aiOdometroPhoto, setAiOdometroPhoto] = useState<string | null>(null);
   const [aiPecasPhotos, setAiPecasPhotos] = useState<string[]>([]);
@@ -372,6 +373,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       const res = await transformPhotosToFolhaWithOllama({
         fotos: allInputPhotos,
         textoDescritivo: aiVoiceNotes,
+        tipoServico: aiTipoServico,
         equipamentos: equipamentos,
         empresas: empresas
       });
@@ -2000,6 +2002,34 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
             {/* Main All-in-One Upload Area */}
             <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
+              {/* Tipo de Serviço Selector */}
+              <div className="space-y-1.5 pb-2.5 border-b border-slate-800">
+                <label className="text-[11px] font-bold text-slate-400 block uppercase">
+                  Tipo de Serviço
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {(['Oficina', 'Assistência Técnica', 'Garantia', 'Entrega e Formação', 'Contrato'] as TipoServico[]).map(t => {
+                    const isSelected = aiTipoServico === t;
+                    const icon = t === 'Oficina' ? '🏢' : t === 'Assistência Técnica' ? '🚜' : t === 'Garantia' ? '🛡️' : t === 'Entrega e Formação' ? '🤝' : '📑';
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setAiTipoServico(t)}
+                        className={`py-2 px-2 rounded-xl text-xs font-bold transition-all text-center flex items-center justify-center gap-1 ${
+                          isSelected
+                            ? 'bg-hp-600 text-white shadow-md shadow-hp-600/30 ring-1 ring-hp-400'
+                            : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <span>{icon}</span>
+                        <span className="truncate">{t}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Optional Quick Plate Selector */}
               {equipamentos.length > 0 && (
                 <div className="space-y-1.5 pb-2.5 border-b border-slate-800">

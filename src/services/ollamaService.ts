@@ -685,11 +685,33 @@ Responde ESTRITAMENTE em formato JSON:
     const rawRef = p.referenciaPeca || p.referencia || p.referência || p.ref || '';
     const rawDes = p.designacaoPeca || p.designacao || p.designação || p.descricao || '';
 
+    let refPeca = localOcr?.detectedPartRef || rawRef;
+    let desPeca = localOcr?.detectedPartName || rawDes;
+    const partMatch = findBestMatchingPart(refPeca, desPeca, knownCatalog);
+    if (partMatch) {
+      refPeca = partMatch.referencia;
+      desPeca = partMatch.designacao;
+    }
+
     // Combine local OCR detection with Ollama output
     let detectedPlate = localOcr?.detectedPlate || rawPlate;
     let detectedMarcaModelo = localOcr?.matchedEquipment
       ? `${localOcr.matchedEquipment.marca} ${localOcr.matchedEquipment.modelo}`
       : p.marcaModelo;
+
+    // If detectedPlate is actually a part reference (e.g. starts with HA-, FIL-, or contains part name), clear it
+    if (detectedPlate) {
+      const cleanUpper = detectedPlate.toUpperCase();
+      if (
+        cleanUpper.startsWith('HA-') ||
+        cleanUpper.startsWith('FIL-') ||
+        cleanUpper.startsWith('REF-') ||
+        (refPeca && refPeca.includes(cleanUpper.replace(/-/g, '')))
+      ) {
+        if (!refPeca) refPeca = detectedPlate;
+        detectedPlate = '';
+      }
+    }
 
     if (detectedPlate) {
       const eqMatch = findBestMatchingEquipment(detectedPlate, knownEquipments);
@@ -701,22 +723,23 @@ Responde ESTRITAMENTE em formato JSON:
       }
     }
 
-    let refPeca = localOcr?.detectedPartRef || rawRef;
-    let desPeca = localOcr?.detectedPartName || rawDes;
-    const partMatch = findBestMatchingPart(refPeca, desPeca, knownCatalog);
-    if (partMatch) {
-      refPeca = partMatch.referencia;
-      desPeca = partMatch.designacao;
-    }
-
+    // Priority of classification
     let tipo: 'matricula' | 'odometro' | 'peca' | 'dano' | 'geral' = p.tipoDetectado || 'geral';
-    if (detectedPlate) {
-      tipo = 'matricula';
-    } else if (refPeca || desPeca) {
+    
+    if (refPeca || desPeca || p.tipoDetectado === 'peca') {
       tipo = 'peca';
-    } else if (!p.tipoDetectado) {
-      if (p.odometroKm > 0 || p.odometroHoras > 0 || localOcr?.odometerKm) tipo = 'odometro';
-      else if (p.anomaliasVisuais && p.anomaliasVisuais.length > 0) tipo = 'dano';
+      // If it's a part photo, don't confuse it with a vehicle plate
+      if (!findBestMatchingEquipment(detectedPlate, knownEquipments)) {
+        detectedPlate = '';
+      }
+    } else if (detectedPlate && detectedPlate.length >= 6) {
+      tipo = 'matricula';
+    } else if (p.odometroKm > 0 || p.odometroHoras > 0 || localOcr?.odometerKm || p.tipoDetectado === 'odometro') {
+      tipo = 'odometro';
+    } else if ((p.anomaliasVisuais && p.anomaliasVisuais.length > 0) || p.tipoDetectado === 'dano') {
+      tipo = 'dano';
+    } else {
+      tipo = p.tipoDetectado || 'geral';
     }
 
     const labelMap: Record<string, string> = {
@@ -987,13 +1010,23 @@ export async function transformPhotosToFolhaWithOllama(
     ...(userNotes ? [userNotes] : [])
   ].join('; ');
 
+  const selectedTipo = input.tipoServico || 'Oficina';
+  const isOficina = selectedTipo === 'Oficina';
+  const defaultStatus = isOficina
+    ? 'OF - Com requisição - Aguardar agenda'
+    : selectedTipo === 'Assistência Técnica'
+    ? 'AT - Pedido de Assistência'
+    : selectedTipo === 'Contrato'
+    ? 'CT - Contrato'
+    : 'OF - Com requisição - Aguardar agenda';
+
   const folhaGerada: Partial<FolhaServico> = {
     id: db.generateId('fs'),
     numero: newNum,
-    tipo: input.tipoServico || 'Oficina',
+    tipo: selectedTipo,
     data: now,
-    dataEntradaOficina: now,
-    status: 'OF - Com requisição - Aguardar agenda',
+    dataEntradaOficina: isOficina ? now : undefined,
+    status: defaultStatus as any,
     empresaId: matchedEmpresa?.id || matchedEquip?.empresaId || '',
     equipamentoId: matchedEquip?.id || '',
     matricula: finalPlate,
@@ -1001,8 +1034,8 @@ export async function transformPhotosToFolhaWithOllama(
     modelo: finalModelo,
     kmsAtuais: finalKms,
     horasAtuais: finalHours,
-    localizacao: 'Oficina Principal HP',
-    localizacaoTipo: 'oficina',
+    localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : (matchedEmpresa?.morada || 'Cliente'),
+    localizacaoTipo: isOficina ? 'oficina' : 'cliente',
     distanciaKms: 0,
     anomalias: combinedAnomalies || 'Diagnóstico e manutenção geral.',
     servicos: detectedServices,

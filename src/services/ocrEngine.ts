@@ -1,4 +1,4 @@
-﻿import { createWorker } from 'tesseract.js';
+import { createWorker } from 'tesseract.js';
 import { db, STORAGE_KEYS } from './dbService';
 import type { Equipamento, PecaCatalogo } from '../types';
 import { findBestMatchingEquipment, findBestMatchingPart, formatPlate, normalizePlate } from './ollamaService';
@@ -122,27 +122,14 @@ async function doOCRScan(base64Image: string): Promise<LocalOCRResult> {
     let foundPartName: string | undefined = undefined;
     let foundOdo: number | undefined = undefined;
 
-    // A. Search for Portuguese Plate Pattern: e.g. 72-TZ-38, 00-AA-00, AA-00-AA, etc.
-    const plateRegex = /\b([0-9A-Z]{2}[-\s.][0-9A-Z]{2}[-\s.][0-9A-Z]{2})\b/gi;
-    const plateMatches = fullText.match(plateRegex);
-    if (plateMatches && plateMatches.length > 0) {
-      for (const m of plateMatches) {
-        const clean = m.replace(/[\s.]/g, '-').toUpperCase();
-        if (clean.length === 8) {
-          foundPlate = clean;
-          break;
-        }
-      }
-    }
-
-    // B. Search for Part References: e.g. HA-149-617, HA-106-074, FIL-1029, BOSCH-123
+    // A. Search for Part References First: e.g. HA-149-617, HA-106-074, FIL-1029, BOSCH-123
     const partRefRegex = /\b([A-Z]{1,5}-\d{2,4}-\d{2,4}|[A-Z]{2,5}-\d{3,8}|[A-Z]{2,4}\d{4,8})\b/gi;
     const refMatches = fullText.match(partRefRegex);
     if (refMatches && refMatches.length > 0) {
       foundPartRef = refMatches[0].toUpperCase();
     }
 
-    // C. Search for Part Names (e.g. CAVILHA SISTEMA 3 ESCOVAS, INDICADOR NIVEL AGUA, FILTRO)
+    // B. Search for Part Names (e.g. CAVILHA SISTEMA 3 ESCOVAS, INDICADOR NIVEL AGUA, FILTRO)
     for (const line of lines) {
       const upper = line.toUpperCase();
       if (
@@ -154,24 +141,48 @@ async function doOCRScan(base64Image: string): Promise<LocalOCRResult> {
           upper.includes('CORREIA') ||
           upper.includes('BOMBA') ||
           upper.includes('OLEO') ||
-          upper.includes('ÓLEO')) &&
+          upper.includes('ÓLEO') ||
+          upper.includes('VALVULA') ||
+          upper.includes('VÁLVULA')) &&
         !upper.includes('GRAUMP') &&
-        upper.length >= 5
+        upper.length >= 4
       ) {
         foundPartName = line.replace(/GRAUMP[^a-zA-Z0-9]*/gi, '').trim();
         break;
       }
     }
 
-    // D. Search for Odometer reading (e.g. 145200 km)
-    const odoMatch = fullText.match(/(\d{2,6})\s*(?:km|kms|h|horas)/i);
-    if (odoMatch) {
-      foundOdo = parseInt(odoMatch[1], 10);
+    // C. Search for Portuguese Plate Pattern: e.g. 72-TZ-38, 00-AA-00, AA-00-AA, etc.
+    const isStrictPtPlate = (s?: string): boolean => {
+      if (!s) return false;
+      const clean = s.replace(/[^A-Z0-9]/g, '').toUpperCase();
+      if (clean.length !== 6) return false;
+      return /^(?:[A-Z]{2}\d{4}|\d{4}[A-Z]{2}|\d{2}[A-Z]{2}\d{2}|[A-Z]{2}\d{2}[A-Z]{2}|\d{2}[A-Z]{2}[A-Z]{2})$/.test(clean);
+    };
+
+    const plateRegex = /\b([0-9A-Z]{2}[-\s.][0-9A-Z]{2}[-\s.][0-9A-Z]{2})\b/gi;
+    const plateMatches = fullText.match(plateRegex);
+    if (plateMatches && plateMatches.length > 0) {
+      for (const m of plateMatches) {
+        const clean = m.replace(/[\s.]/g, '-').toUpperCase();
+        if (clean.length === 8 && isStrictPtPlate(clean)) {
+          // Make sure this plate match isn't just part of a part code like HA-106-074
+          if (!foundPartRef || !foundPartRef.includes(clean.replace(/-/g, ''))) {
+            foundPlate = clean;
+            break;
+          }
+        }
+      }
     }
 
-    // Match with database
+    // If part reference is detected on a sticker/label (and no equipment matches the plate directly), prioritize part
     const matchedEquip = foundPlate ? findBestMatchingEquipment(foundPlate, knownEquipments) : undefined;
     const matchedPart = (foundPartRef || foundPartName) ? findBestMatchingPart(foundPartRef, foundPartName, knownCatalog) : undefined;
+
+    // If it's a part label with HA-xxx-xxx or part name, clear false plate
+    if ((foundPartRef || foundPartName) && !matchedEquip) {
+      foundPlate = undefined;
+    }
 
     return {
       rawText: fullText,
