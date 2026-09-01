@@ -22,6 +22,7 @@ export type NavigationTab =
 export type StatusFolhaServico =
   // ASSISTÊNCIA TÉCNICA (AT)
   | 'AT - Pedido de Assistência'
+  | 'AT - Enviar proposta'
   | 'AT - Agendar – Sem requisição'
   | 'AT - Agendar – Com requisição'
   | 'AT - Agendado'
@@ -33,6 +34,7 @@ export type StatusFolhaServico =
   | 'OF - Com requisição - Aguardar agenda'
   | 'OF - Com requisição - Aguardar viatura'
   | 'OF - Com requisição - Aguardar peças'
+  | 'OF - Sem requisição - Aguardar peças'
   // CONTRATO (CT)
   | 'CT - Contrato'
   // FINALIZADO (FEITO)
@@ -150,6 +152,7 @@ export interface FolhaServico {
   numero: string; // Ex: FS26001
   tipo: TipoServico;
   data: string;
+  dataAbertura?: string;
   dataEntradaOficina?: string;
   dataRequisicao?: string;
   dataConclusao?: string;
