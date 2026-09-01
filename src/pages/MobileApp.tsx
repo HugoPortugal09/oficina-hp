@@ -2528,6 +2528,65 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 Registo de Folha de Serviço
               </h2>
 
+              {/* Tipo de Serviço & Estado Inicial */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-3 border-b border-slate-800">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black uppercase text-slate-300 block">
+                    Tipo de Serviço *
+                  </label>
+                  <select
+                    value={manualFolha.tipo || 'Oficina'}
+                    onChange={e => {
+                      const newTipo = e.target.value as TipoServico;
+                      const isOficina = newTipo === 'Oficina';
+                      const defaultStatus = isOficina
+                        ? 'OF - Com requisição - Aguardar agenda'
+                        : newTipo === 'Assistência Técnica'
+                        ? 'AT - Pedido de Assistência'
+                        : newTipo === 'Contrato'
+                        ? 'CT - Contrato'
+                        : 'OF - Com requisição - Aguardar agenda';
+
+                      setManualFolha(prev => ({
+                        ...prev,
+                        tipo: newTipo,
+                        status: defaultStatus as StatusFolhaServico,
+                        localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : prev.localizacao,
+                        localizacaoTipo: isOficina ? 'oficina' : 'sede',
+                        distanciaKms: isOficina ? 0 : prev.distanciaKms
+                      }));
+                    }}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    <option value="Oficina">🏢 Oficina</option>
+                    <option value="Assistência Técnica">🚜 Assistência Técnica</option>
+                    <option value="Garantia">🛡️ Garantia</option>
+                    <option value="Entrega e Formação">🤝 Entrega e Formação</option>
+                    <option value="Contrato">📑 Contrato</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase text-slate-300 block">
+                      Estado da Folha *
+                    </label>
+                    {currentUser?.role !== 'administrador' && (
+                      <span className="text-[9px] text-slate-500 font-mono">Restrito</span>
+                    )}
+                  </div>
+                  <select
+                    value={manualFolha.status || 'OF - Com requisição - Aguardar agenda'}
+                    onChange={e => setManualFolha(prev => ({ ...prev, status: e.target.value as StatusFolhaServico }))}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    {getAvailableStatusesForFolha(manualFolha.tipo, currentUser?.role === 'administrador', manualFolha.status).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {/* 1. Matrícula (Com Seletor / Pesquisa Tátil) */}
               <div className="space-y-1.5 relative">
                 <label className="text-xs font-black uppercase text-slate-300 block">
