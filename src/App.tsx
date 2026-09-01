@@ -493,6 +493,7 @@ export default function App() {
           {activeTab === 'tarefas' && (
             <Tarefas
               tarefas={tarefas}
+              currentUser={currentUser}
             />
           )}
 

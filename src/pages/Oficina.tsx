@@ -43,6 +43,7 @@ import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
+import { sendTaskNotificationEmail } from '../services/emailService';
 import type {
   FolhaServico,
   Empresa,
@@ -656,20 +657,32 @@ export const Oficina: React.FC<OficinaProps> = ({
     if (!target || !target.tarefa) return;
 
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
+    const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
+    const userNome = currentUser?.nome || 'Hugo Portugal';
+
     const novaTarefa: Tarefa = {
       id: db.generateId('tar'),
       numero: newNum,
       descricao: target.tarefa.descricao,
       prioridade: target.tarefa.prioridade,
-      responsavel: target.tarefa.responsavel || 'Hugo Portugal',
+      responsavel: target.tarefa.responsavel || userNome,
       dataLimite: target.tarefa.dataLimite,
       notasAdicionais: target.tarefa.notasAdicionais,
       status: 'Pendente',
-      criadoPorIniciais: 'IA',
+      criadoPorIniciais: userIniciais,
+      criadoPorNome: userNome,
       dataCriacao: new Date().toISOString().split('T')[0]
     };
 
     db.insert(STORAGE_KEYS.TAREFAS, novaTarefa);
+
+    // Envio automático de notificação por email para os envolvidos
+    sendTaskNotificationEmail({
+      action: 'CRIADA',
+      tarefa: novaTarefa,
+      currentUser
+    });
+
     setTaskCreatedFeedback(`Tarefa ${newNum} ("${novaTarefa.descricao}") criada com sucesso no menu Tarefas!`);
     setTimeout(() => setTaskCreatedFeedback(null), 6000);
   };

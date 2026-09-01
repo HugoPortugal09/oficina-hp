@@ -26,13 +26,16 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import type { Tarefa, PrioridadeTarefa, StatusTarefa } from '../types';
+import { sendTaskNotificationEmail } from '../services/emailService';
+import type { Tarefa, PrioridadeTarefa, StatusTarefa, UserProfile } from '../types';
+import { USERS, getInitials } from '../types';
 
 interface TarefasProps {
   tarefas: Tarefa[];
+  currentUser?: UserProfile;
 }
 
-export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
+export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
     try {
@@ -54,6 +57,16 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTarefa, setEditingTarefa] = useState<Partial<Tarefa>>({});
 
+  // Registered Users list for assignment & responsible pickers
+  const utilizadores: UserProfile[] = (() => {
+    try {
+      const list = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES);
+      return list && list.length > 0 ? list : USERS;
+    } catch {
+      return USERS;
+    }
+  })();
+
   // Quick Complete Modal State
   const [completeModal, setCompleteModal] = useState<{
     isOpen: boolean;
@@ -63,26 +76,29 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
   }>({
     isOpen: false,
     tarefa: null,
-    iniciais: 'HP',
-    nome: 'Hugo Portugal'
+    iniciais: getInitials(currentUser?.nome || currentUser?.avatar || 'HP'),
+    nome: currentUser?.nome || 'Hugo Portugal'
   });
 
   const handleCreateNew = () => {
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
     const today = new Date().toISOString().split('T')[0];
     const defaultLimit = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
+    const userNome = currentUser?.nome || 'Hugo Portugal';
+    const defaultResp = userNome || utilizadores[0]?.nome || 'Hugo Portugal';
 
     setEditingTarefa({
       id: db.generateId('tar'),
       numero: newNum,
       descricao: '',
       prioridade: 'Normal',
-      responsavel: 'Hugo Portugal',
+      responsavel: defaultResp,
       dataLimite: defaultLimit,
       notasAdicionais: '',
       status: 'Pendente',
-      criadoPorIniciais: 'HP',
-      criadoPorNome: 'Hugo Portugal',
+      criadoPorIniciais: userIniciais,
+      criadoPorNome: userNome,
       dataCriacao: today
     });
     setIsModalOpen(true);
@@ -106,11 +122,29 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
 
     const currentList = db.get<Tarefa>(STORAGE_KEYS.TAREFAS);
     const existingIndex = currentList.findIndex(t => t.id === editingTarefa.id);
+    const isNew = existingIndex < 0;
+    const previousTarefa = !isNew ? currentList[existingIndex] : null;
 
-    if (existingIndex >= 0) {
+    if (!isNew) {
       db.update(STORAGE_KEYS.TAREFAS, editingTarefa.id!, editingTarefa);
+      // Se passou a Concluída
+      if (editingTarefa.status === 'Concluída' && previousTarefa?.status !== 'Concluída') {
+        sendTaskNotificationEmail({
+          action: 'CONCLUIDA',
+          tarefa: editingTarefa as Tarefa,
+          currentUser,
+          todasTarefas: tarefas.map(t => t.id === editingTarefa.id ? (editingTarefa as Tarefa) : t)
+        });
+      }
     } else {
-      db.insert(STORAGE_KEYS.TAREFAS, editingTarefa as Tarefa);
+      const novaTarefa = editingTarefa as Tarefa;
+      db.insert(STORAGE_KEYS.TAREFAS, novaTarefa);
+      sendTaskNotificationEmail({
+        action: 'CRIADA',
+        tarefa: novaTarefa,
+        currentUser,
+        todasTarefas: [...tarefas, novaTarefa]
+      });
     }
 
     setIsModalOpen(false);
@@ -127,8 +161,8 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
     setCompleteModal({
       isOpen: true,
       tarefa: t,
-      iniciais: 'HP',
-      nome: 'Hugo Portugal'
+      iniciais: getInitials(currentUser?.nome || currentUser?.avatar || 'HP'),
+      nome: currentUser?.nome || 'Hugo Portugal'
     });
   };
 
@@ -142,14 +176,30 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
     const now = new Date();
     const formattedDate = `${now.toISOString().split('T')[0]} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-    db.update<Tarefa>(STORAGE_KEYS.TAREFAS, completeModal.tarefa.id, {
+    const updatedTask: Tarefa = {
+      ...completeModal.tarefa,
       status: 'Concluída',
       dataConclusao: formattedDate,
       concluidoPorIniciais: completeModal.iniciais.toUpperCase(),
       concluidoPorNome: completeModal.nome
+    };
+
+    db.update<Tarefa>(STORAGE_KEYS.TAREFAS, completeModal.tarefa.id, updatedTask);
+
+    // Envio automático de notificação por email para os envolvidos e resumo de abertas
+    sendTaskNotificationEmail({
+      action: 'CONCLUIDA',
+      tarefa: updatedTask,
+      currentUser,
+      todasTarefas: tarefas.map(t => t.id === updatedTask.id ? updatedTask : t)
     });
 
-    setCompleteModal({ isOpen: false, tarefa: null, iniciais: 'HP', nome: 'Hugo Portugal' });
+    setCompleteModal({
+      isOpen: false,
+      tarefa: null,
+      iniciais: getInitials(currentUser?.nome || currentUser?.avatar || 'HP'),
+      nome: currentUser?.nome || 'Hugo Portugal'
+    });
   };
 
   const handleReopenTask = (t: Tarefa) => {
@@ -578,14 +628,19 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">Responsável</label>
-                <input
-                  type="text"
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Responsável *</label>
+                <select
                   value={editingTarefa.responsavel || ''}
                   onChange={e => setEditingTarefa(prev => ({ ...prev, responsavel: e.target.value }))}
-                  placeholder="Nome do responsável"
-                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-                />
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500 font-semibold"
+                >
+                  <option value="">-- Selecione o Responsável --</option>
+                  {utilizadores.map(u => (
+                    <option key={u.id} value={u.nome}>
+                      {u.nome} ({u.role.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -719,14 +774,40 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas }) => {
 
             <div>
               <label className="text-xs font-semibold text-slate-400 block mb-1">
-                As suas Iniciais * <span className="text-[10px] text-hp-400">(Ex: HP, RF, CM)</span>
+                Selecionar Colaborador ou Iniciais *
               </label>
+              <div className="flex gap-1.5 flex-wrap mb-2">
+                {utilizadores.map(u => {
+                  const init = u.avatar || getInitials(u.nome);
+                  const isSelected = completeModal.iniciais === init.toUpperCase();
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setCompleteModal(prev => ({ ...prev, iniciais: init.toUpperCase(), nome: u.nome }))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        isSelected ? 'bg-hp-600 text-white shadow-sm' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {init} ({u.nome.split(' ')[0]})
+                    </button>
+                  );
+                })}
+              </div>
               <input
                 type="text"
                 autoFocus
                 maxLength={4}
                 value={completeModal.iniciais}
-                onChange={e => setCompleteModal(prev => ({ ...prev, iniciais: e.target.value.toUpperCase() }))}
+                onChange={e => {
+                  const val = e.target.value.toUpperCase();
+                  const matchedUser = utilizadores.find(u => (u.avatar || getInitials(u.nome)).toUpperCase() === val);
+                  setCompleteModal(prev => ({
+                    ...prev,
+                    iniciais: val,
+                    nome: matchedUser ? matchedUser.nome : prev.nome
+                  }));
+                }}
                 placeholder="HP"
                 className="w-full py-2 px-3 bg-slate-900 border border-slate-700 focus:border-hp-500 rounded-xl text-center text-sm text-white font-mono font-extrabold tracking-widest uppercase"
               />

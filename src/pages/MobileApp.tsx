@@ -51,6 +51,7 @@ import {
   analyzeInternalNotesWithOllama,
   type AiFolhaGenerationResult
 } from '../services/ollamaService';
+import { sendTaskNotificationEmail } from '../services/emailService';
 import type {
   FolhaServico,
   Empresa,
@@ -470,19 +471,29 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         });
         if (aiNote.hasActionableTask && aiNote.tarefa) {
           const tarNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
+          const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
+          const userNome = currentUser?.nome || 'Hugo Portugal';
+
           const novaTar: Tarefa = {
             id: db.generateId('tar'),
             numero: tarNum,
             descricao: aiNote.tarefa.descricao,
             prioridade: aiNote.tarefa.prioridade,
-            responsavel: aiNote.tarefa.responsavel || 'Hugo Portugal',
+            responsavel: aiNote.tarefa.responsavel || userNome,
             dataLimite: aiNote.tarefa.dataLimite,
             notasAdicionais: aiNote.tarefa.notasAdicionais,
             status: 'Pendente',
-            criadoPorIniciais: 'IA',
+            criadoPorIniciais: userIniciais,
+            criadoPorNome: userNome,
             dataCriacao: now
           };
           db.insert(STORAGE_KEYS.TAREFAS, novaTar);
+
+          sendTaskNotificationEmail({
+            action: 'CRIADA',
+            tarefa: novaTar,
+            currentUser
+          });
         }
       } catch (err) {
         console.error('AI Note interpretation error:', err);
@@ -4222,11 +4233,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                       <button
                         onClick={() => {
                           const newStatus = isDone ? 'Pendente' : 'Concluída';
-                          db.update<Tarefa>(STORAGE_KEYS.TAREFAS, t.id, {
+                          const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
+                          const userNome = currentUser?.nome || 'Hugo Portugal';
+                          const updated: Tarefa = {
+                            ...t,
                             status: newStatus,
                             dataConclusao: !isDone ? new Date().toISOString().split('T')[0] : undefined,
-                            concluidoPorIniciais: !isDone ? 'HP' : undefined
-                          });
+                            concluidoPorIniciais: !isDone ? userIniciais : undefined,
+                            concluidoPorNome: !isDone ? userNome : undefined
+                          };
+                          db.update<Tarefa>(STORAGE_KEYS.TAREFAS, t.id, updated);
+                          if (!isDone) {
+                            sendTaskNotificationEmail({
+                              action: 'CONCLUIDA',
+                              tarefa: updated,
+                              currentUser,
+                              todasTarefas: tarefas.map(item => item.id === t.id ? updated : item)
+                            });
+                          }
                         }}
                         className={`p-3 rounded-2xl shrink-0 transition-all ${
                           isDone
