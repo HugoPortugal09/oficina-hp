@@ -60,6 +60,7 @@ import type {
   PedidoPeca,
   Tarefa,
   StatusFolhaServico,
+  TipoServico,
   ServicoItem,
   PecaItem,
   Estaleiro,
@@ -67,6 +68,58 @@ import type {
 } from '../types';
 import { getInitials } from '../types';
 import { syncPullFromCloud, subscribeToRealtimeSync } from '../services/pocketbaseSync';
+
+const AT_STATUSES: StatusFolhaServico[] = [
+  'AT - Pedido de Assistência',
+  'AT - Enviar proposta',
+  'AT - Agendar – Sem requisição',
+  'AT - Agendar – Com requisição',
+  'AT - Agendado',
+  'AT - Aguardar requisição',
+  'AT - Com requisição - Aguardar peças'
+];
+
+const OF_STATUSES: StatusFolhaServico[] = [
+  'OF - Fazer orçamento',
+  'OF - Orçamento Enviado – Aguardar resposta',
+  'OF - Com requisição - Aguardar agenda',
+  'OF - Com requisição - Aguardar viatura',
+  'OF - Com requisição - Aguardar peças',
+  'OF - Sem requisição - Aguardar peças'
+];
+
+const CT_STATUSES: StatusFolhaServico[] = [
+  'CT - Contrato'
+];
+
+const FEITO_STATUSES: StatusFolhaServico[] = [
+  'FEITO - Faturar',
+  'FEITO - Aguardar Requisição',
+  'FEITO - Submeter Garantia',
+  'FEITO - Aguardar Garantia',
+  'FEITO - Faturado'
+];
+
+function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
+  let baseStatuses: StatusFolhaServico[] = [];
+  if (tipo === 'Assistência Técnica') {
+    baseStatuses = [...AT_STATUSES];
+  } else if (tipo === 'Oficina') {
+    baseStatuses = [...OF_STATUSES];
+  } else if (tipo === 'Contrato') {
+    baseStatuses = [...CT_STATUSES];
+  } else {
+    baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
+  }
+
+  if (isAdmin) {
+    baseStatuses = [...baseStatuses, ...FEITO_STATUSES];
+  } else if (currentStatus && currentStatus.startsWith('FEITO') && !baseStatuses.includes(currentStatus)) {
+    baseStatuses = [...baseStatuses, currentStatus];
+  }
+
+  return Array.from(new Set(baseStatuses));
+}
 
 interface MobileAppProps {
   theme: 'dark' | 'light';
@@ -1069,11 +1122,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         : 'bg-slate-900/90 border-slate-800 hover:border-hp-500/50'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="space-y-0.5">
-                        <span className="font-mono font-black text-xs text-hp-500 px-2 py-0.5 bg-hp-500/10 rounded-lg">
-                          {f.numero}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-black text-xs text-hp-500 px-2 py-0.5 bg-hp-500/10 rounded-lg">
+                            {f.numero}
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+                            {f.tipo || 'Oficina'}
+                          </span>
+                        </div>
                         <h3 className="text-lg font-black tracking-tight text-white font-mono mt-1">
                           {f.matricula}
                         </h3>
@@ -1089,7 +1147,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                             : 'info'
                         }
                       >
-                        {f.status.split(' - ')[0]}
+                        {f.status.split(' - ')[1] || f.status}
                       </Badge>
                     </div>
 
@@ -1133,45 +1191,81 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               {/* Header Info */}
               <div className="flex items-start justify-between pb-3 border-b border-slate-800">
                 <div>
-                  <span className="font-mono font-black text-xs text-hp-400 px-2 py-0.5 bg-hp-500/10 rounded-lg">
-                    {selectedFolha.numero}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono font-black text-xs text-hp-400 px-2 py-0.5 bg-hp-500/10 rounded-lg">
+                      {selectedFolha.numero}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+                      {selectedFolha.tipo || 'Oficina'}
+                    </span>
+                  </div>
                   <h2 className="text-2xl font-black font-mono text-white mt-1">{selectedFolha.matricula}</h2>
                   <p className="text-xs text-slate-400 font-semibold">{selectedFolha.marca} {selectedFolha.modelo}</p>
                 </div>
                 <Badge variant={selectedFolha.status.startsWith('FEITO') ? 'success' : selectedFolha.status.startsWith('AT') ? 'warning' : 'info'}>
-                  {selectedFolha.status.split(' - ')[0]}
+                  {selectedFolha.status.split(' - ')[1] || selectedFolha.status}
                 </Badge>
               </div>
 
-              {/* Status Quick Picker */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400 block uppercase">Estado da Folha</label>
-                <select
-                  value={selectedFolha.status}
-                  onChange={e => {
-                    const newSt = e.target.value as StatusFolhaServico;
-                    setSelectedFolha(prev => (prev ? { ...prev, status: newSt } : null));
-                    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { status: newSt });
-                  }}
-                  className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
-                >
-                  <optgroup label="Assistência Técnica (AT)">
-                    <option value="AT - Pedido de Assistência">AT - Pedido de Assistência</option>
-                    <option value="AT - Agendado">AT - Agendado</option>
-                    <option value="AT - Com requisição - Aguardar peças">AT - Com requisição - Aguardar peças</option>
-                  </optgroup>
-                  <optgroup label="Oficina (OF)">
-                    <option value="OF - Com requisição - Aguardar agenda">OF - Com requisição - Aguardar agenda</option>
-                    <option value="OF - Com requisição - Aguardar viatura">OF - Com requisição - Aguardar viatura</option>
-                    <option value="OF - Com requisição - Aguardar peças">OF - Com requisição - Aguardar peças</option>
-                    <option value="OF - Fazer orçamento">OF - Fazer orçamento</option>
-                  </optgroup>
-                  <optgroup label="Finalizado (FEITO)">
-                    <option value="FEITO - Faturar">FEITO - Faturar</option>
-                    <option value="FEITO - Faturado">FEITO - Faturado</option>
-                  </optgroup>
-                </select>
+              {/* Tipo de Serviço & Estado da Folha */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 block uppercase">Tipo de Serviço</label>
+                  <select
+                    value={selectedFolha.tipo || 'Oficina'}
+                    onChange={e => {
+                      const newTipo = e.target.value as TipoServico;
+                      const isOficina = newTipo === 'Oficina';
+                      const defaultStatus = isOficina
+                        ? 'OF - Com requisição - Aguardar agenda'
+                        : newTipo === 'Assistência Técnica'
+                        ? 'AT - Pedido de Assistência'
+                        : newTipo === 'Contrato'
+                        ? 'CT - Contrato'
+                        : selectedFolha.status;
+
+                      const updated = {
+                        ...selectedFolha,
+                        tipo: newTipo,
+                        localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : selectedFolha.localizacao,
+                        localizacaoTipo: isOficina ? 'oficina' as const : selectedFolha.localizacaoTipo,
+                        distanciaKms: isOficina ? 0 : selectedFolha.distanciaKms,
+                        status: selectedFolha.status?.startsWith('FEITO') ? selectedFolha.status : defaultStatus
+                      };
+                      setSelectedFolha(updated);
+                      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                    }}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    <option value="Oficina">Oficina</option>
+                    <option value="Assistência Técnica">Assistência Técnica</option>
+                    <option value="Garantia">Garantia</option>
+                    <option value="Entrega e Formação">Entrega e Formação</option>
+                    <option value="Contrato">Contrato</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-400 block uppercase">Estado da Folha</label>
+                    {currentUser?.role !== 'administrador' && (
+                      <span className="text-[9px] text-slate-500 font-mono">Restrito</span>
+                    )}
+                  </div>
+                  <select
+                    value={selectedFolha.status}
+                    onChange={e => {
+                      const newSt = e.target.value as StatusFolhaServico;
+                      setSelectedFolha(prev => (prev ? { ...prev, status: newSt } : null));
+                      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { status: newSt });
+                    }}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    {getAvailableStatusesForFolha(selectedFolha.tipo, currentUser?.role === 'administrador', selectedFolha.status).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Editable Readings: Kms & Horas Atuais */}
@@ -2170,6 +2264,65 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     </div>
                   </div>
 
+                  {/* Tipo de Serviço & Estado */}
+                  <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-800/80 font-sans">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase block">Tipo de Serviço</label>
+                      <select
+                        value={aiResult.folha.tipo || 'Oficina'}
+                        onChange={e => {
+                          const newTipo = e.target.value as TipoServico;
+                          const isOficina = newTipo === 'Oficina';
+                          const defaultStatus = isOficina
+                            ? 'OF - Com requisição - Aguardar agenda'
+                            : newTipo === 'Assistência Técnica'
+                            ? 'AT - Pedido de Assistência'
+                            : newTipo === 'Contrato'
+                            ? 'CT - Contrato'
+                            : aiResult.folha.status;
+
+                          setAiResult(prev => prev ? {
+                            ...prev,
+                            folha: {
+                              ...prev.folha,
+                              tipo: newTipo,
+                              localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : prev.folha.localizacao,
+                              localizacaoTipo: isOficina ? 'oficina' : prev.folha.localizacaoTipo,
+                              distanciaKms: isOficina ? 0 : prev.folha.distanciaKms,
+                              status: prev.folha.status?.startsWith('FEITO') ? prev.folha.status : defaultStatus
+                            }
+                          } : null);
+                        }}
+                        className="w-full py-2 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold text-xs"
+                      >
+                        <option value="Oficina">Oficina</option>
+                        <option value="Assistência Técnica">Assistência Técnica</option>
+                        <option value="Garantia">Garantia</option>
+                        <option value="Entrega e Formação">Entrega e Formação</option>
+                        <option value="Contrato">Contrato</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase block">Estado</label>
+                      <select
+                        value={aiResult.folha.status || 'OF - Com requisição - Aguardar agenda'}
+                        onChange={e => {
+                          const newSt = e.target.value as StatusFolhaServico;
+                          setAiResult(prev => prev ? {
+                            ...prev,
+                            folha: { ...prev.folha, status: newSt }
+                          } : null);
+                        }}
+                        className="w-full py-2 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold text-xs"
+                      >
+                        {getAvailableStatusesForFolha(aiResult.folha.tipo, currentUser?.role === 'administrador', aiResult.folha.status).map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
                   {/* Empresa Cliente */}
                   <div className="space-y-1 pt-1.5 border-t border-slate-800/80 font-sans">
                     <label className="text-[11px] font-bold text-slate-400 uppercase block">Empresa Cliente</label>
@@ -2408,6 +2561,64 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* Tipo de Serviço & Estado Inicial */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 block uppercase">Tipo de Serviço</label>
+                  <select
+                    value={manualFolha.tipo || 'Oficina'}
+                    onChange={e => {
+                      const newTipo = e.target.value as TipoServico;
+                      const isOficina = newTipo === 'Oficina';
+                      const defaultStatus = isOficina
+                        ? 'OF - Com requisição - Aguardar agenda'
+                        : newTipo === 'Assistência Técnica'
+                        ? 'AT - Pedido de Assistência'
+                        : newTipo === 'Contrato'
+                        ? 'CT - Contrato'
+                        : manualFolha.status;
+
+                      setManualFolha(prev => ({
+                        ...prev,
+                        tipo: newTipo,
+                        localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : prev.localizacao,
+                        localizacaoTipo: isOficina ? 'oficina' : prev.localizacaoTipo,
+                        distanciaKms: isOficina ? 0 : prev.distanciaKms,
+                        status: prev.status?.startsWith('FEITO') ? prev.status : defaultStatus
+                      }));
+                    }}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    <option value="Oficina">Oficina</option>
+                    <option value="Assistência Técnica">Assistência Técnica</option>
+                    <option value="Garantia">Garantia</option>
+                    <option value="Entrega e Formação">Entrega e Formação</option>
+                    <option value="Contrato">Contrato</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-400 block uppercase">Estado Inicial</label>
+                    {currentUser?.role !== 'administrador' && (
+                      <span className="text-[9px] text-slate-500 font-mono">Restrito</span>
+                    )}
+                  </div>
+                  <select
+                    value={manualFolha.status || 'OF - Com requisição - Aguardar agenda'}
+                    onChange={e => {
+                      const newSt = e.target.value as StatusFolhaServico;
+                      setManualFolha(prev => ({ ...prev, status: newSt }));
+                    }}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    {getAvailableStatusesForFolha(manualFolha.tipo, currentUser?.role === 'administrador', manualFolha.status).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* 2. Empresa Cliente */}
