@@ -86,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const saved = localStorage.getItem('oficina_hp_sidebar_groups');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return { gestao: true, dados: true, servicos: true, pecas: true };
+    return { dados: true, servicos: true, pecas: true, gestao: true };
   });
 
   const toggleGroup = (groupId: string) => {
@@ -100,20 +100,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const menuGroups: MenuGroup[] = [
-    {
-      id: 'gestao',
-      title: 'GESTÃO',
-      icon: <Activity className="w-3.5 h-3.5 text-amber-400" />,
-      items: [
-        { id: 'atividade-semanal', label: 'Atividade Semanal', icon: <Calendar className="w-4 h-4 text-emerald-400" /> },
-        { id: 'planeamento', label: 'Planeamento', icon: <CalendarCheck className="w-4 h-4 text-sky-400" /> },
-        // Automações exclusivo para Administrador
-        ...(currentUser.role === 'administrador'
-          ? [{ id: 'automacoes' as NavigationTab, label: 'Automações', icon: <Zap className="w-4 h-4 text-purple-400" />, badge: 'IA' }]
-          : []),
-        { id: 'tempos-resposta', label: 'Tempos de Resposta', icon: <Timer className="w-4 h-4 text-orange-400" /> },
-      ]
-    },
     {
       id: 'dados',
       title: 'BASE DE DADOS',
@@ -153,6 +139,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'pecas', label: 'Catalogo de Peças', icon: <Package className="w-4 h-4" /> },
         { id: 'pedidos-pecas', label: 'Pedido de Peças', icon: <ShoppingCart className="w-4 h-4" /> },
         { id: 'guias-envio', label: 'Guias de envio', icon: <Send className="w-4 h-4" /> },
+      ]
+    },
+    {
+      id: 'gestao',
+      title: 'GESTÃO',
+      icon: <Activity className="w-3.5 h-3.5 text-amber-400" />,
+      items: [
+        { id: 'atividade-semanal', label: 'Atividade Semanal', icon: <Calendar className="w-4 h-4 text-emerald-400" /> },
+        { id: 'planeamento', label: 'Planeamento', icon: <CalendarCheck className="w-4 h-4 text-sky-400" /> },
+        // Automações exclusivo para Administrador
+        ...(currentUser.role === 'administrador'
+          ? [{ id: 'automacoes' as NavigationTab, label: 'Automações', icon: <Zap className="w-4 h-4 text-purple-400" />, badge: 'IA' }]
+          : []),
+        { id: 'tempos-resposta', label: 'Tempos de Resposta', icon: <Timer className="w-4 h-4 text-orange-400" /> },
       ]
     }
   ];
