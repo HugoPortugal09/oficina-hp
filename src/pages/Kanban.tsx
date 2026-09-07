@@ -66,13 +66,19 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
     id: 'ct',
     title: 'CONTRATOS & PREVENTIVA',
     color: 'from-teal-600/30 to-teal-900/20 border-teal-500/40 text-teal-300',
-    statuses: ['CT - Contrato']
+    statuses: [
+      'CT - Contrato',
+      'CT - Agendar',
+      'CT - Aguardar peças',
+      'CT - Aguardar resposta Fornecedor'
+    ]
   },
   {
     id: 'finalizado',
     title: 'FINALIZADO & FATURAÇÃO',
     color: 'from-emerald-600/30 to-emerald-900/20 border-emerald-500/40 text-emerald-300',
     statuses: [
+      'FEITO - Resolvido',
       'FEITO - Faturar',
       'FEITO - Aguardar Requisição',
       'FEITO - Submeter Garantia',

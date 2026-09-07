@@ -100,7 +100,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
       notas: '',
       fotos: [],
       dataEntrega: '',
-      dataFormacao: ''
+      entregaPor: '',
+      dataFormacao: '',
+      formacaoPor: ''
     });
     setEmpresaQuery('');
     setIsModalOpen(true);
@@ -335,7 +337,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                             <span className="flex items-center gap-1">
                               <PackageCheck className="w-3 h-3" /> Data Entrega:
                             </span>
-                            <span className="font-mono font-bold">{eq.dataEntrega}</span>
+                            <span className="font-mono font-bold">
+                              {eq.dataEntrega} {eq.entregaPor && <span className="text-[10px] text-emerald-400 font-sans font-normal">({eq.entregaPor})</span>}
+                            </span>
                           </div>
                         )}
                         {eq.dataFormacao && (
@@ -343,7 +347,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                             <span className="flex items-center gap-1">
                               <GraduationCap className="w-3 h-3" /> Data Formação:
                             </span>
-                            <span className="font-mono font-bold">{eq.dataFormacao}</span>
+                            <span className="font-mono font-bold">
+                              {eq.dataFormacao} {eq.formacaoPor && <span className="text-[10px] text-sky-400 font-sans font-normal">({eq.formacaoPor})</span>}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -613,30 +619,58 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
 
             {/* Row 4: Data de Entrega & Data de Formação */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-slate-950/60 rounded-xl border border-slate-800">
-              <div>
-                <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5 mb-1">
-                  <PackageCheck className="w-4 h-4" />
-                  Data de Entrega
-                </label>
-                <input
-                  type="date"
-                  value={editingEquip.dataEntrega || ''}
-                  onChange={e => setEditingEquip(prev => ({ ...prev, dataEntrega: e.target.value }))}
-                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-                />
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5 mb-1">
+                    <PackageCheck className="w-4 h-4" />
+                    Data de Entrega
+                  </label>
+                  <input
+                    type="date"
+                    value={editingEquip.dataEntrega || ''}
+                    onChange={e => setEditingEquip(prev => ({ ...prev, dataEntrega: e.target.value }))}
+                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Entregue por (Técnico / Responsável)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nome de quem entregou..."
+                    value={editingEquip.entregaPor || ''}
+                    onChange={e => setEditingEquip(prev => ({ ...prev, entregaPor: e.target.value }))}
+                    className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-sky-400 flex items-center gap-1.5 mb-1">
-                  <GraduationCap className="w-4 h-4" />
-                  Data de Formação
-                </label>
-                <input
-                  type="date"
-                  value={editingEquip.dataFormacao || ''}
-                  onChange={e => setEditingEquip(prev => ({ ...prev, dataFormacao: e.target.value }))}
-                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-                />
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-semibold text-sky-400 flex items-center gap-1.5 mb-1">
+                    <GraduationCap className="w-4 h-4" />
+                    Data de Formação
+                  </label>
+                  <input
+                    type="date"
+                    value={editingEquip.dataFormacao || ''}
+                    onChange={e => setEditingEquip(prev => ({ ...prev, dataFormacao: e.target.value }))}
+                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Formação ministrada por
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nome do formador..."
+                    value={editingEquip.formacaoPor || ''}
+                    onChange={e => setEditingEquip(prev => ({ ...prev, formacaoPor: e.target.value }))}
+                    className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                  />
+                </div>
               </div>
             </div>
 

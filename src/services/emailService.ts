@@ -1,4 +1,4 @@
-﻿import { db, STORAGE_KEYS } from './dbService';
+import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile } from '../types';
 import { USERS } from '../types';
@@ -198,7 +198,7 @@ export function buildTaskNotificationHtml(
         <tr>
           <td style="padding: 8px 0; color: #64748b; font-size: 13px;"><strong>Criado Por:</strong></td>
           <td style="padding: 8px 0; color: #334155; font-size: 13px;">
-            ${tarefa.criadoPorNome || 'Utilizador'} [<strong>${tarefa.criadoPorIniciais}</strong>] em ${tarefa.dataCriacao}
+            ${tarefa.criadoPorNome && tarefa.criadoPorNome !== 'IA' ? tarefa.criadoPorNome : 'Hugo Portugal'} [<strong>${tarefa.criadoPorIniciais === 'IA' ? 'HP' : (tarefa.criadoPorIniciais || 'HP')}</strong>] em ${tarefa.dataCriacao}
           </td>
         </tr>
         ${action === 'CONCLUIDA' ? `

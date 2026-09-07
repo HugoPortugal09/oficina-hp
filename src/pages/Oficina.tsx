@@ -34,7 +34,10 @@ import {
   MapPin,
   Navigation,
   UserCheck,
-  FileText
+  FileText,
+  PackageCheck,
+  GraduationCap,
+  Handshake
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -97,10 +100,14 @@ const OF_STATUSES: StatusFolhaServico[] = [
 ];
 
 const CT_STATUSES: StatusFolhaServico[] = [
-  'CT - Contrato'
+  'CT - Contrato',
+  'CT - Agendar',
+  'CT - Aguardar peças',
+  'CT - Aguardar resposta Fornecedor'
 ];
 
 const FEITO_STATUSES: StatusFolhaServico[] = [
+  'FEITO - Resolvido',
   'FEITO - Faturar',
   'FEITO - Aguardar Requisição',
   'FEITO - Submeter Garantia',
@@ -122,7 +129,7 @@ function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = fal
   } else if (tipo === 'Oficina') {
     baseStatuses = [...OF_STATUSES];
   } else if (tipo === 'Contrato') {
-    baseStatuses = [...CT_STATUSES];
+    baseStatuses = [...CT_STATUSES, 'FEITO - Resolvido'];
   } else {
     // Garantia, Entrega e Formação
     baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
@@ -484,12 +491,80 @@ export const Oficina: React.FC<OficinaProps> = ({
       horasAtuais: eq.horasAtuais || 0,
       previsaoRevisaoKms: (eq.kmsAtuais || 0) + 15000,
       previsaoRevisaoHoras: (eq.horasAtuais || 0) + 500,
+      dataEntrega: prev.dataEntrega || eq.dataEntrega || '',
+      entregaPor: prev.entregaPor || eq.entregaPor || '',
+      dataFormacao: prev.dataFormacao || eq.dataFormacao || '',
+      formacaoPor: prev.formacaoPor || eq.formacaoPor || '',
       // Default to GRAUMP unless previously set
       localizacao: prev.localizacao || GRAUMP_LOCATION,
       distanciaKms: prev.localizacao === GRAUMP_LOCATION ? 0 : (prev.distanciaKms || 0)
     }));
     setPlateQuery(eq.matricula);
     setIsPlateDropdownOpen(false);
+  };
+
+  const handleRegisterEntrega = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const person = currentUser?.nome || 'Hugo Portugal';
+    const newDate = editingFolha.dataEntrega || today;
+    const newPerson = editingFolha.entregaPor || person;
+    setEditingFolha(prev => ({
+      ...prev,
+      dataEntrega: newDate,
+      entregaPor: newPerson
+    }));
+    if (editingFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, {
+        dataEntrega: newDate,
+        entregaPor: newPerson
+      });
+    }
+  };
+
+  const handleRegisterFormacao = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const person = currentUser?.nome || 'Hugo Portugal';
+    const newDate = editingFolha.dataFormacao || today;
+    const newPerson = editingFolha.formacaoPor || person;
+    setEditingFolha(prev => ({
+      ...prev,
+      dataFormacao: newDate,
+      formacaoPor: newPerson
+    }));
+    if (editingFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, {
+        dataFormacao: newDate,
+        formacaoPor: newPerson
+      });
+    }
+  };
+
+  const handleDateEntregaChange = (val: string) => {
+    setEditingFolha(prev => ({ ...prev, dataEntrega: val }));
+    if (editingFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataEntrega: val });
+    }
+  };
+
+  const handleEntregaPorChange = (val: string) => {
+    setEditingFolha(prev => ({ ...prev, entregaPor: val }));
+    if (editingFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { entregaPor: val });
+    }
+  };
+
+  const handleDateFormacaoChange = (val: string) => {
+    setEditingFolha(prev => ({ ...prev, dataFormacao: val }));
+    if (editingFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataFormacao: val });
+    }
+  };
+
+  const handleFormacaoPorChange = (val: string) => {
+    setEditingFolha(prev => ({ ...prev, formacaoPor: val }));
+    if (editingFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { formacaoPor: val });
+    }
   };
 
   const handleLocationChange = (locValue: string) => {
@@ -657,8 +732,16 @@ export const Oficina: React.FC<OficinaProps> = ({
     if (!target || !target.tarefa) return;
 
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
-    const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
-    const userNome = currentUser?.nome || 'Hugo Portugal';
+    // Quem escreveu o campo (notas internas) que depois foi enviado para a IA:
+    const userIniciais = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+      || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+      || (editingFolha.criadoPor ? getInitials(editingFolha.criadoPor) : null)
+      || (editingFolha.servicos?.[0]?.tecnico ? getInitials(editingFolha.servicos[0].tecnico) : null)
+      || 'HP';
+    const userNome = currentUser?.nome 
+      || editingFolha.criadoPor 
+      || editingFolha.servicos?.[0]?.tecnico 
+      || 'Hugo Portugal';
 
     const novaTarefa: Tarefa = {
       id: db.generateId('tar'),
@@ -669,7 +752,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       dataLimite: target.tarefa.dataLimite,
       notasAdicionais: target.tarefa.notasAdicionais,
       status: 'Pendente',
-      criadoPorIniciais: userIniciais,
+      criadoPorIniciais: userIniciais === 'IA' ? 'HP' : userIniciais,
       criadoPorNome: userNome,
       dataCriacao: new Date().toISOString().split('T')[0]
     };
@@ -715,12 +798,19 @@ export const Oficina: React.FC<OficinaProps> = ({
       db.insert(STORAGE_KEYS.FOLHAS_SERVICO, folhaToSave);
     }
 
-    // Update equipment mileage / hours in fleet
+    // Update equipment mileage / hours and delivery/training in fleet
     if (folhaToSave.equipamentoId) {
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, folhaToSave.equipamentoId, {
+      const equipUpdate: Partial<Equipamento> = {
         kmsAtuais: folhaToSave.kmsAtuais,
         horasAtuais: folhaToSave.horasAtuais
-      });
+      };
+      if (folhaToSave.tipo === 'Entrega e Formação') {
+        if (folhaToSave.dataEntrega !== undefined) equipUpdate.dataEntrega = folhaToSave.dataEntrega;
+        if (folhaToSave.entregaPor !== undefined) equipUpdate.entregaPor = folhaToSave.entregaPor;
+        if (folhaToSave.dataFormacao !== undefined) equipUpdate.dataFormacao = folhaToSave.dataFormacao;
+        if (folhaToSave.formacaoPor !== undefined) equipUpdate.formacaoPor = folhaToSave.formacaoPor;
+      }
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, folhaToSave.equipamentoId, equipUpdate);
     }
 
     setIsModalOpen(false);
@@ -1410,49 +1500,51 @@ export const Oficina: React.FC<OficinaProps> = ({
             </div>
 
             {/* Dates: Entrada Oficina, Requisição, Conclusão (Disponíveis apenas para Oficina, Contrato ou Garantia) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/80 text-xs">
-              {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
+            {editingFolha.tipo !== 'Entrega e Formação' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/80 text-xs">
+                {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-medium">Data de Entrada Oficina</label>
+                    <input
+                      type="date"
+                      value={editingFolha.dataEntradaOficina || ''}
+                      onChange={e => setEditingFolha(prev => ({ ...prev, dataEntradaOficina: e.target.value }))}
+                      className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                    />
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-800/50 flex items-center text-slate-500 italic text-[11px]">
+                    Entrada oficina N/A ({editingFolha.tipo})
+                  </div>
+                )}
+
                 <div>
-                  <label className="text-slate-400 block mb-1 font-medium">Data de Entrada Oficina</label>
+                  <label className="text-slate-400 block mb-1 font-medium">Data de Requisição</label>
                   <input
                     type="date"
-                    value={editingFolha.dataEntradaOficina || ''}
-                    onChange={e => setEditingFolha(prev => ({ ...prev, dataEntradaOficina: e.target.value }))}
+                    value={editingFolha.dataRequisicao || ''}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, dataRequisicao: e.target.value }))}
                     className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
                   />
                 </div>
-              ) : (
-                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-800/50 flex items-center text-slate-500 italic text-[11px]">
-                  Entrada oficina N/A ({editingFolha.tipo})
-                </div>
-              )}
 
-              <div>
-                <label className="text-slate-400 block mb-1 font-medium">Data de Requisição</label>
-                <input
-                  type="date"
-                  value={editingFolha.dataRequisicao || ''}
-                  onChange={e => setEditingFolha(prev => ({ ...prev, dataRequisicao: e.target.value }))}
-                  className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                />
+                {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-medium">Data de Conclusão</label>
+                    <input
+                      type="date"
+                      value={editingFolha.dataConclusao || ''}
+                      onChange={e => setEditingFolha(prev => ({ ...prev, dataConclusao: e.target.value }))}
+                      className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                    />
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-800/50 flex items-center text-slate-500 italic text-[11px]">
+                    Conclusão oficina N/A ({editingFolha.tipo})
+                  </div>
+                )}
               </div>
-
-              {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
-                <div>
-                  <label className="text-slate-400 block mb-1 font-medium">Data de Conclusão</label>
-                  <input
-                    type="date"
-                    value={editingFolha.dataConclusao || ''}
-                    onChange={e => setEditingFolha(prev => ({ ...prev, dataConclusao: e.target.value }))}
-                    className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                  />
-                </div>
-              ) : (
-                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-800/50 flex items-center text-slate-500 italic text-[11px]">
-                  Conclusão oficina N/A ({editingFolha.tipo})
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Vehicle & Customer Section */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1655,37 +1747,163 @@ export const Oficina: React.FC<OficinaProps> = ({
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] text-slate-400 block">Anomalias Reportadas / Pedido</label>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenInlineScanner('foto_anomalias')}
-                      className="text-[10px] font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      Inspecionar c/ IA
-                    </button>
+                {editingFolha.tipo !== 'Entrega e Formação' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] text-slate-400 block">Anomalias Reportadas / Pedido</label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenInlineScanner('foto_anomalias')}
+                        className="text-[10px] font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Inspecionar c/ IA
+                      </button>
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={editingFolha.anomalias || ''}
+                      onChange={e => setEditingFolha(prev => ({ ...prev, anomalias: e.target.value }))}
+                      placeholder="Descreva as anomalias detetadas..."
+                      className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                    />
                   </div>
-                  <textarea
-                    rows={2}
-                    value={editingFolha.anomalias || ''}
-                    onChange={e => setEditingFolha(prev => ({ ...prev, anomalias: e.target.value }))}
-                    placeholder="Descreva as anomalias detetadas..."
-                    className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-                  />
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Photo Gallery & AI Visual Inspection Section */}
-            <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-amber-400" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                    Fotografias da Obra / Inspeção IA ({editingFolha.fotos?.length || 0})
-                  </h4>
+            {/* ENTREGA & FORMAÇÃO CARD (Apenas quando o tipo de serviço é Entrega e Formação) */}
+            {editingFolha.tipo === 'Entrega e Formação' && (
+              <div className="p-5 bg-gradient-to-br from-slate-950/80 via-slate-900/60 to-slate-950/80 rounded-2xl border-2 border-emerald-500/30 shadow-xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <Handshake className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        Registo de Entrega & Formação
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        As datas registadas serão gravadas diretamente na ficha do equipamento.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Card 1: ENTREGA */}
+                  <div className="p-4 bg-slate-950/60 rounded-xl border border-emerald-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <PackageCheck className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Entrega</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegisterEntrega}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                          editingFolha.dataEntrega
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30 hover:bg-emerald-500'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                        }`}
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        {editingFolha.dataEntrega ? 'Entrega Registada' : 'Registar Entrega'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2.5 pt-1">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Data de Entrega <span className="text-[10px] text-emerald-400 font-normal">(Alterável)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={editingFolha.dataEntrega || ''}
+                          onChange={e => handleDateEntregaChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Pessoa que Efetuou a Entrega
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Nome de quem efetuou a entrega..."
+                          value={editingFolha.entregaPor || ''}
+                          onChange={e => handleEntregaPorChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: FORMAÇÃO */}
+                  <div className="p-4 bg-slate-950/60 rounded-xl border border-sky-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <GraduationCap className="w-4 h-4 text-sky-400" />
+                        <span className="text-xs font-bold text-sky-400 uppercase tracking-wider">Formação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegisterFormacao}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                          editingFolha.dataFormacao
+                            ? 'bg-sky-600 text-white shadow-sky-600/30 hover:bg-sky-500'
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30'
+                        }`}
+                      >
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        {editingFolha.dataFormacao ? 'Formação Registada' : 'Registar Formação'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2.5 pt-1">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Data de Formação <span className="text-[10px] text-sky-400 font-normal">(Alterável)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={editingFolha.dataFormacao || ''}
+                          onChange={e => handleDateFormacaoChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:border-sky-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Pessoa que Ministrou a Formação
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Nome de quem ministrou a formação..."
+                          value={editingFolha.formacaoPor || ''}
+                          onChange={e => handleFormacaoPorChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SECTIONS FOR REPAIRS / SERVICES (Ocultas quando o tipo é Entrega e Formação) */}
+            {editingFolha.tipo !== 'Entrega e Formação' && (
+              <>
+                {/* Photo Gallery & AI Visual Inspection Section */}
+                <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-amber-400" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                        Fotografias da Obra / Inspeção IA ({editingFolha.fotos?.length || 0})
+                      </h4>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -2125,6 +2343,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                 className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
               />
             </div>
+          </>
+        )}
 
             {/* 5.1 NOTAS INTERNAS & IA OLLAMA INTERPRETER */}
             <div className="p-4 bg-slate-950/60 rounded-2xl border border-indigo-500/30 space-y-3 relative overflow-hidden">
@@ -2216,9 +2436,11 @@ export const Oficina: React.FC<OficinaProps> = ({
               )}
             </div>
 
-            {/* 6. PRÓXIMA REVISÃO (Depois das Notas para o Cliente) */}
-            <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            {editingFolha.tipo !== 'Entrega e Formação' && (
+              <>
+                {/* 6. PRÓXIMA REVISÃO (Depois das Notas para o Cliente) */}
+                <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-hp-400" />
                 Próxima Revisão Recomendada
               </h4>
@@ -2396,6 +2618,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                 </button>
               </div>
             </div>
+          </>
+        )}
 
             {/* BOTTOM ACTION BAR */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800">

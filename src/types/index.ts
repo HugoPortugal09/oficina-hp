@@ -36,7 +36,11 @@ export type StatusFolhaServico =
   | 'OF - Sem requisição - Aguardar peças'
   // CONTRATO (CT)
   | 'CT - Contrato'
+  | 'CT - Agendar'
+  | 'CT - Aguardar peças'
+  | 'CT - Aguardar resposta Fornecedor'
   // FINALIZADO (FEITO)
+  | 'FEITO - Resolvido'
   | 'FEITO - Faturar'
   | 'FEITO - Aguardar Requisição'
   | 'FEITO - Submeter Garantia'
@@ -99,7 +103,9 @@ export interface Equipamento {
   fotoUrl?: string;
   fotos?: string[];
   dataEntrega?: string;
+  entregaPor?: string;
   dataFormacao?: string;
+  formacaoPor?: string;
   ultimaRevisao?: string;
   proximaRevisaoKms?: number;
   proximaRevisaoHoras?: number;
@@ -180,6 +186,10 @@ export interface FolhaServico {
   notasInternas?: string;
   previsaoRevisaoKms: number;
   previsaoRevisaoHoras: number;
+  dataEntrega?: string;
+  entregaPor?: string;
+  dataFormacao?: string;
+  formacaoPor?: string;
   guiaAT?: string;
   pessoaPresente?: string;
   equipamentoFuncionando?: 'Sim' | 'Não';
@@ -479,11 +489,19 @@ export function getPermissionsForRole(role: UserRole): RolePermissions {
 export function getInitials(name?: string): string {
   if (!name) return 'HP';
   const trimmed = name.trim();
-  if (trimmed.length <= 3 && trimmed === trimmed.toUpperCase()) return trimmed;
-  const parts = trimmed.split(' ').filter(Boolean);
+  if (trimmed.length <= 3 && trimmed === trimmed.toUpperCase()) {
+    return trimmed === 'IA' ? 'HP' : trimmed;
+  }
+  // Strip parenthesized suffixes such as "(Administrador)"
+  const cleanName = trimmed.replace(/\s*\([^)]*\)/g, '').trim();
+  const parts = cleanName.split(' ').filter(Boolean);
   if (parts.length === 0) return 'HP';
-  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  if (parts.length === 1) {
+    const single = parts[0].substring(0, 2).toUpperCase();
+    return single === 'IA' ? 'HP' : single;
+  }
+  const result = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return result === 'IA' ? 'HP' : result;
 }
 
 export type TipoAutomacao = 

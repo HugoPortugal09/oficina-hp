@@ -40,7 +40,11 @@ import {
   SlidersHorizontal,
   FileText,
   LogOut,
-  FolderOpen
+  FolderOpen,
+  Compass,
+  PackageCheck,
+  GraduationCap,
+  Handshake
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -52,6 +56,7 @@ import {
   type AiFolhaGenerationResult
 } from '../services/ollamaService';
 import { sendTaskNotificationEmail } from '../services/emailService';
+import { estimateDistanceKm } from './Empresas';
 import type {
   FolhaServico,
   Empresa,
@@ -90,10 +95,14 @@ const OF_STATUSES: StatusFolhaServico[] = [
 ];
 
 const CT_STATUSES: StatusFolhaServico[] = [
-  'CT - Contrato'
+  'CT - Contrato',
+  'CT - Agendar',
+  'CT - Aguardar peças',
+  'CT - Aguardar resposta Fornecedor'
 ];
 
 const FEITO_STATUSES: StatusFolhaServico[] = [
+  'FEITO - Resolvido',
   'FEITO - Faturar',
   'FEITO - Aguardar Requisição',
   'FEITO - Submeter Garantia',
@@ -108,7 +117,7 @@ function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = fal
   } else if (tipo === 'Oficina') {
     baseStatuses = [...OF_STATUSES];
   } else if (tipo === 'Contrato') {
-    baseStatuses = [...CT_STATUSES];
+    baseStatuses = [...CT_STATUSES, 'FEITO - Resolvido'];
   } else {
     baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
   }
@@ -473,20 +482,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         });
         if (aiNote.hasActionableTask && aiNote.tarefa) {
           const tarNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
-          const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
-          const userNome = currentUser?.nome || 'Hugo Portugal';
+          const autorIniciais = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+            || (folhaToSave.criadoPor ? getInitials(folhaToSave.criadoPor) : null)
+            || (folhaToSave.servicos?.[0]?.tecnico ? getInitials(folhaToSave.servicos[0].tecnico) : null)
+            || 'HP';
+          const autorNome = currentUser?.nome 
+            || folhaToSave.criadoPor 
+            || folhaToSave.servicos?.[0]?.tecnico 
+            || 'Hugo Portugal';
 
           const novaTar: Tarefa = {
             id: db.generateId('tar'),
             numero: tarNum,
             descricao: aiNote.tarefa.descricao,
             prioridade: aiNote.tarefa.prioridade,
-            responsavel: aiNote.tarefa.responsavel || userNome,
+            responsavel: aiNote.tarefa.responsavel || autorNome,
             dataLimite: aiNote.tarefa.dataLimite,
             notasAdicionais: aiNote.tarefa.notasAdicionais,
             status: 'Pendente',
-            criadoPorIniciais: userIniciais,
-            criadoPorNome: userNome,
+            criadoPorIniciais: autorIniciais === 'IA' ? 'HP' : autorIniciais,
+            criadoPorNome: autorNome,
             dataCriacao: now
           };
           db.insert(STORAGE_KEYS.TAREFAS, novaTar);
@@ -511,12 +527,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       db.insert(STORAGE_KEYS.FOLHAS_SERVICO, folhaToSave);
     }
 
-    // Update fleet odometer
+    // Update fleet odometer and delivery/training info
     if (folhaToSave.equipamentoId) {
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, folhaToSave.equipamentoId, {
+      const eqUpdate: Partial<Equipamento> = {
         kmsAtuais: folhaToSave.kmsAtuais,
         horasAtuais: folhaToSave.horasAtuais
-      });
+      };
+      if (folhaToSave.tipo === 'Entrega e Formação') {
+        if (folhaToSave.dataEntrega !== undefined) eqUpdate.dataEntrega = folhaToSave.dataEntrega;
+        if (folhaToSave.entregaPor !== undefined) eqUpdate.entregaPor = folhaToSave.entregaPor;
+        if (folhaToSave.dataFormacao !== undefined) eqUpdate.dataFormacao = folhaToSave.dataFormacao;
+        if (folhaToSave.formacaoPor !== undefined) eqUpdate.formacaoPor = folhaToSave.formacaoPor;
+      }
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, folhaToSave.equipamentoId, eqUpdate);
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     }
 
     setIsSaving(false);
@@ -942,8 +966,130 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const handleSaveSelectedFolha = () => {
     if (!selectedFolha) return;
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, selectedFolha);
+    if (selectedFolha.equipamentoId) {
+      const eqUpdate: Partial<Equipamento> = {
+        kmsAtuais: selectedFolha.kmsAtuais,
+        horasAtuais: selectedFolha.horasAtuais
+      };
+      if (selectedFolha.tipo === 'Entrega e Formação') {
+        if (selectedFolha.dataEntrega !== undefined) eqUpdate.dataEntrega = selectedFolha.dataEntrega;
+        if (selectedFolha.entregaPor !== undefined) eqUpdate.entregaPor = selectedFolha.entregaPor;
+        if (selectedFolha.dataFormacao !== undefined) eqUpdate.dataFormacao = selectedFolha.dataFormacao;
+        if (selectedFolha.formacaoPor !== undefined) eqUpdate.formacaoPor = selectedFolha.formacaoPor;
+      }
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, eqUpdate);
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
     setSaveBanner(`Folha de Serviço ${selectedFolha.numero} gravada com sucesso!`);
     setTimeout(() => setSaveBanner(null), 3500);
+  };
+
+  const handleRegisterEntregaSelected = () => {
+    if (!selectedFolha) return;
+    const today = new Date().toISOString().split('T')[0];
+    const person = currentUser?.nome || 'Hugo Portugal';
+    const newDate = selectedFolha.dataEntrega || today;
+    const newPerson = selectedFolha.entregaPor || person;
+    const updated = {
+      ...selectedFolha,
+      dataEntrega: newDate,
+      entregaPor: newPerson
+    };
+    setSelectedFolha(updated);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+    if (selectedFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, {
+        dataEntrega: newDate,
+        entregaPor: newPerson
+      });
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
+  };
+
+  const handleRegisterFormacaoSelected = () => {
+    if (!selectedFolha) return;
+    const today = new Date().toISOString().split('T')[0];
+    const person = currentUser?.nome || 'Hugo Portugal';
+    const newDate = selectedFolha.dataFormacao || today;
+    const newPerson = selectedFolha.formacaoPor || person;
+    const updated = {
+      ...selectedFolha,
+      dataFormacao: newDate,
+      formacaoPor: newPerson
+    };
+    setSelectedFolha(updated);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+    if (selectedFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, {
+        dataFormacao: newDate,
+        formacaoPor: newPerson
+      });
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
+  };
+
+  const handleDateEntregaSelectedChange = (val: string) => {
+    if (!selectedFolha) return;
+    const updated = { ...selectedFolha, dataEntrega: val };
+    setSelectedFolha(updated);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataEntrega: val });
+    if (selectedFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataEntrega: val });
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
+  };
+
+  const handleEntregaPorSelectedChange = (val: string) => {
+    if (!selectedFolha) return;
+    const updated = { ...selectedFolha, entregaPor: val };
+    setSelectedFolha(updated);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { entregaPor: val });
+    if (selectedFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { entregaPor: val });
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
+  };
+
+  const handleDateFormacaoSelectedChange = (val: string) => {
+    if (!selectedFolha) return;
+    const updated = { ...selectedFolha, dataFormacao: val };
+    setSelectedFolha(updated);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataFormacao: val });
+    if (selectedFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataFormacao: val });
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
+  };
+
+  const handleFormacaoPorSelectedChange = (val: string) => {
+    if (!selectedFolha) return;
+    const updated = { ...selectedFolha, formacaoPor: val };
+    setSelectedFolha(updated);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { formacaoPor: val });
+    if (selectedFolha.equipamentoId) {
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { formacaoPor: val });
+      setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
+    }
+  };
+
+  const handleRegisterEntregaManual = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const person = currentUser?.nome || 'Hugo Portugal';
+    setManualFolha(prev => ({
+      ...prev,
+      dataEntrega: prev.dataEntrega || today,
+      entregaPor: prev.entregaPor || person
+    }));
+  };
+
+  const handleRegisterFormacaoManual = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const person = currentUser?.nome || 'Hugo Portugal';
+    setManualFolha(prev => ({
+      ...prev,
+      dataFormacao: prev.dataFormacao || today,
+      formacaoPor: prev.formacaoPor || person
+    }));
   };
 
   const matchingPlates = equipamentos.filter(
@@ -1093,7 +1239,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
               {/* Status Filter Chips */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {['TODAS', 'AT', 'OF', 'FEITO'].map(st => (
+                {['TODAS', 'AT', 'OF', 'CT', 'FEITO'].map(st => (
                   <button
                     key={st}
                     onClick={() => setStatusFilter(st)}
@@ -1105,7 +1251,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         : 'bg-slate-900 text-slate-400 border border-slate-800'
                     }`}
                   >
-                    {st === 'TODAS' ? 'Todas' : st === 'AT' ? 'Assistências (AT)' : st === 'OF' ? 'Oficina (OF)' : 'Concluídas (FEITO)'}
+                    {st === 'TODAS'
+                      ? 'Todas'
+                      : st === 'AT'
+                      ? 'Assistências (AT)'
+                      : st === 'OF'
+                      ? 'Oficina (OF)'
+                      : st === 'CT'
+                      ? 'Contratos (CT)'
+                      : 'Concluídas (FEITO)'}
                   </button>
                 ))}
               </div>
@@ -1323,32 +1477,179 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </div>
 
                 {/* Total Labor Time Calculated Summary */}
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Total Tempo Mão-de-Obra:</span>
-                  <span className="font-mono font-black text-hp-400 text-sm">
-                    {(
-                      (selectedFolha.servicos?.reduce((acc, s) => acc + (Number(s.horas) || 0), 0) || 0) +
-                      (selectedFolha.servicosAdicionais?.reduce((acc, s) => acc + (Number(s.horas) || 0), 0) || 0)
-                    ).toFixed(1)} h
-                  </span>
+                {selectedFolha.tipo !== 'Entrega e Formação' && (
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Total Tempo Mão-de-Obra:</span>
+                    <span className="font-mono font-black text-hp-400 text-sm">
+                      {(
+                        (selectedFolha.servicos?.reduce((acc, s) => acc + (Number(s.horas) || 0), 0) || 0) +
+                        (selectedFolha.servicosAdicionais?.reduce((acc, s) => acc + (Number(s.horas) || 0), 0) || 0)
+                      ).toFixed(1)} h
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Empresa & Localização */}
+              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                  Empresa & Localização
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-hp-400 shrink-0" />
+                    <span>{empresas.find(e => e.id === selectedFolha.empresaId)?.nome || 'Empresa Associada'}</span>
+                  </div>
+                  {selectedFolha.localizacao && (
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{selectedFolha.localizacao}</span>
+                    </div>
+                  )}
+                  {selectedFolha.pessoaPresente && (
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Presente: <b className="text-slate-200">{selectedFolha.pessoaPresente}</b></span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* 1. MÃO-DE-OBRA & SERVIÇOS EFETUADOS */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                    <Wrench className="w-4 h-4 text-hp-400" />
-                    Mão-de-Obra Efetuada ({selectedFolha.servicos?.length || 0})
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => handleAddServiceToSelected(false)}
-                    className="px-2.5 py-1 bg-hp-600/30 hover:bg-hp-600 text-hp-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1 border border-hp-500/30 transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
+              {/* ENTREGA & FORMAÇÃO CARD (Apenas quando o tipo é Entrega e Formação) */}
+              {selectedFolha.tipo === 'Entrega e Formação' && (
+                <div className="p-4 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/90 rounded-2xl border-2 border-emerald-500/40 shadow-xl space-y-4">
+                  <div className="flex items-center gap-2 pb-2.5 border-b border-slate-800">
+                    <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <Handshake className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Registo de Entrega & Formação
+                      </h4>
+                      <p className="text-[10px] text-slate-400">
+                        As datas registadas são gravadas diretamente na ficha do equipamento.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 1: ENTREGA */}
+                  <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-emerald-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <PackageCheck className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-black text-emerald-400 uppercase">Entrega</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegisterEntregaSelected}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          selectedFolha.dataEntrega
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        }`}
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        {selectedFolha.dataEntrega ? 'Entrega Registada' : 'Registar Entrega'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data de Entrega <span className="text-emerald-400 font-normal">(Alterável)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={selectedFolha.dataEntrega || ''}
+                          onChange={e => handleDateEntregaSelectedChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Pessoa que fez a Entrega
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Quem realizou a entrega..."
+                          value={selectedFolha.entregaPor || ''}
+                          onChange={e => handleEntregaPorSelectedChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: FORMAÇÃO */}
+                  <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-sky-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <GraduationCap className="w-4 h-4 text-sky-400" />
+                        <span className="text-xs font-black text-sky-400 uppercase">Formação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegisterFormacaoSelected}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          selectedFolha.dataFormacao
+                            ? 'bg-sky-600 text-white shadow-sky-600/30'
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                        }`}
+                      >
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        {selectedFolha.dataFormacao ? 'Formação Registada' : 'Registar Formação'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data de Formação <span className="text-sky-400 font-normal">(Alterável)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={selectedFolha.dataFormacao || ''}
+                          onChange={e => handleDateFormacaoSelectedChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Pessoa que Ministrou a Formação
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Quem realizou a formação..."
+                          value={selectedFolha.formacaoPor || ''}
+                          onChange={e => handleFormacaoPorSelectedChange(e.target.value)}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
+              )}
+
+              {/* SECTIONS FOR REPAIRS / SERVICES (Ocultas quando o tipo é Entrega e Formação) */}
+              {selectedFolha.tipo !== 'Entrega e Formação' && (
+                <>
+                  {/* 1. MÃO-DE-OBRA & SERVIÇOS EFETUADOS */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Wrench className="w-4 h-4 text-hp-400" />
+                        Mão-de-Obra Efetuada ({selectedFolha.servicos?.length || 0})
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => handleAddServiceToSelected(false)}
+                        className="px-2.5 py-1 bg-hp-600/30 hover:bg-hp-600 text-hp-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1 border border-hp-500/30 transition-all"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Adicionar
+                      </button>
+                    </div>
 
                 <div className="space-y-2">
                   {(!selectedFolha.servicos || selectedFolha.servicos.length === 0) ? (
@@ -1784,6 +2085,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
                 />
               </div>
+            </>
+          )}
 
               {/* 6. NOTAS INTERNAS */}
               <div className="p-3.5 bg-slate-950/60 rounded-2xl border border-indigo-500/30 space-y-2">
@@ -1809,8 +2112,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 />
               </div>
 
-              {/* 7. PRÓXIMA REVISÃO RECOMENDADA */}
-              <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-3">
+              {selectedFolha.tipo !== 'Entrega e Formação' && (
+                <>
+                  {/* 7. PRÓXIMA REVISÃO RECOMENDADA */}
+                  <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-hp-400" />
                   Próxima Revisão Recomendada
@@ -1955,6 +2260,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   </div>
                 )}
               </div>
+            </>
+          )}
 
               {/* 10. Actions */}
               <div className="pt-3 border-t border-slate-800 space-y-2.5">
@@ -2617,6 +2924,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           empresaId: exactEq.empresaId,
                           kmsAtuais: exactEq.kmsAtuais || prev.kmsAtuais,
                           horasAtuais: exactEq.horasAtuais || prev.horasAtuais,
+                          dataEntrega: exactEq.dataEntrega || prev.dataEntrega || '',
+                          entregaPor: exactEq.entregaPor || prev.entregaPor || '',
+                          dataFormacao: exactEq.dataFormacao || prev.dataFormacao || '',
+                          formacaoPor: exactEq.formacaoPor || prev.formacaoPor || '',
                           pessoaPresente: cliMatch?.nome || '',
                           clienteId: cliMatch?.id || ''
                         } : {})
@@ -2648,6 +2959,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                             empresaId: eq.empresaId,
                             kmsAtuais: eq.kmsAtuais || prev.kmsAtuais,
                             horasAtuais: eq.horasAtuais || prev.horasAtuais,
+                            dataEntrega: eq.dataEntrega || prev.dataEntrega || '',
+                            entregaPor: eq.entregaPor || prev.entregaPor || '',
+                            dataFormacao: eq.dataFormacao || prev.dataFormacao || '',
+                            formacaoPor: eq.formacaoPor || prev.formacaoPor || '',
                             pessoaPresente: cliMatch?.nome || '',
                             clienteId: cliMatch?.id || ''
                           }));
@@ -2661,64 +2976,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* Tipo de Serviço & Estado Inicial */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-400 block uppercase">Tipo de Serviço</label>
-                  <select
-                    value={manualFolha.tipo || 'Oficina'}
-                    onChange={e => {
-                      const newTipo = e.target.value as TipoServico;
-                      const isOficina = newTipo === 'Oficina';
-                      const defaultStatus = isOficina
-                        ? 'OF - Com requisição - Aguardar agenda'
-                        : newTipo === 'Assistência Técnica'
-                        ? 'AT - Pedido de Assistência'
-                        : newTipo === 'Contrato'
-                        ? 'CT - Contrato'
-                        : manualFolha.status;
-
-                      setManualFolha(prev => ({
-                        ...prev,
-                        tipo: newTipo,
-                        localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : prev.localizacao,
-                        localizacaoTipo: isOficina ? 'oficina' : prev.localizacaoTipo,
-                        distanciaKms: isOficina ? 0 : prev.distanciaKms,
-                        status: prev.status?.startsWith('FEITO') ? prev.status : defaultStatus
-                      }));
-                    }}
-                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
-                  >
-                    <option value="Oficina">Oficina</option>
-                    <option value="Assistência Técnica">Assistência Técnica</option>
-                    <option value="Garantia">Garantia</option>
-                    <option value="Entrega e Formação">Entrega e Formação</option>
-                    <option value="Contrato">Contrato</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-400 block uppercase">Estado Inicial</label>
-                    {currentUser?.role !== 'administrador' && (
-                      <span className="text-[9px] text-slate-500 font-mono">Restrito</span>
-                    )}
-                  </div>
-                  <select
-                    value={manualFolha.status || 'OF - Com requisição - Aguardar agenda'}
-                    onChange={e => {
-                      const newSt = e.target.value as StatusFolhaServico;
-                      setManualFolha(prev => ({ ...prev, status: newSt }));
-                    }}
-                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
-                  >
-                    {getAvailableStatusesForFolha(manualFolha.tipo, currentUser?.role === 'administrador', manualFolha.status).map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
 
               {/* 2. Empresa Cliente */}
@@ -2804,17 +3061,137 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </div>
               </div>
 
-              {/* 4. Anomalias / Descrição */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-400 block uppercase">Anomalias Reportadas / Descrição</label>
-                <textarea
-                  rows={2}
-                  value={manualFolha.anomalias || ''}
-                  onChange={e => setManualFolha(prev => ({ ...prev, anomalias: e.target.value }))}
-                  placeholder="Descreva as anomalias ou o trabalho a realizar..."
-                  className="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-xs text-white"
-                />
-              </div>
+              {/* ENTREGA & FORMAÇÃO CARD (Nova Folha Manual) */}
+              {manualFolha.tipo === 'Entrega e Formação' && (
+                <div className="p-4 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/90 rounded-2xl border-2 border-emerald-500/40 shadow-xl space-y-4">
+                  <div className="flex items-center gap-2 pb-2.5 border-b border-slate-800">
+                    <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <Handshake className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Registo de Entrega & Formação
+                      </h4>
+                      <p className="text-[10px] text-slate-400">
+                        As datas registadas serão gravadas diretamente na ficha do equipamento.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 1: ENTREGA */}
+                  <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-emerald-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <PackageCheck className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-black text-emerald-400 uppercase">Entrega</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegisterEntregaManual}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          manualFolha.dataEntrega
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        }`}
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        {manualFolha.dataEntrega ? 'Entrega Registada' : 'Registar Entrega'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data de Entrega <span className="text-emerald-400 font-normal">(Alterável)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={manualFolha.dataEntrega || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, dataEntrega: e.target.value }))}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Pessoa que fez a Entrega
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Quem realizou a entrega..."
+                          value={manualFolha.entregaPor || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, entregaPor: e.target.value }))}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: FORMAÇÃO */}
+                  <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-sky-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <GraduationCap className="w-4 h-4 text-sky-400" />
+                        <span className="text-xs font-black text-sky-400 uppercase">Formação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegisterFormacaoManual}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          manualFolha.dataFormacao
+                            ? 'bg-sky-600 text-white shadow-sky-600/30'
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                        }`}
+                      >
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        {manualFolha.dataFormacao ? 'Formação Registada' : 'Registar Formação'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data de Formação <span className="text-sky-400 font-normal">(Alterável)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={manualFolha.dataFormacao || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, dataFormacao: e.target.value }))}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Pessoa que Ministrou a Formação
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Quem realizou a formação..."
+                          value={manualFolha.formacaoPor || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, formacaoPor: e.target.value }))}
+                          className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SECTIONS FOR REPAIRS / SERVICES (Ocultas quando o tipo é Entrega e Formação) */}
+              {manualFolha.tipo !== 'Entrega e Formação' && (
+                <>
+                  {/* 4. Anomalias / Descrição */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 block uppercase">Anomalias Reportadas / Descrição</label>
+                    <textarea
+                      rows={2}
+                      value={manualFolha.anomalias || ''}
+                      onChange={e => setManualFolha(prev => ({ ...prev, anomalias: e.target.value }))}
+                      placeholder="Descreva as anomalias ou o trabalho a realizar..."
+                      className="w-full py-2.5 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-xs text-white"
+                    />
+                  </div>
 
               {/* 5. Serviços (Mão-de-Obra) & Tempo Total */}
               <div className="space-y-3 pt-2 border-t border-slate-800">
@@ -3132,18 +3509,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               </div>
 
               {/* 9. Notas para o Cliente & Notas Internas */}
-              <div className="space-y-3 pt-2 border-t border-slate-800">
-                <div>
-                  <label className="text-xs font-bold text-slate-400 block uppercase">Notas para o Cliente (PDF)</label>
-                  <textarea
-                    rows={2}
-                    value={manualFolha.notasCliente || ''}
-                    onChange={e => setManualFolha(prev => ({ ...prev, notasCliente: e.target.value }))}
-                    placeholder="Observações entregues ao cliente..."
-                    className="w-full py-2 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-xs text-white"
-                  />
-                </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block uppercase">Notas para o Cliente (PDF)</label>
+                    <textarea
+                      rows={2}
+                      value={manualFolha.notasCliente || ''}
+                      onChange={e => setManualFolha(prev => ({ ...prev, notasCliente: e.target.value }))}
+                      placeholder="Observações entregues ao cliente..."
+                      className="w-full py-2 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-xs text-white"
+                    />
+                  </div>
+                </>
+              )}
 
+              {/* Notas Internas */}
+              <div className="space-y-3 pt-2 border-t border-slate-800">
                 <div>
                   <label className="text-xs font-bold text-indigo-300 block uppercase">Notas Internas (IA & Oficina)</label>
                   <textarea
@@ -3651,7 +4031,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                       >
                         <div className="flex items-start justify-between">
                           <div>
-                            <h3 className="text-base font-extrabold text-white">{emp.nome}</h3>
+                            <h3 className={`text-base font-extrabold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{emp.nome}</h3>
                             <span className="text-xs font-mono text-slate-400">NIF: {emp.nif || 'N/A'}</span>
                           </div>
                           <Badge variant="info">{companyVehicles.length} Viaturas</Badge>
@@ -3662,7 +4042,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           {emp.telefone && (
                             <a
                               href={`tel:${emp.telefone}`}
-                              className="flex-1 py-2 rounded-xl bg-slate-950 text-slate-200 flex items-center justify-center gap-1.5 border border-slate-800"
+                              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 border transition-colors ${
+                                theme === 'light'
+                                  ? 'bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200'
+                                  : 'bg-slate-950 text-slate-200 border-slate-800 hover:bg-slate-800'
+                              }`}
                             >
                               <Phone className="w-3.5 h-3.5 text-emerald-400" /> {emp.telefone}
                             </a>
@@ -3670,32 +4054,121 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           {emp.email && (
                             <a
                               href={`mailto:${emp.email}`}
-                              className="flex-1 py-2 rounded-xl bg-slate-950 text-slate-200 flex items-center justify-center gap-1.5 border border-slate-800"
+                              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 border transition-colors ${
+                                theme === 'light'
+                                  ? 'bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200'
+                                  : 'bg-slate-950 text-slate-200 border-slate-800 hover:bg-slate-800'
+                              }`}
                             >
                               <Mail className="w-3.5 h-3.5 text-hp-400" /> Email
                             </a>
                           )}
                         </div>
 
-                        {/* Estaleiros vinculados */}
+                        {/* Morada da Sede & Navegação (Google Maps e Waze) */}
+                        {emp.moradaSede && (
+                          <div
+                            className={`p-3 rounded-2xl border space-y-2 ${
+                              theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/70 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-4 h-4 text-hp-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                                  theme === 'light' ? 'text-slate-500' : 'text-slate-400'
+                                }`}>
+                                  Morada da Sede
+                                </span>
+                                <span className={`text-xs font-medium block break-words ${
+                                  theme === 'light' ? 'text-slate-800' : 'text-slate-200'
+                                }`}>
+                                  {emp.moradaSede}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className={`flex items-center justify-between pt-1.5 border-t gap-2 flex-wrap ${
+                              theme === 'light' ? 'border-slate-200' : 'border-slate-800/60'
+                            }`}>
+                              <span className={`text-[11px] font-mono flex items-center gap-1 font-semibold ${
+                                theme === 'light' ? 'text-amber-600' : 'text-amber-300'
+                              }`}>
+                                <Compass className="w-3.5 h-3.5" />
+                                {emp.distanciaKmGRAUMP || estimateDistanceKm(emp.moradaSede)} KM da GRAUMP
+                              </span>
+
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(emp.moradaSede)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-2.5 py-1.5 bg-hp-600/30 hover:bg-hp-600 text-hp-300 hover:text-white rounded-xl text-[11px] font-bold flex items-center gap-1 border border-hp-500/30 transition-all active:scale-95"
+                                  title="Abrir no Google Maps"
+                                >
+                                  <Navigation className="w-3 h-3" />
+                                  <span>Google Maps</span>
+                                </a>
+                                <a
+                                  href={`https://waze.com/ul?q=${encodeURIComponent(emp.moradaSede)}&navigate=yes`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-2.5 py-1.5 bg-cyan-600/30 hover:bg-cyan-600 text-cyan-300 hover:text-white rounded-xl text-[11px] font-bold flex items-center gap-1 border border-cyan-500/30 transition-all active:scale-95"
+                                  title="Abrir no Waze"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  <span>Waze</span>
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Estaleiros vinculados com Google Maps e Waze */}
                         {emp.estaleiros && emp.estaleiros.length > 0 && (
-                          <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                            <span className="text-[10px] font-bold uppercase text-slate-400 block">Estaleiros / Parques de Obras</span>
-                            <div className="space-y-1">
+                          <div className={`space-y-1.5 pt-2 border-t ${theme === 'light' ? 'border-slate-200' : 'border-slate-800/80'}`}>
+                            <span className={`text-[10px] font-bold uppercase block ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>
+                              Estaleiros / Parques de Obras
+                            </span>
+                            <div className="space-y-1.5">
                               {emp.estaleiros.map((est, i) => (
-                                <div key={i} className="p-2 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs">
-                                  <div className="min-w-0 pr-2">
-                                    <span className="font-bold text-white block">{est.nome}</span>
-                                    <span className="text-[11px] text-slate-400 truncate block">{est.morada}</span>
+                                <div
+                                  key={i}
+                                  className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 text-xs ${
+                                    theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1 pr-1">
+                                    <span className={`font-bold block ${theme === 'light' ? 'text-slate-800' : 'text-white'}`}>{est.nome}</span>
+                                    <span className={`text-[11px] truncate block ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{est.morada}</span>
+                                    {est.responsavel && (
+                                      <span className={`text-[10px] block ${theme === 'light' ? 'text-slate-400' : 'text-slate-500'}`}>
+                                        {est.responsavel} {est.telefone ? `(${est.telefone})` : ''}
+                                      </span>
+                                    )}
                                   </div>
-                                  <a
-                                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(est.morada)}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="p-1.5 rounded-lg bg-slate-800 text-hp-300 shrink-0"
-                                  >
-                                    <Navigation className="w-3.5 h-3.5" />
-                                  </a>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <a
+                                      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(est.morada)}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-2 py-1.5 rounded-xl bg-hp-600/30 hover:bg-hp-600 text-hp-300 hover:text-white border border-hp-500/30 flex items-center gap-1 text-[11px] font-bold transition-all active:scale-95"
+                                      title="Abrir no Google Maps"
+                                    >
+                                      <Navigation className="w-3 h-3" />
+                                      <span>Maps</span>
+                                    </a>
+                                    <a
+                                      href={`https://waze.com/ul?q=${encodeURIComponent(est.morada)}&navigate=yes`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-2 py-1.5 rounded-xl bg-cyan-600/30 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/30 flex items-center gap-1 text-[11px] font-bold transition-all active:scale-95"
+                                      title="Abrir no Waze"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      <span>Waze</span>
+                                    </a>
+                                  </div>
                                 </div>
                               ))}
                             </div>

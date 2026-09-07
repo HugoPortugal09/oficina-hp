@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Search,
@@ -80,11 +80,42 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
     nome: currentUser?.nome || 'Hugo Portugal'
   });
 
+  // Migração/Sanitização automática: se alguma tarefa tiver "IA" no campo criadoPorIniciais, substituir pelo utilizador real
+  useEffect(() => {
+    const list = db.get<Tarefa>(STORAGE_KEYS.TAREFAS);
+    let hasChanges = false;
+    const defaultInit = currentUser?.avatar || getInitials(currentUser?.nome) || 'HP';
+    const defaultNome = currentUser?.nome || 'Hugo Portugal';
+
+    const sanitized = list.map(t => {
+      if (t.criadoPorIniciais === 'IA' || !t.criadoPorIniciais) {
+        hasChanges = true;
+        const resolvedInit = (t.criadoPorNome && t.criadoPorNome !== 'IA')
+          ? getInitials(t.criadoPorNome)
+          : defaultInit;
+        const resolvedNome = (t.criadoPorNome && t.criadoPorNome !== 'IA')
+          ? t.criadoPorNome
+          : defaultNome;
+
+        return {
+          ...t,
+          criadoPorIniciais: resolvedInit === 'IA' ? 'HP' : resolvedInit,
+          criadoPorNome: resolvedNome
+        };
+      }
+      return t;
+    });
+
+    if (hasChanges) {
+      db.save(STORAGE_KEYS.TAREFAS, sanitized);
+    }
+  }, [currentUser]);
+
   const handleCreateNew = () => {
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
     const today = new Date().toISOString().split('T')[0];
     const defaultLimit = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const userIniciais = getInitials(currentUser?.nome || currentUser?.avatar || 'HP');
+    const userIniciais = currentUser?.avatar || getInitials(currentUser?.nome) || 'HP';
     const userNome = currentUser?.nome || 'Hugo Portugal';
     const defaultResp = userNome || utilizadores[0]?.nome || 'Hugo Portugal';
 
@@ -97,7 +128,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
       dataLimite: defaultLimit,
       notasAdicionais: '',
       status: 'Pendente',
-      criadoPorIniciais: userIniciais,
+      criadoPorIniciais: userIniciais === 'IA' ? 'HP' : userIniciais,
       criadoPorNome: userNome,
       dataCriacao: today
     });
@@ -105,7 +136,18 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
   };
 
   const handleEdit = (t: Tarefa) => {
-    setEditingTarefa(t);
+    const safeIniciais = (!t.criadoPorIniciais || t.criadoPorIniciais === 'IA')
+      ? (currentUser?.avatar || getInitials(currentUser?.nome) || 'HP')
+      : t.criadoPorIniciais;
+    const safeNome = (!t.criadoPorNome || t.criadoPorNome === 'IA')
+      ? (currentUser?.nome || 'Hugo Portugal')
+      : t.criadoPorNome;
+
+    setEditingTarefa({
+      ...t,
+      criadoPorIniciais: safeIniciais === 'IA' ? 'HP' : safeIniciais,
+      criadoPorNome: safeNome
+    });
     setIsModalOpen(true);
   };
 
@@ -115,9 +157,13 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
       return;
     }
 
-    if (!editingTarefa.criadoPorIniciais) {
-      alert('Por favor informe as iniciais de quem abriu a tarefa.');
-      return;
+    // Garantir que criadoPorIniciais nunca seja 'IA'
+    if (!editingTarefa.criadoPorIniciais || editingTarefa.criadoPorIniciais === 'IA') {
+      const fallbackInit = currentUser?.avatar || getInitials(currentUser?.nome) || 'HP';
+      editingTarefa.criadoPorIniciais = fallbackInit === 'IA' ? 'HP' : fallbackInit;
+      if (!editingTarefa.criadoPorNome || editingTarefa.criadoPorNome === 'IA') {
+        editingTarefa.criadoPorNome = currentUser?.nome || 'Hugo Portugal';
+      }
     }
 
     const currentList = db.get<Tarefa>(STORAGE_KEYS.TAREFAS);
@@ -443,7 +489,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                       <div className="flex items-center justify-between text-slate-400">
                         <span>Aberta em:</span>
                         <span className="font-mono text-slate-300">
-                          {t.dataCriacao} por <b className="text-hp-400 px-1 py-0.5 bg-slate-900 rounded border border-slate-700">[{t.criadoPorIniciais}]</b>
+                          {t.dataCriacao} por <b className="text-hp-400 px-1 py-0.5 bg-slate-900 rounded border border-slate-700">[{t.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : t.criadoPorIniciais}]</b>
                         </span>
                       </div>
 
@@ -541,7 +587,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                       )}
                     </td>
                     <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      {t.dataCriacao} <b className="text-hp-400 font-mono">[{t.criadoPorIniciais}]</b>
+                      {t.dataCriacao} <b className="text-hp-400 font-mono">[{t.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : t.criadoPorIniciais}]</b>
                     </td>
                     <td className="py-3 px-4 text-[11px]">
                       {isDone && t.dataConclusao ? (
@@ -673,11 +719,45 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                 <label className="text-xs font-semibold text-slate-400 block mb-1">
                   Iniciais de Quem Abriu * <span className="text-[10px] text-hp-400">(Ex: HP, RF)</span>
                 </label>
+                <div className="flex gap-1.5 flex-wrap mb-1.5">
+                  {utilizadores.map(u => {
+                    const init = u.avatar || getInitials(u.nome);
+                    const currentVal = editingTarefa.criadoPorIniciais === 'IA'
+                      ? (currentUser?.avatar || 'HP')
+                      : (editingTarefa.criadoPorIniciais || '');
+                    const isSelected = currentVal === init.toUpperCase();
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setEditingTarefa(prev => ({
+                          ...prev,
+                          criadoPorIniciais: init.toUpperCase(),
+                          criadoPorNome: u.nome
+                        }))}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                          isSelected ? 'bg-hp-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                        }`}
+                      >
+                        {init}
+                      </button>
+                    );
+                  })}
+                </div>
                 <input
                   type="text"
                   maxLength={4}
-                  value={editingTarefa.criadoPorIniciais || ''}
-                  onChange={e => setEditingTarefa(prev => ({ ...prev, criadoPorIniciais: e.target.value.toUpperCase() }))}
+                  value={editingTarefa.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : (editingTarefa.criadoPorIniciais || '')}
+                  onChange={e => {
+                    const val = e.target.value.toUpperCase();
+                    const cleanVal = val === 'IA' ? (currentUser?.avatar || 'HP') : val;
+                    const matched = utilizadores.find(u => (u.avatar || getInitials(u.nome)).toUpperCase() === cleanVal);
+                    setEditingTarefa(prev => ({
+                      ...prev,
+                      criadoPorIniciais: cleanVal,
+                      criadoPorNome: matched ? matched.nome : prev.criadoPorNome
+                    }));
+                  }}
                   placeholder="HP"
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold"
                 />
