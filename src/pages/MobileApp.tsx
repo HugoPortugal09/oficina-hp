@@ -1129,16 +1129,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         theme === 'light' ? 'bg-white/90 border-slate-200' : 'bg-slate-900/90 border-slate-800'
       }`}>
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-hp-600 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-hp-600/30">
-            HP
+          <div className="h-10 px-2 rounded-xl bg-slate-950 border border-slate-700/80 flex items-center justify-center shadow-md overflow-hidden">
+            <img src="/grau_logo.png" alt="GRAUMP" className="h-7 w-auto object-contain" />
           </div>
           <div>
             <h1 className="text-base font-black tracking-tight leading-none text-hp-500">
               OFICINA HP
             </h1>
-            <p className="text-[11px] font-bold text-slate-400 mt-0.5 flex items-center gap-1">
+            <p className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Terminal Móvel / Oficina
+              Gestão & Frotas • GRAUMP
             </p>
           </div>
         </div>
