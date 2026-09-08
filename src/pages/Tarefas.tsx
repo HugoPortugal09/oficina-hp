@@ -26,6 +26,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import { sendTaskNotificationEmail } from '../services/emailService';
 import type { Tarefa, PrioridadeTarefa, StatusTarefa, UserProfile } from '../types';
 import { USERS, getInitials } from '../types';
@@ -113,8 +114,8 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
 
   const handleCreateNew = () => {
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
-    const today = new Date().toISOString().split('T')[0];
-    const defaultLimit = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = getTodayFormatted();
+    const defaultLimit = formatDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString());
     const userIniciais = currentUser?.avatar || getInitials(currentUser?.nome) || 'HP';
     const userNome = currentUser?.nome || 'Hugo Portugal';
     const defaultResp = userNome || utilizadores[0]?.nome || 'Hugo Portugal';
@@ -220,7 +221,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
     }
 
     const now = new Date();
-    const formattedDate = `${now.toISOString().split('T')[0]} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const formattedDate = `${getTodayFormatted()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
     const updatedTask: Tarefa = {
       ...completeModal.tarefa,
@@ -271,7 +272,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
     const matchesPrioridade = filterPrioridade === 'TODAS' || t.prioridade === filterPrioridade;
 
     return matchesSearch && matchesStatus && matchesPrioridade;
-  });
+  }).sort(sortByDateDesc(t => t.dataCriacao || t.dataLimite, t => t.numero));
 
   const countPendentes = tarefas.filter(t => t.status === 'Pendente').length;
   const countEmCurso = tarefas.filter(t => t.status === 'Em Curso').length;
@@ -479,7 +480,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                           <Calendar className="w-3.5 h-3.5 text-slate-500" /> Data Limite:
                         </span>
                         <span className={`font-bold ${isExpired ? 'text-rose-400' : 'text-slate-200'}`}>
-                          {t.dataLimite} {isExpired && '(Atrasada)'}
+                          {formatDate(t.dataLimite)} {isExpired && '(Atrasada)'}
                         </span>
                       </div>
                     )}
@@ -489,7 +490,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                       <div className="flex items-center justify-between text-slate-400">
                         <span>Aberta em:</span>
                         <span className="font-mono text-slate-300">
-                          {t.dataCriacao} por <b className="text-hp-400 px-1 py-0.5 bg-slate-900 rounded border border-slate-700">[{t.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : t.criadoPorIniciais}]</b>
+                          {formatDate(t.dataCriacao)} por <b className="text-hp-400 px-1 py-0.5 bg-slate-900 rounded border border-slate-700">[{t.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : t.criadoPorIniciais}]</b>
                         </span>
                       </div>
 
@@ -497,7 +498,7 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                         <div className="flex items-center justify-between text-emerald-400 font-semibold">
                           <span>Concluída em:</span>
                           <span className="font-mono">
-                            {t.dataConclusao} por <b className="text-emerald-300 px-1 py-0.5 bg-emerald-950/80 rounded border border-emerald-700">[{t.concluidoPorIniciais}]</b>
+                            {formatDate(t.dataConclusao)} por <b className="text-emerald-300 px-1 py-0.5 bg-emerald-950/80 rounded border border-emerald-700">[{t.concluidoPorIniciais}]</b>
                           </span>
                         </div>
                       )}
@@ -580,19 +581,19 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                     <td className="py-3 px-4 font-mono">
                       {t.dataLimite ? (
                         <span className={isExpired ? 'text-rose-400 font-bold' : 'text-slate-300'}>
-                          {t.dataLimite} {isExpired && '⚠️'}
+                          {formatDate(t.dataLimite)} {isExpired && '⚠️'}
                         </span>
                       ) : (
                         <span className="text-slate-500">-</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      {t.dataCriacao} <b className="text-hp-400 font-mono">[{t.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : t.criadoPorIniciais}]</b>
+                      {formatDate(t.dataCriacao)} <b className="text-hp-400 font-mono">[{t.criadoPorIniciais === 'IA' ? (currentUser?.avatar || 'HP') : t.criadoPorIniciais}]</b>
                     </td>
                     <td className="py-3 px-4 text-[11px]">
                       {isDone && t.dataConclusao ? (
                         <span className="text-emerald-400 font-mono">
-                          {t.dataConclusao} <b>[{t.concluidoPorIniciais}]</b>
+                          {formatDate(t.dataConclusao)} <b>[{t.concluidoPorIniciais}]</b>
                         </span>
                       ) : (
                         <span className="text-slate-500">-</span>
@@ -709,8 +710,8 @@ export const Tarefas: React.FC<TarefasProps> = ({ tarefas, currentUser }) => {
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Data Limite</label>
                 <input
                   type="date"
-                  value={editingTarefa.dataLimite || ''}
-                  onChange={e => setEditingTarefa(prev => ({ ...prev, dataLimite: e.target.value }))}
+                  value={formatDateToInput(editingTarefa.dataLimite)}
+                  onChange={e => setEditingTarefa(prev => ({ ...prev, dataLimite: formatDate(e.target.value) }))}
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 />
               </div>

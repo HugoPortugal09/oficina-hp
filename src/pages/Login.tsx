@@ -65,14 +65,15 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
       <div className="w-full max-w-md relative z-10 space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-hp-500 to-hp-700 shadow-xl shadow-hp-600/20 border border-hp-400/30">
-            <Wrench className="w-8 h-8 text-white stroke-[2.5]" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 shadow-2xl shadow-black/60 relative overflow-hidden group">
+            <span className="bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent font-black text-2xl tracking-wider">HP</span>
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-400/40 to-transparent" />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
-            OFICINA <span className="text-hp-400">HP</span>
+            OFICINA <span className="text-sky-400">HP</span>
           </h1>
           <p className="text-xs text-slate-400 font-medium">
-            Sistema de Gestão Técnica, Oficina & IA
+            Gestão Operacional & Frotas
           </p>
         </div>
 

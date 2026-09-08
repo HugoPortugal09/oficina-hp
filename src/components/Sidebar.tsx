@@ -185,12 +185,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Brand Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/80">
           <div className="flex items-center gap-3">
-            <div className="h-10 px-2.5 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center shadow-lg shadow-black/40 overflow-hidden group">
-              <img src="/grau_logo.png" alt="GRAUMP" className="h-7 w-auto object-contain" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 flex items-center justify-center shadow-lg shadow-black/50 text-slate-100 font-black tracking-wider text-sm relative group overflow-hidden">
+              <span className="bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent font-black">HP</span>
+              <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-400/40 to-transparent" />
             </div>
             <div>
-              <h1 className="text-sm font-extrabold tracking-tight text-white flex items-center gap-1.5">
-                OFICINA <span className="text-hp-400">HP</span>
+              <h1 className="text-sm font-black tracking-tight text-white flex items-center gap-1.5">
+                OFICINA <span className="text-sky-400">HP</span>
               </h1>
               <p className="text-[10px] uppercase font-mono tracking-wider text-slate-400">
                 Gestão & Frotas

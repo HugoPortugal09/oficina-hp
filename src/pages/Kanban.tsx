@@ -14,6 +14,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate } from '../utils/dateUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
 import type {
   FolhaServico,
@@ -174,7 +175,7 @@ export const Kanban: React.FC<KanbanProps> = ({
               f.matricula.toLowerCase().includes(searchTerm.toLowerCase()) ||
               f.marca.toLowerCase().includes(searchTerm.toLowerCase());
             return matchesCol && matchesSearch;
-          });
+          }).sort(sortByDateDesc(f => f.data, f => f.numero));
 
           return (
             <div
@@ -211,10 +212,13 @@ export const Kanban: React.FC<KanbanProps> = ({
                         onClick={() => onSelectFolha(fs)}
                         className="glass-card p-3.5 rounded-xl border border-slate-800 hover:border-hp-500/50 cursor-grab active:cursor-grabbing space-y-2.5 transition-all shadow-md"
                       >
-                        {/* Top: FS Number & Company */}
+                        {/* Top: FS Number, Date & Company */}
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-mono font-bold text-hp-400">{fs.numero}</span>
-                          <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-hp-400">{fs.numero}</span>
+                            <span className="font-mono text-[10px] text-slate-400">({formatDate(fs.data)})</span>
+                          </div>
+                          <span className="text-[11px] text-slate-400 truncate max-w-[120px]">
                             {empresa?.nome || 'Cliente Geral'}
                           </span>
                         </div>

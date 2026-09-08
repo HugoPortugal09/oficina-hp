@@ -25,6 +25,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import { generatePropostaPDF } from '../services/pdfService';
 import type {
   Proposta,
@@ -270,8 +271,8 @@ export const Propostas: React.FC<PropostasProps> = ({
     setEditingProp({
       id: db.generateId('prop'),
       numero: newNum,
-      data: today.toISOString().split('T')[0],
-      dataValidade: expiry.toISOString().split('T')[0],
+      data: getTodayFormatted(),
+      dataValidade: '30 dias',
       status: 'Rascunho',
       empresaId: '',
       nomeEmpresa: '',
@@ -484,7 +485,8 @@ export const Propostas: React.FC<PropostasProps> = ({
         id: db.generateId('fs'),
         numero: newFsNum,
         tipo: 'Oficina',
-        data: new Date().toISOString().split('T')[0],
+        data: getTodayFormatted(),
+        dataAbertura: getTodayFormatted(),
         status: 'OF - Com requisição - Aguardar agenda',
         empresaId: prop.empresaId,
         clienteId: prop.clienteId,
@@ -536,7 +538,7 @@ export const Propostas: React.FC<PropostasProps> = ({
     p.nomeEmpresa.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.matricula && p.matricula.toLowerCase().includes(searchTerm.toLowerCase())) ||
     p.descricao.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ).sort(sortByDateDesc(p => p.data, p => p.numero));
 
   return (
     <div className="space-y-3.5">
@@ -610,6 +612,7 @@ export const Propostas: React.FC<PropostasProps> = ({
                   <div className="flex items-start justify-between">
                     <div>
                       <span className="text-xs font-mono font-bold text-hp-400">{prop.numero}</span>
+                      <span className="text-[10px] text-slate-400 font-mono ml-2">({formatDate(prop.data)})</span>
                       <h4 className="text-base font-bold text-white mt-0.5 group-hover:text-hp-300 transition-colors">{prop.nomeEmpresa}</h4>
                     </div>
                     <Badge variant={prop.status === 'Aprovada' ? 'success' : prop.status === 'Convertida' ? 'info' : prop.status === 'Rejeitada' ? 'danger' : 'warning'}>
@@ -712,7 +715,7 @@ export const Propostas: React.FC<PropostasProps> = ({
                     className="hover:bg-hp-600/10 cursor-pointer transition-colors"
                   >
                     <td className="py-3 px-4 font-mono font-bold text-hp-400">{prop.numero}</td>
-                    <td className="py-3 px-4 font-mono text-slate-400">{prop.data}</td>
+                    <td className="py-3 px-4 font-mono text-slate-400">{formatDate(prop.data)}</td>
                     <td className="py-3 px-4 font-bold text-white">{prop.nomeEmpresa}</td>
                     <td className="py-3 px-4">
                       {prop.matricula ? (
@@ -865,6 +868,17 @@ export const Propostas: React.FC<PropostasProps> = ({
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* Data da Proposta */}
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Data da Proposta</label>
+                <input
+                  type="date"
+                  value={formatDateToInput(editingProp.data)}
+                  onChange={e => setEditingProp(prev => ({ ...prev, data: formatDate(e.target.value) }))}
+                  className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                />
               </div>
 
               {/* Status */}

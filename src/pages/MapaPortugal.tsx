@@ -25,6 +25,7 @@ import {
   OFICINA_HP_BASE,
   LocationCoordinates
 } from '../services/portugalGeoService';
+import { sortByDateDesc, formatDate } from '../utils/dateUtils';
 import type { FolhaServico, Empresa, Cliente, Equipamento } from '../types';
 
 interface MapaPortugalProps {
@@ -161,7 +162,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       }
 
       return true;
-    });
+    }).sort(sortByDateDesc(item => item.folha.data, item => item.folha.numero));
   }, [markerItems, filterType, selectedRegion, searchQuery]);
 
   // 4. Summary counts by Region
@@ -612,7 +613,10 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
                           <span className="font-mono text-xs font-black text-hp-400 bg-hp-500/10 px-2 py-0.5 rounded-md">
                             {item.folha.numero}
                           </span>
-                          <b className="text-white text-xs font-bold truncate max-w-[150px]">
+                          <span className="font-mono text-[10px] text-slate-400">
+                            {formatDate(item.folha.data)}
+                          </span>
+                          <b className="text-white text-xs font-bold truncate max-w-[130px]">
                             {item.empresa?.nome || 'Cliente Geral'}
                           </b>
                         </div>

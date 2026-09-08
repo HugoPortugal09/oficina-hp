@@ -20,6 +20,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import type { PedidoPeca, PecaCatalogo, FolhaServico, UserProfile } from '../types';
 import { getPermissionsForRole } from '../types';
 
@@ -144,7 +145,7 @@ export const PedidosPecas: React.FC<PedidosPecasProps> = ({
     setEditingPedido({
       id: db.generateId('ped'),
       numero: newNum,
-      data: new Date().toISOString().split('T')[0],
+      data: getTodayFormatted(),
       status: 'Pendente',
       prioridade: 'normal',
       fornecedor: '', // removido da UI
@@ -237,7 +238,7 @@ export const PedidosPecas: React.FC<PedidosPecasProps> = ({
         item.designacao.toLowerCase().includes(q)
     );
     return matchesNumber || matchesPlate || matchesNotes || matchesParts;
-  });
+  }).sort(sortByDateDesc(p => p.data, p => p.numero));
 
   return (
     <div className="space-y-3.5">
@@ -310,7 +311,7 @@ export const PedidosPecas: React.FC<PedidosPecasProps> = ({
                       <span className="font-mono font-bold text-xs text-hp-400 px-2 py-0.5 bg-slate-950 rounded border border-slate-800">
                         {ped.numero}
                       </span>
-                      <p className="text-[11px] text-slate-400 font-mono mt-1">{ped.data}</p>
+                      <p className="text-[11px] text-slate-400 font-mono mt-1">{formatDate(ped.data)}</p>
                     </div>
 
                     <div className="text-right space-y-1">
@@ -413,7 +414,7 @@ export const PedidosPecas: React.FC<PedidosPecasProps> = ({
                   className="hover:bg-hp-600/10 cursor-pointer transition-colors"
                 >
                   <td className="py-3 px-4 font-mono font-bold text-hp-400">{ped.numero}</td>
-                  <td className="py-3 px-4 font-mono text-slate-400">{ped.data}</td>
+                  <td className="py-3 px-4 font-mono text-slate-400">{formatDate(ped.data)}</td>
                   <td className="py-3 px-4 max-w-sm">
                     <div className="space-y-0.5">
                       {ped.pecas?.slice(0, 2).map((it, idx) => (

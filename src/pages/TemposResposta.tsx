@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
+import { formatDate } from '../utils/dateUtils';
 import type { FolhaServico, Empresa, Equipamento } from '../types';
 
 interface TemposRespostaProps {
@@ -183,11 +184,11 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
       r.folha.tipo,
       r.folha.matricula,
       `"${r.empresaNome.replace(/"/g, '""')}"`,
-      r.folha.data,
-      r.folha.dataRequisicao || 'N/A',
+      formatDate(r.folha.data),
+      formatDate(r.folha.dataRequisicao, 'N/A'),
       r.diasRequisicao ? r.diasRequisicao.days : 'N/A',
-      r.folha.dataEntradaOficina || 'N/A',
-      r.folha.dataConclusao || 'Em Aberto',
+      formatDate(r.folha.dataEntradaOficina, 'N/A'),
+      r.folha.dataConclusao ? formatDate(r.folha.dataConclusao) : 'Em Aberto',
       r.imobilizacao ? r.imobilizacao.days : 'N/A',
       `"${r.folha.status.replace(/"/g, '""')}"`
     ]);
@@ -464,7 +465,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
                         {f.dataRequisicao ? (
                           <div className="space-y-0.5">
                             <span className="font-mono text-[11px] text-slate-300 block">
-                              {f.dataRequisicao}
+                              {formatDate(f.dataRequisicao)}
                             </span>
                             {row.diasRequisicao && (
                               <span className="text-[10px] font-bold text-sky-400 flex items-center gap-1">
@@ -482,7 +483,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
 
                       {/* 6. Data Entrada Oficina */}
                       <td className="py-3 px-3.5 whitespace-nowrap font-mono text-[11px] text-slate-300">
-                        {f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : '-')}
+                        {formatDate(f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined))}
                       </td>
 
                       {/* 7. Data Conclusão */}
@@ -490,7 +491,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
                         {f.dataConclusao ? (
                           <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                            {f.dataConclusao}
+                            {formatDate(f.dataConclusao)}
                           </span>
                         ) : (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1 w-fit">

@@ -17,6 +17,7 @@ import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { generateGuiaEnvioPDF } from '../services/pdfService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import type { GuiaEnvio, Empresa, UserProfile } from '../types';
 import { getPermissionsForRole } from '../types';
 
@@ -53,7 +54,7 @@ export const GuiasEnvio: React.FC<GuiasEnvioProps> = ({ guias, empresas, current
     setEditingGuia({
       id: db.generateId('guia'),
       numero: newNum,
-      data: new Date().toISOString().split('T')[0],
+      data: getTodayFormatted(),
       empresaOrigem: config.nome,
       empresaDestino: empresas[0]?.nome || 'Empresa Destinatária',
       moradaDestino: empresas[0]?.moradaSede || 'Morada do Estaleiro',
@@ -121,7 +122,7 @@ export const GuiasEnvio: React.FC<GuiasEnvioProps> = ({ guias, empresas, current
     g.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
     g.empresaDestino.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (g.motorista && g.motorista.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  ).sort(sortByDateDesc(g => g.data, g => g.numero));
 
   return (
     <div className="space-y-3.5">
@@ -195,7 +196,7 @@ export const GuiasEnvio: React.FC<GuiasEnvioProps> = ({ guias, empresas, current
                         {guia.numero}
                       </span>
                       <h4 className="text-sm font-bold text-white mt-1 group-hover:text-hp-400 transition-colors">{guia.empresaDestino}</h4>
-                      <p className="text-[11px] text-slate-400 font-mono">{guia.data}</p>
+                      <p className="text-[11px] text-slate-400 font-mono">{formatDate(guia.data)}</p>
                     </div>
 
                     <Badge variant={guia.status === 'Entregue' ? 'success' : 'info'}>
@@ -277,7 +278,7 @@ export const GuiasEnvio: React.FC<GuiasEnvioProps> = ({ guias, empresas, current
                   className="hover:bg-hp-600/10 cursor-pointer transition-colors"
                 >
                   <td className="py-3 px-4 font-mono font-bold text-hp-400">{guia.numero}</td>
-                  <td className="py-3 px-4 font-mono text-slate-400">{guia.data}</td>
+                  <td className="py-3 px-4 font-mono text-slate-400">{formatDate(guia.data)}</td>
                   <td className="py-3 px-4 font-bold text-white">{guia.empresaDestino}</td>
                   <td className="py-3 px-4 max-w-xs truncate text-slate-300">{guia.moradaDestino}</td>
                   <td className="py-3 px-4 font-mono text-slate-400">
@@ -339,9 +340,19 @@ export const GuiasEnvio: React.FC<GuiasEnvioProps> = ({ guias, empresas, current
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">Viatura de Transporte</label>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Data de Emissão</label>
+                <input
+                  type="date"
+                  value={formatDateToInput(editingGuia.data)}
+                  onChange={e => setEditingGuia(prev => ({ ...prev, data: formatDate(e.target.value) }))}
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Viatura Transporte</label>
                 <input
                   type="text"
                   value={editingGuia.matriculaViaturaTransporte || ''}

@@ -49,6 +49,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
 import {
   transformPhotosToFolhaWithOllama,
@@ -781,7 +782,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     const matchesStatus = statusFilter === 'TODAS' || f.status.startsWith(statusFilter);
     return matchesQ && matchesStatus;
-  });
+  }).sort(sortByDateDesc(f => f.data, f => f.numero));
 
   // Handlers for Mobile selectedFolha interactive editing
   const handleToggleServiceConcluido = (servicoId: string, isAdicional: boolean) => {
@@ -1129,16 +1130,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         theme === 'light' ? 'bg-white/90 border-slate-200' : 'bg-slate-900/90 border-slate-800'
       }`}>
         <div className="flex items-center gap-2.5">
-          <div className="h-10 px-2 rounded-xl bg-slate-950 border border-slate-700/80 flex items-center justify-center shadow-md overflow-hidden">
-            <img src="/grau_logo.png" alt="GRAUMP" className="h-7 w-auto object-contain" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 flex items-center justify-center shadow-lg shadow-black/40 text-slate-100 font-black tracking-wider text-sm relative group overflow-hidden">
+            <span className="bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent font-black">HP</span>
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-slate-400/40 to-transparent" />
           </div>
           <div>
-            <h1 className="text-base font-black tracking-tight leading-none text-hp-500">
-              OFICINA HP
+            <h1 className="text-base font-black tracking-tight leading-none text-white">
+              OFICINA <span className="text-sky-400">HP</span>
             </h1>
             <p className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Gestão & Frotas • GRAUMP
+              Gestão & Frotas
             </p>
           </div>
         </div>
@@ -1320,9 +1322,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
                     {/* Meta quick row */}
                     <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800/60 font-mono">
+                      <span className="text-hp-400 font-bold">{formatDate(f.data)}</span>
                       <span>{f.kmsAtuais ? `${f.kmsAtuais.toLocaleString()} Km` : '0 Km'}</span>
-                      <span>{f.servicos?.length || 0} Serviços</span>
-                      <span>{f.pecas?.length || 0} Peças</span>
+                      <span>{f.servicos?.length || 0} Serv.</span>
                       <ChevronRight className="w-4 h-4 text-slate-500" />
                     </div>
                   </div>
@@ -4762,7 +4764,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               {tarefas.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-6">Sem tarefas registadas.</p>
               ) : (
-                tarefas.map(t => {
+                tarefas.slice().sort(sortByDateDesc(t => t.dataCriacao || t.dataLimite, t => t.numero)).map(t => {
                   const isDone = t.status === 'Concluída';
                   return (
                     <div
@@ -4788,7 +4790,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           {t.descricao}
                         </p>
                         <p className="text-[11px] text-slate-400 font-mono">
-                          Resp: {t.responsavel} {t.dataLimite && `• Limite: ${t.dataLimite}`}
+                          Resp: {t.responsavel} {t.dataLimite && `• Limite: ${formatDate(t.dataLimite)}`}
                         </p>
                       </div>
 
@@ -4800,7 +4802,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           const updated: Tarefa = {
                             ...t,
                             status: newStatus,
-                            dataConclusao: !isDone ? new Date().toISOString().split('T')[0] : undefined,
+                            dataConclusao: !isDone ? getTodayFormatted() : undefined,
                             concluidoPorIniciais: !isDone ? userIniciais : undefined,
                             concluidoPorNome: !isDone ? userNome : undefined
                           };

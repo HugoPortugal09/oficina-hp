@@ -44,6 +44,7 @@ import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail } from '../services/emailService';
@@ -380,7 +381,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   const handleOpenCreate = () => {
     const config = db.getConfig();
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
-    const now = new Date().toISOString().split('T')[0];
+    const now = getTodayFormatted();
     setAiNoteSuggestion(null);
     setTaskCreatedFeedback(null);
 
@@ -1091,7 +1092,7 @@ export const Oficina: React.FC<OficinaProps> = ({
     const matchesTipo = filterTipo === 'TODOS' || effectiveTipo === filterTipo || f.tipo === filterTipo;
 
     return matchesSearch && matchesStatus && matchesTipo;
-  });
+  }).sort(sortByDateDesc(f => f.data, f => f.numero));
 
   const hasAdicionais = ((editingFolha.servicosAdicionais?.length || 0) > 0) || ((editingFolha.pecasAdicionais?.length || 0) > 0);
 
@@ -1229,7 +1230,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                       <Badge variant={fs.status.startsWith('FEITO') ? 'success' : fs.status.startsWith('AT') ? 'info' : 'warning'}>
                         {fs.status.split(' - ')[1] || fs.status}
                       </Badge>
-                      <p className="text-[10px] text-slate-400 font-mono mt-1">{fs.data}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-1">{formatDate(fs.data)}</p>
                     </div>
                   </div>
 
@@ -1351,7 +1352,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                           {fs.status.split(' - ')[1] || fs.status}
                         </Badge>
                       </td>
-                      <td className="py-3 px-4 font-mono text-slate-400">{fs.data}</td>
+                      <td className="py-3 px-4 font-mono text-slate-400">{formatDate(fs.data)}</td>
                       <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
@@ -1479,8 +1480,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Data da Intervenção</label>
                 <input
                   type="date"
-                  value={editingFolha.data || ''}
-                  onChange={e => setEditingFolha(prev => ({ ...prev, data: e.target.value }))}
+                  value={formatDateToInput(editingFolha.data)}
+                  onChange={e => setEditingFolha(prev => ({ ...prev, data: formatDate(e.target.value) }))}
                   className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 />
               </div>
@@ -1493,7 +1494,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                   type="text"
                   readOnly
                   disabled
-                  value={editingFolha.dataAbertura || editingFolha.data || new Date().toISOString().split('T')[0]}
+                  value={formatDate(editingFolha.dataAbertura || editingFolha.data || getTodayFormatted())}
                   className="w-full py-1.5 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono cursor-not-allowed"
                 />
               </div>
@@ -1507,8 +1508,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                     <label className="text-slate-400 block mb-1 font-medium">Data de Entrada Oficina</label>
                     <input
                       type="date"
-                      value={editingFolha.dataEntradaOficina || ''}
-                      onChange={e => setEditingFolha(prev => ({ ...prev, dataEntradaOficina: e.target.value }))}
+                      value={formatDateToInput(editingFolha.dataEntradaOficina)}
+                      onChange={e => setEditingFolha(prev => ({ ...prev, dataEntradaOficina: formatDate(e.target.value) }))}
                       className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
                     />
                   </div>
@@ -1522,8 +1523,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                   <label className="text-slate-400 block mb-1 font-medium">Data de Requisição</label>
                   <input
                     type="date"
-                    value={editingFolha.dataRequisicao || ''}
-                    onChange={e => setEditingFolha(prev => ({ ...prev, dataRequisicao: e.target.value }))}
+                    value={formatDateToInput(editingFolha.dataRequisicao)}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, dataRequisicao: formatDate(e.target.value) }))}
                     className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
                   />
                 </div>
@@ -1533,8 +1534,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                     <label className="text-slate-400 block mb-1 font-medium">Data de Conclusão</label>
                     <input
                       type="date"
-                      value={editingFolha.dataConclusao || ''}
-                      onChange={e => setEditingFolha(prev => ({ ...prev, dataConclusao: e.target.value }))}
+                      value={formatDateToInput(editingFolha.dataConclusao)}
+                      onChange={e => setEditingFolha(prev => ({ ...prev, dataConclusao: formatDate(e.target.value) }))}
                       className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white"
                     />
                   </div>
@@ -1820,8 +1821,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={editingFolha.dataEntrega || ''}
-                          onChange={e => handleDateEntregaChange(e.target.value)}
+                          value={formatDateToInput(editingFolha.dataEntrega)}
+                          onChange={e => handleDateEntregaChange(formatDate(e.target.value))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:border-emerald-500"
                         />
                       </div>
@@ -1869,8 +1870,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={editingFolha.dataFormacao || ''}
-                          onChange={e => handleDateFormacaoChange(e.target.value)}
+                          value={formatDateToInput(editingFolha.dataFormacao)}
+                          onChange={e => handleDateFormacaoChange(formatDate(e.target.value))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:border-sky-500"
                         />
                       </div>
@@ -2562,7 +2563,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                           <span className="font-semibold">{hist.status}</span>
                         </div>
                         <div className="flex items-center gap-3 text-slate-400 font-mono text-[11px]">
-                          <span>Início: {new Date(hist.dataEntrada).toLocaleDateString('pt-PT')} {new Date(hist.dataEntrada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>Início: {formatDate(hist.dataEntrada)} {new Date(hist.dataEntrada).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           <span className="font-bold text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
                             {duration}
                           </span>

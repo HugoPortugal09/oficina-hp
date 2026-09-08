@@ -35,6 +35,7 @@ import type {
   VisitaCliente
 } from '../types';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 
 interface PlaneamentoProps {
   folhas: FolhaServico[];
@@ -356,7 +357,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
 
   const currentWeekVisitas = useMemo(() => {
     return visitas.filter(v => {
-      const inWeek = v.data >= weekStartStr && v.data <= weekEndStr;
+      const vDate = formatDateToInput(v.data);
+      const inWeek = vDate >= weekStartStr && vDate <= weekEndStr;
       if (!inWeek) return false;
       if (selectedTecnico !== 'TODOS' && v.tecnico !== selectedTecnico) return false;
       if (searchTerm.trim()) {
@@ -372,7 +374,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
 
   const currentWeekFolhas = useMemo(() => {
     return folhas.filter(f => {
-      const plannedDate = f.dataPlaneada || f.data;
+      const plannedDate = formatDateToInput(f.dataPlaneada || f.data);
       const inWeek = plannedDate >= weekStartStr && plannedDate <= weekEndStr;
       if (!inWeek) return false;
       if (selectedTecnico !== 'TODOS' && f.tecnicoPlaneado && f.tecnicoPlaneado !== selectedTecnico) return false;
@@ -590,8 +592,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           {/* 7 Days Columns */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-2.5 items-start">
             {weekDays.map(day => {
-              const dayFolhas = currentWeekFolhas.filter(f => (f.dataPlaneada || f.data) === day.isoStr);
-              const dayVisitas = currentWeekVisitas.filter(v => v.data === day.isoStr);
+              const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada || f.data) === day.isoStr);
+              const dayVisitas = currentWeekVisitas.filter(v => formatDateToInput(v.data) === day.isoStr);
               const totalItems = dayFolhas.length + dayVisitas.length;
               const isOver = dragOverDay === day.isoStr;
 

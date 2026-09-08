@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, ConfiguracaoOficina } from '../types';
 import { db } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
+import { formatDate, getTodayFormatted } from '../utils/dateUtils';
 
 export function generateFolhaServicoPDF(
   folha: FolhaServico,
@@ -61,7 +62,7 @@ export function generateFolhaServicoPDF(
   doc.text('DATA:', 160, 32, { align: 'right' });
   doc.setTextColor(30, 41, 59);
   doc.setFont('helvetica', 'normal');
-  doc.text(folha.data || new Date().toLocaleDateString('pt-PT'), 196, 32, { align: 'right' });
+  doc.text(formatDate(folha.data) || getTodayFormatted(), 196, 32, { align: 'right' });
 
   if (folha.guiaAT) {
     doc.setFont('helvetica', 'bold');
@@ -412,7 +413,7 @@ export function generatePropostaPDF(
   doc.text('DATA:', 160, 32, { align: 'right' });
   doc.setTextColor(30, 41, 59);
   doc.setFont('helvetica', 'normal');
-  doc.text(proposta.data, 196, 32, { align: 'right' });
+  doc.text(formatDate(proposta.data) || getTodayFormatted(), 196, 32, { align: 'right' });
 
   // 4. CLIENT & PROPOSAL CARDS
   const cardStartY = 40;
@@ -636,7 +637,7 @@ export function generateGuiaEnvioPDF(guia: GuiaEnvio) {
   doc.text('DATA:', 160, 32, { align: 'right' });
   doc.setTextColor(30, 41, 59);
   doc.setFont('helvetica', 'normal');
-  doc.text(guia.data, 196, 32, { align: 'right' });
+  doc.text(formatDate(guia.data) || getTodayFormatted(), 196, 32, { align: 'right' });
 
   // 4. METADATA BOXES
   const cardStartY = 40;

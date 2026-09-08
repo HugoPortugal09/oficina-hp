@@ -22,6 +22,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import type { Contrato, Empresa, Equipamento, UserProfile } from '../types';
 import { getPermissionsForRole } from '../types';
 
@@ -92,8 +93,8 @@ export const Contratos: React.FC<ContratosProps> = ({
       numero: newNum,
       empresaId: '',
       nomeEmpresa: '',
-      dataInicio: new Date().toISOString().split('T')[0],
-      dataFim: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      dataInicio: getTodayFormatted(),
+      dataFim: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()),
       equipamentosIds: [],
       matriculas: [],
       valorMensal: 350.0,
@@ -205,7 +206,7 @@ export const Contratos: React.FC<ContratosProps> = ({
     const matchesEmp = c.nomeEmpresa.toLowerCase().includes(q);
     const matchesPlates = c.matriculas?.some(m => m.toLowerCase().includes(q)) || false;
     return matchesNum || matchesEmp || matchesPlates;
-  });
+  }).sort(sortByDateDesc(c => c.dataInicio, c => c.numero));
 
   return (
     <div className="space-y-3.5">
@@ -317,7 +318,7 @@ export const Contratos: React.FC<ContratosProps> = ({
 
                     <div className="flex items-center justify-between text-slate-400 pt-1 border-t border-slate-800">
                       <span className="font-sans">Validade:</span>
-                      <span>{ct.dataInicio} até {ct.dataFim}</span>
+                      <span>{formatDate(ct.dataInicio)} até {formatDate(ct.dataFim)}</span>
                     </div>
                   </div>
 
@@ -398,7 +399,7 @@ export const Contratos: React.FC<ContratosProps> = ({
                     )}
                     <td className="py-3 px-4 text-slate-400">{ct.periodicidade}</td>
                     <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">
-                      {ct.dataInicio} ~ {ct.dataFim}
+                      {formatDate(ct.dataInicio)} ~ {formatDate(ct.dataFim)}
                     </td>
                     <td className="py-3 px-4">
                       {plates.length > 0 ? (
@@ -604,8 +605,8 @@ export const Contratos: React.FC<ContratosProps> = ({
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Data Início</label>
                 <input
                   type="date"
-                  value={editingContrato.dataInicio || ''}
-                  onChange={e => setEditingContrato(prev => ({ ...prev, dataInicio: e.target.value }))}
+                  value={formatDateToInput(editingContrato.dataInicio)}
+                  onChange={e => setEditingContrato(prev => ({ ...prev, dataInicio: formatDate(e.target.value) }))}
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 />
               </div>
@@ -614,8 +615,8 @@ export const Contratos: React.FC<ContratosProps> = ({
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Data Fim</label>
                 <input
                   type="date"
-                  value={editingContrato.dataFim || ''}
-                  onChange={e => setEditingContrato(prev => ({ ...prev, dataFim: e.target.value }))}
+                  value={formatDateToInput(editingContrato.dataFim)}
+                  onChange={e => setEditingContrato(prev => ({ ...prev, dataFim: formatDate(e.target.value) }))}
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 />
               </div>
