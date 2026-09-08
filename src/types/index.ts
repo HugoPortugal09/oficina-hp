@@ -32,6 +32,7 @@ export type StatusFolhaServico =
   | 'OF - Orçamento Enviado – Aguardar resposta'
   | 'OF - Com requisição - Aguardar agenda'
   | 'OF - Com requisição - Aguardar viatura'
+  | 'OF - A ser intervencionado'
   | 'OF - Com requisição - Aguardar peças'
   | 'OF - Sem requisição - Aguardar peças'
   // CONTRATO (CT)
