@@ -16,6 +16,7 @@ import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sortByDateDesc, formatDate } from '../utils/dateUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
+import { getTipoStyles } from '../utils/statusColors';
 import type {
   FolhaServico,
   Empresa,
@@ -61,6 +62,7 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
       'OF - Com requisição - Aguardar agenda',
       'OF - Com requisição - Aguardar viatura',
       'OF - A ser intervencionado',
+      'OF - Em Intervenção',
       'OF - Com requisição - Aguardar peças',
       'OF - Sem requisição - Aguardar peças'
     ]
@@ -217,10 +219,13 @@ export const Kanban: React.FC<KanbanProps> = ({
                         {/* Top: FS Number, Date & Company */}
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-hp-400">{fs.numero}</span>
+                            <span className={`font-mono font-bold ${getTipoStyles(fs.tipo).text}`}>{fs.numero}</span>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border whitespace-nowrap ${getTipoStyles(fs.tipo).badge}`}>
+                              {fs.tipo}
+                            </span>
                             <span className="font-mono text-[10px] text-slate-400">({formatDate(fs.data)})</span>
                           </div>
-                          <span className="text-[11px] text-slate-400 truncate max-w-[120px]">
+                          <span className="text-[11px] text-slate-400 truncate max-w-[110px]">
                             {empresa?.nome || 'Cliente Geral'}
                           </span>
                         </div>

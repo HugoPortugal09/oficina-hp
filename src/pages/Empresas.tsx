@@ -28,6 +28,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type { Empresa, Estaleiro, Equipamento, Cliente, FolhaServico } from '../types';
 
 interface EmpresasProps {
@@ -909,17 +910,21 @@ export const Empresas: React.FC<EmpresasProps> = ({
                     >
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-hp-400">{fs.numero}</span>
+                          <span className={`font-mono font-bold ${getTipoStyles(fs.tipo).text}`}>{fs.numero}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border whitespace-nowrap inline-flex items-center gap-1 ${getTipoStyles(fs.tipo).badge}`}>
+                            <span className={`w-1 h-1 rounded-full ${getTipoStyles(fs.tipo).dot}`} />
+                            {fs.tipo}
+                          </span>
                           <span className="font-mono font-bold text-white px-1.5 py-0.5 bg-slate-900 rounded border border-slate-700 text-[11px]">
                             {fs.matricula}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-400 mt-1">{fs.marca} {fs.modelo} • {fs.tipo}</p>
+                        <p className="text-[11px] text-slate-400 mt-1">{fs.marca} {fs.modelo}</p>
                       </div>
 
                       <div className="text-right">
-                        <Badge variant={fs.status.startsWith('FEITO') ? 'success' : fs.status.startsWith('AT') ? 'info' : 'warning'}>
-                          {fs.status.split(' - ')[1] || fs.status}
+                        <Badge variant={getStatusBadgeVariant(fs.status)}>
+                          {getStatusLabel(fs.status)}
                         </Badge>
                         <p className="text-[10px] text-slate-500 font-mono mt-1">{fs.data}</p>
                       </div>

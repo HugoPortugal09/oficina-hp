@@ -92,6 +92,7 @@ const OF_STATUSES: StatusFolhaServico[] = [
   'OF - Com requisição - Aguardar agenda',
   'OF - Com requisição - Aguardar viatura',
   'OF - A ser intervencionado',
+  'OF - Em Intervenção',
   'OF - Com requisição - Aguardar peças',
   'OF - Sem requisição - Aguardar peças'
 ];

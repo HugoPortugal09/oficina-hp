@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
+import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type {
   FolhaServico,
   Proposta,
@@ -228,7 +229,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 >
                   <div className="space-y-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono font-bold text-hp-400">{fs.numero}</span>
+                      <span className={`text-xs font-mono font-bold ${getTipoStyles(fs.tipo).text}`}>{fs.numero}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap inline-flex items-center gap-1 ${getTipoStyles(fs.tipo).badge}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${getTipoStyles(fs.tipo).dot}`} />
+                        {fs.tipo}
+                      </span>
                       <span className="text-xs font-mono font-extrabold px-2 py-0.5 bg-slate-950 rounded border border-slate-800 text-slate-200">
                         {fs.matricula}
                       </span>
@@ -245,8 +250,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
 
                   <div className="flex sm:flex-col items-end justify-between sm:justify-center gap-2 shrink-0">
-                    <Badge variant={fs.status.startsWith('FEITO') ? 'success' : fs.status.startsWith('AT') ? 'info' : 'warning'}>
-                      {fs.status.split(' - ')[1] || fs.status}
+                    <Badge variant={getStatusBadgeVariant(fs.status)}>
+                      {getStatusLabel(fs.status)}
                     </Badge>
                     <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
                       <span>Serviços: {servicesCompleted}/{fs.servicos.length}</span>

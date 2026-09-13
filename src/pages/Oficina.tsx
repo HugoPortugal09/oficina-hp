@@ -48,6 +48,7 @@ import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail } from '../services/emailService';
+import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type {
   FolhaServico,
   Empresa,
@@ -97,6 +98,7 @@ const OF_STATUSES: StatusFolhaServico[] = [
   'OF - Com requisição - Aguardar agenda',
   'OF - Com requisição - Aguardar viatura',
   'OF - A ser intervencionado',
+  'OF - Em Intervenção',
   'OF - Com requisição - Aguardar peças',
   'OF - Sem requisição - Aguardar peças'
 ];
@@ -1219,12 +1221,11 @@ export const Oficina: React.FC<OficinaProps> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-hp-400">{fs.numero}</span>
-                        {fs.tipo === 'Contrato' && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                            Contrato
-                          </span>
-                        )}
+                        <span className={`text-xs font-mono font-bold ${getTipoStyles(fs.tipo).text}`}>{fs.numero}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap inline-flex items-center gap-1 ${getTipoStyles(fs.tipo).badge}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${getTipoStyles(fs.tipo).dot}`} />
+                          {fs.tipo}
+                        </span>
                       </div>
                       <h4 className="text-base font-extrabold text-white mt-0.5 flex items-center gap-2">
                         <span className="font-mono px-2 py-0.5 bg-slate-950 rounded border border-slate-800 text-slate-200 text-sm group-hover:border-hp-500/50 transition-colors">
@@ -1237,8 +1238,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                     </div>
 
                     <div className="text-right">
-                      <Badge variant={fs.status.startsWith('FEITO') ? 'success' : fs.status.startsWith('AT') ? 'info' : 'warning'}>
-                        {fs.status.split(' - ')[1] || fs.status}
+                      <Badge variant={getStatusBadgeVariant(fs.status)}>
+                        {getStatusLabel(fs.status)}
                       </Badge>
                       <p className="text-[10px] text-slate-400 font-mono mt-1">{formatDate(fs.data)}</p>
                     </div>
@@ -1346,20 +1347,19 @@ export const Oficina: React.FC<OficinaProps> = ({
                       }}
                       className="hover:bg-slate-900/60 cursor-pointer transition-colors"
                     >
-                      <td className="py-3 px-4 font-mono font-bold text-hp-400">{fs.numero}</td>
+                      <td className={`py-3 px-4 font-mono font-bold ${getTipoStyles(fs.tipo).text}`}>{fs.numero}</td>
                       <td className="py-3 px-4 font-mono font-extrabold text-white">{fs.matricula}</td>
                       <td className="py-3 px-4 text-slate-200">{fs.marca} {fs.modelo}</td>
                       <td className="py-3 px-4 text-slate-300 truncate max-w-[180px]">{empresa?.nome || 'Geral'}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          fs.tipo === 'Contrato' ? 'bg-teal-500/20 text-teal-300' : 'bg-slate-800 text-slate-300'
-                        }`}>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1.5 ${getTipoStyles(fs.tipo).badge}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${getTipoStyles(fs.tipo).dot}`} />
                           {fs.tipo}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
-                        <Badge variant={fs.status.startsWith('FEITO') ? 'success' : fs.status.startsWith('AT') ? 'info' : 'warning'}>
-                          {fs.status.split(' - ')[1] || fs.status}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <Badge variant={getStatusBadgeVariant(fs.status)}>
+                          {getStatusLabel(fs.status)}
                         </Badge>
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-400">{formatDate(fs.data)}</td>
