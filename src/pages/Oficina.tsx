@@ -170,14 +170,19 @@ function formatDuration(startTime: string, endTime?: string): string {
 // Searchable Combobox for Parts in Catalog (Price-free for Workshop Technical Sheet)
 const SearchablePartSelect: React.FC<{
   value?: string;
+  referencia?: string;
+  isLivre?: boolean;
   catalogo: PecaCatalogo[];
   onSelect: (peca: PecaCatalogo) => void;
-}> = ({ value, catalogo, onSelect }) => {
+}> = ({ value, referencia, isLivre, catalogo, onSelect }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedPart = catalogo.find(p => p.id === value);
+  const selectedPart = catalogo.find(p =>
+    (value && p.id === value) ||
+    (referencia && p.referencia && p.referencia.trim().toLowerCase() === referencia.trim().toLowerCase())
+  );
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -201,7 +206,11 @@ const SearchablePartSelect: React.FC<{
         className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 hover:border-hp-500 rounded-lg text-xs text-white flex items-center justify-between cursor-pointer"
       >
         <span className="truncate">
-          {selectedPart ? `${selectedPart.referencia} - ${selectedPart.designacao}` : '-- Do Catálogo --'}
+          {selectedPart
+            ? `${selectedPart.referencia} - ${selectedPart.designacao}`
+            : isLivre
+            ? '-- Peça Livre / Avulso --'
+            : '-- Do Catálogo --'}
         </span>
         <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
       </div>
@@ -2167,6 +2176,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                       )}
                       <SearchablePartSelect
                         value={pec.pecaId}
+                        referencia={pec.referencia}
+                        isLivre={pec.isLivre}
                         catalogo={catalogoPecas}
                         onSelect={part => handleSelectCatalogPart(part, pec.id, false)}
                       />
@@ -2256,6 +2267,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                       )}
                       <SearchablePartSelect
                         value={pec.pecaId}
+                        referencia={pec.referencia}
+                        isLivre={pec.isLivre}
                         catalogo={catalogoPecas}
                         onSelect={part => handleSelectCatalogPart(part, pec.id, true)}
                       />
