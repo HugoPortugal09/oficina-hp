@@ -37,7 +37,8 @@ import {
   FileText,
   PackageCheck,
   GraduationCap,
-  Handshake
+  Handshake,
+  Mail
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -890,6 +891,28 @@ export const Oficina: React.FC<OficinaProps> = ({
     setIsModalOpen(false);
   };
 
+  const handleSendEntregaFormacaoEmailManual = async () => {
+    const targetEquip = equipamentos.find(
+      e => (editingFolha.equipamentoId && e.id === editingFolha.equipamentoId) ||
+           (editingFolha.matricula && e.matricula && e.matricula.trim().toUpperCase() === editingFolha.matricula.trim().toUpperCase())
+    );
+    const targetEmpresa = empresas.find(e => e.id === editingFolha.empresaId);
+    setSaveFeedback('A enviar notificação por email para hugo@grau-maquinaria.com...');
+    try {
+      const res = await sendEntregaFormacaoEmail({
+        folha: editingFolha as FolhaServico,
+        equipamento: targetEquip,
+        empresa: targetEmpresa,
+        currentUser
+      });
+      setSaveFeedback(`Email de Entrega e Formação enviado com sucesso para: ${res.recipients.join(', ')}`);
+      setTimeout(() => setSaveFeedback(null), 8000);
+    } catch (err: any) {
+      setSaveFeedback(`Erro no envio: ${err?.message || err}`);
+      setTimeout(() => setSaveFeedback(null), 6000);
+    }
+  };
+
   // Generate Proposta / Orçamento from Additional items (or all items)
   const handleGenerateOrçamentoFromAdicionais = () => {
     const config = db.getConfig();
@@ -1503,6 +1526,18 @@ export const Oficina: React.FC<OficinaProps> = ({
                   >
                     <Receipt className="w-3.5 h-3.5" />
                     Gerar Orçamento de Adicionais
+                  </button>
+                )}
+
+                {editingFolha.tipo === 'Entrega e Formação' && (
+                  <button
+                    type="button"
+                    onClick={handleSendEntregaFormacaoEmailManual}
+                    className="py-1.5 px-3 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                    title="Enviar notificação oficial de Entrega e Formação por email para hugo@grau-maquinaria.com"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Enviar Email (Hugo)
                   </button>
                 )}
 

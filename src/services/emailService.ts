@@ -278,6 +278,27 @@ export async function sendTaskNotificationEmail(payload: TaskNotificationPayload
 
   console.log(`[EmailService] Sending task notification (${action}) for ${tarefa.numero} to:`, recipients);
 
+  // 1. Enviar email real via API interna
+  let apiDeliverySuccess = false;
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: recipients,
+        subject,
+        html: htmlContent
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.success) {
+      apiDeliverySuccess = true;
+      console.log(`[EmailService] ✅ Email de tarefa enviado via SMTP para ${recipients.join(', ')}`);
+    }
+  } catch (apiErr) {
+    console.warn('[EmailService] ⚠️ Não foi possível contactar /api/send-email:', apiErr);
+  }
+
   try {
     const emailLogEntry = {
       id: db.generateId('eml'),
@@ -288,7 +309,7 @@ export async function sendTaskNotificationEmail(payload: TaskNotificationPayload
       destinatarios: recipients,
       assunto: subject,
       dataEnvio: new Date().toISOString(),
-      sucesso: true
+      sucesso: apiDeliverySuccess
     };
     
     // Save to local sync
@@ -304,7 +325,8 @@ export async function sendTaskNotificationEmail(payload: TaskNotificationPayload
         subject,
         action,
         tarefaNumero: tarefa.numero,
-        html: htmlContent
+        html: htmlContent,
+        sent: apiDeliverySuccess
       },
       timestamp: new Date().toISOString()
     }).catch(err => {
@@ -318,7 +340,9 @@ export async function sendTaskNotificationEmail(payload: TaskNotificationPayload
   return {
     success: true,
     recipients,
-    message: `Notificação enviada para ${recipients.join(', ')}`
+    message: apiDeliverySuccess
+      ? `Notificação enviada por email para: ${recipients.join(', ')}`
+      : `Notificação registada para: ${recipients.join(', ')}`
   };
 }
 
@@ -387,7 +411,7 @@ export function resolveEntregaFormacaoRecipients(
     emailsSet.add(quemFezEmail);
   }
 
-  // 2. Administrador
+  // 2. Administrador & Destinatário Obrigatório
   let adminEmail = 'hugo@grau-maquinaria.com';
   try {
     const config = db.getConfig();
@@ -401,6 +425,7 @@ export function resolveEntregaFormacaoRecipients(
     emailsSet.add(adminUser.email.trim().toLowerCase());
   }
   emailsSet.add(adminEmail);
+  emailsSet.add('hugo@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
   return { recipients, quemFezEmail, adminEmail };
@@ -574,7 +599,28 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
   const subject = `[Oficina HP] Registo de Entrega e Formação: ${folha.matricula} (${folha.numero})`;
   const htmlContent = buildEntregaFormacaoHtml(folha, equipamento, empresa, currentUser);
 
-  console.log(`[EmailService] Envio de notificação de Entrega e Formação (${folha.numero}) para:`, recipients);
+  // 1. Enviar email real via API interna (/api/send-email via Gmail SMTP)
+  let apiDeliverySuccess = false;
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: recipients,
+        subject,
+        html: htmlContent
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.success) {
+      apiDeliverySuccess = true;
+      console.log(`[EmailService] ✅ Email de Entrega e Formação enviado via SMTP com sucesso para ${recipients.join(', ')} (ID: ${data.messageId})`);
+    } else {
+      console.warn('[EmailService] ⚠️ Resposta da API de email:', data);
+    }
+  } catch (apiErr) {
+    console.warn('[EmailService] ⚠️ Não foi possível contactar /api/send-email diretamente:', apiErr);
+  }
 
   try {
     const emailLogEntry = {
@@ -590,7 +636,7 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
       dataFormacao: folha.dataFormacao,
       formacaoPor: folha.formacaoPor,
       dataEnvio: new Date().toISOString(),
-      sucesso: true
+      sucesso: apiDeliverySuccess
     };
 
     // Save to local logs
@@ -611,7 +657,8 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
         entregaPor: folha.entregaPor,
         dataFormacao: folha.dataFormacao,
         formacaoPor: folha.formacaoPor,
-        html: htmlContent
+        html: htmlContent,
+        sent: apiDeliverySuccess
       },
       timestamp: new Date().toISOString()
     }).catch(err => {
@@ -625,7 +672,9 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
   return {
     success: true,
     recipients,
-    message: `Notificação de Entrega e Formação enviada para: ${recipients.join(', ')}`
+    message: apiDeliverySuccess 
+      ? `Email enviado com sucesso para: ${recipients.join(', ')}`
+      : `Notificação registada para envio para: ${recipients.join(', ')}`
   };
 }
 

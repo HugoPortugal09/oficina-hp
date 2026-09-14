@@ -437,7 +437,7 @@ export const USERS: UserProfile[] = [
     nome: 'Hugo Portugal (Administrador)',
     role: 'administrador',
     avatar: 'HP',
-    email: 'hugo.portugal@oficinahp.pt',
+    email: 'hugo@grau-maquinaria.com',
     password: 'admin',
     descricao: 'Acesso total a todas as áreas, peças, serviços, Automações e Configurações'
   },
