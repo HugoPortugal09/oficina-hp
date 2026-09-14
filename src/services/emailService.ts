@@ -2,6 +2,8 @@ import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa } from '../types';
 import { USERS } from '../types';
+import { generateEntregaFormacaoPDF } from './pdfService';
+import { formatDate } from '../utils/dateUtils';
 
 export interface TaskNotificationPayload {
   action: 'CRIADA' | 'CONCLUIDA';
@@ -433,6 +435,7 @@ export function resolveEntregaFormacaoRecipients(
 
 /**
  * Builds the official HTML template for Entrega e Formação notification
+ * Clean, corporate and elegant styling with minimal colors for universal email client support
  */
 export function buildEntregaFormacaoHtml(
   folha: FolhaServico,
@@ -440,14 +443,16 @@ export function buildEntregaFormacaoHtml(
   empresa?: Empresa,
   currentUser?: UserProfile
 ): string {
-  const dataEntrega = folha.dataEntrega || equipamento?.dataEntrega || 'Não especificada';
+  const rawEntregaDate = folha.dataEntrega || equipamento?.dataEntrega;
+  const dataEntrega = rawEntregaDate ? formatDate(rawEntregaDate) : 'Não especificada';
   const entregaPor = folha.entregaPor || equipamento?.entregaPor || 'Não especificado';
-  const dataFormacao = folha.dataFormacao || equipamento?.dataFormacao || 'Não especificada';
+  const rawFormacaoDate = folha.dataFormacao || equipamento?.dataFormacao;
+  const dataFormacao = rawFormacaoDate ? formatDate(rawFormacaoDate) : 'Não especificada';
   const formacaoPor = folha.formacaoPor || equipamento?.formacaoPor || 'Não especificado';
   const nSerie = folha.nSerie || equipamento?.nSerie || 'N/A';
   const kms = folha.kmsAtuais || equipamento?.kmsAtuais || 0;
   const horas = folha.horasAtuais || equipamento?.horasAtuais || 0;
-  const clienteNome = empresa?.nome || 'Cliente Geral';
+  const clienteNome = empresa?.nome || (folha as any).empresaNome || (folha as any).cliente || 'Cliente Geral';
 
   return `
 <!DOCTYPE html>
@@ -456,128 +461,118 @@ export function buildEntregaFormacaoHtml(
   <meta charset="UTF-8">
   <title>Registo de Entrega e Formação - Oficina HP</title>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b1329; margin: 0; padding: 24px; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 35px rgba(0,0,0,0.25); border: 1px solid #e2e8f0;">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
+  <div style="max-width: 640px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
     
-    <!-- Top Header -->
-    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0369a1 100%); color: #ffffff; padding: 30px 32px; border-bottom: 4px solid #10b981;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #38bdf8;">Oficina HP &bull; Gestão Operacional de Frotas</span>
-        <span style="background-color: #10b981; color: #ffffff; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;">
-          ENTREGA &amp; FORMAÇÃO CONCLUÍDA
-        </span>
+    <!-- Header -->
+    <div style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">
+        GRAUMP &bull; OFICINA HP &bull; REGISTO OPERACIONAL
       </div>
-      <h1 style="margin: 0 0 6px 0; font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.02em;">
-        ${folha.matricula} &bull; ${folha.marca} ${folha.modelo}
+      <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">
+        Auto de Entrega e Formação: ${folha.matricula || 'Equipamento'}
       </h1>
-      <p style="margin: 0; color: #94a3b8; font-size: 13px;">
-        Folha de Serviço: <strong style="color: #38bdf8; font-family: monospace;">${folha.numero}</strong> &bull; Registada a ${folha.data}
-      </p>
+      <div style="font-size: 13px; color: #64748b;">
+        Folha de Serviço: <strong style="color: #0f172a; font-family: monospace;">${folha.numero}</strong> &bull; ${folha.marca || ''} ${folha.modelo || ''}
+      </div>
     </div>
 
-    <!-- Alert / System confirmation banner -->
-    <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 24px; color: #065f46; font-size: 13px; font-weight: 600;">
-      ✅ A Ficha Técnica do Equipamento foi atualizada automaticamente no sistema com as novas datas de Entrega e Formação.
+    <!-- Attachment Notification Callout -->
+    <div style="margin: 20px 28px 0 28px; padding: 12px 16px; background-color: #f1f5f9; border-left: 3px solid #0284c7; border-radius: 4px; font-size: 13px; color: #334155;">
+      📎 <strong>Documento Oficial Anexado:</strong> O Certificado / Auto de Entrega e Formação em formato PDF com o layout gráfico completo e campos de assinatura segue em anexo a este email.
     </div>
 
     <!-- Main Content -->
-    <div style="padding: 28px 32px;">
+    <div style="padding: 20px 28px;">
       
-      <!-- Grid 2 Colunas: Entrega e Formação -->
-      <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
-        
-        <!-- Box Entrega -->
-        <div style="flex: 1; min-width: 260px; background-color: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 16px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-            <span style="font-size: 16px;">📦</span>
-            <strong style="color: #166534; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Dados de Entrega</strong>
-          </div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-            <tr>
-              <td style="padding: 4px 0; color: #4b5563; width: 45%;"><strong>Data de Entrega:</strong></td>
-              <td style="padding: 4px 0; color: #166534; font-weight: 800; font-family: monospace; font-size: 14px;">${dataEntrega}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0; color: #4b5563;"><strong>Entregue por:</strong></td>
-              <td style="padding: 4px 0; color: #1f2937; font-weight: 700;">${entregaPor}</td>
-            </tr>
-          </table>
-        </div>
-
-        <!-- Box Formação -->
-        <div style="flex: 1; min-width: 260px; background-color: #f0f9ff; border: 1.5px solid #7dd3fc; border-radius: 12px; padding: 16px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-            <span style="font-size: 16px;">🎓</span>
-            <strong style="color: #075985; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Dados de Formação</strong>
-          </div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-            <tr>
-              <td style="padding: 4px 0; color: #4b5563; width: 45%;"><strong>Data de Formação:</strong></td>
-              <td style="padding: 4px 0; color: #0369a1; font-weight: 800; font-family: monospace; font-size: 14px;">${dataFormacao}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0; color: #4b5563;"><strong>Formador:</strong></td>
-              <td style="padding: 4px 0; color: #1f2937; font-weight: 700;">${formacaoPor}</td>
-            </tr>
-          </table>
-        </div>
-
-      </div>
-
-      <!-- Ficha Detalhada do Equipamento -->
-      <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 20px 0 10px 0; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">
-        🚜 Ficha do Equipamento / Viatura
-      </h3>
+      <!-- Dados Entrega e Formacao -->
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
-        <tr style="background-color: #f8fafc;">
-          <td style="padding: 8px 12px; color: #64748b; width: 35%;"><strong>Matrícula:</strong></td>
-          <td style="padding: 8px 12px; font-family: monospace; font-weight: 900; color: #0f172a; font-size: 14px;">${folha.matricula}</td>
-        </tr>
         <tr>
-          <td style="padding: 8px 12px; color: #64748b;"><strong>Marca / Modelo:</strong></td>
-          <td style="padding: 8px 12px; color: #1e293b; font-weight: 600;">${folha.marca} ${folha.modelo}</td>
+          <td style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; width: 50%; vertical-align: top;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 6px;">
+              📦 Entrega
+            </div>
+            <div style="margin-bottom: 4px;">
+              <span style="color: #64748b;">Data:</span> <strong style="color: #0f172a;">${dataEntrega}</strong>
+            </div>
+            <div>
+              <span style="color: #64748b;">Entregue por:</span> <strong style="color: #0f172a;">${entregaPor}</strong>
+            </div>
+          </td>
+          <td style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; width: 50%; vertical-align: top;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 6px;">
+              🎓 Formação
+            </div>
+            <div style="margin-bottom: 4px;">
+              <span style="color: #64748b;">Data:</span> <strong style="color: #0f172a;">${dataFormacao}</strong>
+            </div>
+            <div>
+              <span style="color: #64748b;">Formador:</span> <strong style="color: #0f172a;">${formacaoPor}</strong>
+            </div>
+          </td>
         </tr>
-        <tr style="background-color: #f8fafc;">
-          <td style="padding: 8px 12px; color: #64748b;"><strong>Nº de Série / Chassi (VIN):</strong></td>
-          <td style="padding: 8px 12px; font-family: monospace; color: #334155; font-weight: 600;">${nSerie}</td>
+      </table>
+
+      <!-- Ficha Técnica do Equipamento -->
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
+        Ficha do Equipamento / Viatura
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; width: 35%; background-color: #f8fafc;">Matrícula</td>
+          <td style="padding: 8px 12px; font-family: monospace; font-weight: 700; color: #0f172a;">${folha.matricula || '---'}</td>
         </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Marca / Modelo</td>
+          <td style="padding: 8px 12px; color: #0f172a;">${folha.marca || ''} ${folha.modelo || ''}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Nº de Série (VIN)</td>
+          <td style="padding: 8px 12px; font-family: monospace; color: #334155;">${nSerie}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Quilómetros / Horas</td>
+          <td style="padding: 8px 12px; color: #0f172a;">${kms.toLocaleString('pt-PT')} Km &bull; ${horas} Horas</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Cliente / Entidade</td>
+          <td style="padding: 8px 12px; color: #0f172a; font-weight: 600;">${clienteNome}</td>
+        </tr>
+        ${folha.pessoaPresente ? `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Pessoa Presente</td>
+          <td style="padding: 8px 12px; color: #0f172a;">${folha.pessoaPresente}</td>
+        </tr>
+        ` : ''}
         <tr>
-          <td style="padding: 8px 12px; color: #64748b;"><strong>Quilómetros / Horas:</strong></td>
-          <td style="padding: 8px 12px; color: #1e293b; font-family: monospace;">${kms.toLocaleString('pt-PT')} Km &bull; ${horas} Horas</td>
-        </tr>
-        <tr style="background-color: #f8fafc;">
-          <td style="padding: 8px 12px; color: #64748b;"><strong>Empresa / Cliente:</strong></td>
-          <td style="padding: 8px 12px; color: #0f172a; font-weight: 700;">${clienteNome}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 12px; color: #64748b;"><strong>Local da Intervenção:</strong></td>
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Local da Intervenção</td>
           <td style="padding: 8px 12px; color: #334155;">${folha.localizacao || 'Oficina Geral'}</td>
         </tr>
       </table>
 
       ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
-      <!-- Notas e Observações -->
-      <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 20px 0 10px 0; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">
-        📝 Observações Técnicas Registadas
-      </h3>
-      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; font-size: 13px; color: #334155; line-height: 1.5; margin-bottom: 20px;">
-        ${folha.anomalias ? `<p style="margin: 0 0 6px 0;"><strong>Trabalhos / Descrição:</strong> ${folha.anomalias}</p>` : ''}
-        ${folha.notasCliente ? `<p style="margin: 0 0 6px 0;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</p>` : ''}
-        ${folha.notasInternas ? `<p style="margin: 0;"><strong>Notas Internas:</strong> ${folha.notasInternas}</p>` : ''}
+      <!-- Observações -->
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
+        Observações Técnicas
+      </div>
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; font-size: 13px; color: #334155; margin-bottom: 20px;">
+        ${folha.anomalias ? `<div style="margin-bottom: 4px;"><strong>Trabalhos / Descrição:</strong> ${folha.anomalias}</div>` : ''}
+        ${folha.notasCliente ? `<div style="margin-bottom: 4px;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</div>` : ''}
+        ${folha.notasInternas ? `<div><strong>Notas Internas:</strong> ${folha.notasInternas}</div>` : ''}
       </div>
       ` : ''}
 
-      <!-- Responsável pelo Registo -->
-      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px dashed #cbd5e1; font-size: 12px; color: #64748b;">
-        <span>Registo efetuado por: <strong style="color: #0f172a;">${currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Técnico Oficina HP'}</strong> &bull; ${new Date().toLocaleString('pt-PT')}</span>
+      <!-- Registo efetuado por -->
+      <div style="font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+        Registo efetuado por: <strong style="color: #0f172a;">${currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Técnico Oficina HP'}</strong> &bull; ${new Date().toLocaleString('pt-PT')}
       </div>
 
     </div>
 
     <!-- Footer -->
-    <div style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8;">
-      <p style="margin: 0 0 4px 0;"><strong>Oficina HP</strong> &bull; Sistema Integrado de Gestão Mecânica, Frotas &amp; Clientes</p>
-      <p style="margin: 0;">Notificação gerada automaticamente após gravação da Folha de Serviço de Entrega e Formação.</p>
+    <div style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
+      <p style="margin: 0 0 2px 0;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+      <p style="margin: 0;">Notificação operacional gerada automaticamente pelo sistema.</p>
     </div>
 
   </div>
@@ -587,7 +582,7 @@ export function buildEntregaFormacaoHtml(
 }
 
 /**
- * Sends or queues email notification for Entrega e Formação
+ * Sends or queues email notification for Entrega e Formação with PDF attachment
  */
 export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayload): Promise<{
   success: boolean;
@@ -599,7 +594,28 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
   const subject = `[Oficina HP] Registo de Entrega e Formação: ${folha.matricula} (${folha.numero})`;
   const htmlContent = buildEntregaFormacaoHtml(folha, equipamento, empresa, currentUser);
 
-  // 1. Enviar email real via API interna (/api/send-email via Gmail SMTP)
+  // 1. Gerar layout oficial em PDF igual ao modelo visual para anexo
+  const attachments: any[] = [];
+  try {
+    const doc = generateEntregaFormacaoPDF(folha, empresa, equipamento);
+    const pdfDataUri = doc.output('datauristring');
+    const base64Content = pdfDataUri.split(',')[1];
+    if (base64Content) {
+      const cleanMatricula = (folha.matricula || 'Equipamento').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanNumero = (folha.numero || 'FS').replace(/[^a-zA-Z0-9_-]/g, '_');
+      attachments.push({
+        filename: `Entrega_Formacao_${cleanMatricula}_${cleanNumero}.pdf`,
+        content: base64Content,
+        encoding: 'base64',
+        contentType: 'application/pdf'
+      });
+      console.log(`[EmailService] 📎 PDF de Entrega e Formação gerado com sucesso para anexo.`);
+    }
+  } catch (pdfErr) {
+    console.error('[EmailService] Erro ao gerar PDF de Entrega e Formação para anexo:', pdfErr);
+  }
+
+  // 2. Enviar email real via API interna (/api/send-email via Gmail SMTP) com o anexo PDF
   let apiDeliverySuccess = false;
   try {
     const resp = await fetch('/api/send-email', {
@@ -608,13 +624,14 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
       body: JSON.stringify({
         to: recipients,
         subject,
-        html: htmlContent
+        html: htmlContent,
+        attachments
       })
     });
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.success) {
       apiDeliverySuccess = true;
-      console.log(`[EmailService] ✅ Email de Entrega e Formação enviado via SMTP com sucesso para ${recipients.join(', ')} (ID: ${data.messageId})`);
+      console.log(`[EmailService] ✅ Email de Entrega e Formação com PDF anexado enviado via SMTP com sucesso para ${recipients.join(', ')} (ID: ${data.messageId})`);
     } else {
       console.warn('[EmailService] ⚠️ Resposta da API de email:', data);
     }

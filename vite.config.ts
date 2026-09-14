@@ -30,13 +30,17 @@ export default defineConfig({
               });
               const recipients = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
               console.log(`[Vite Server] A enviar email para: ${recipients}`);
-              const info = await transporter.sendMail({
+              const mailOptions: any = {
                 from: '"Oficina HP" <oficinahpapp@gmail.com>',
                 to: recipients,
                 subject: payload.subject,
                 html: payload.html,
                 text: payload.text || ''
-              });
+              };
+              if (payload.attachments && Array.isArray(payload.attachments)) {
+                mailOptions.attachments = payload.attachments;
+              }
+              const info = await transporter.sendMail(mailOptions);
               console.log(`[Vite Server] Email enviado com sucesso! MessageId: ${info.messageId}`);
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ success: true, messageId: info.messageId, to: payload.to }));

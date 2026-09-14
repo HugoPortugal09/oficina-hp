@@ -35,16 +35,20 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-export async function sendEmail({ to, subject, html, text }) {
+export async function sendEmail({ to, subject, html, text, attachments }) {
   const recipients = Array.isArray(to) ? to.join(', ') : to;
   console.log(`[Server] A enviar email para: ${recipients} | Assunto: ${subject}`);
-  const info = await transporter.sendMail({
+  const mailOptions = {
     from: '"Oficina HP" <oficinahpapp@gmail.com>',
     to: recipients,
     subject: subject,
     html: html,
     text: text || ''
-  });
+  };
+  if (attachments && Array.isArray(attachments)) {
+    mailOptions.attachments = attachments;
+  }
+  const info = await transporter.sendMail(mailOptions);
   console.log(`[Server] Email enviado com sucesso! MessageId: ${info.messageId}`);
   return info;
 }
