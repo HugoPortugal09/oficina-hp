@@ -454,16 +454,46 @@ export const Empresas: React.FC<EmpresasProps> = ({
                     <td className="py-3 px-4 font-mono text-slate-400">{emp.nif || '-'}</td>
                     <td className="py-3 px-4 max-w-xs truncate">{emp.moradaSede || '-'}</td>
                     <td className="py-3 px-4 font-mono font-semibold text-amber-300">{sedeKm} KM</td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="font-mono font-bold text-hp-400">{empEquips.length}</span>
+                    <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setInspectModal({ isOpen: true, type: 'viaturas', empresa: emp })}
+                        className="py-1 px-2.5 rounded-lg bg-hp-500/15 hover:bg-hp-500/30 text-hp-400 font-mono font-bold hover:scale-105 active:scale-95 transition-all inline-flex items-center justify-center min-w-[28px]"
+                        title={`Ver ${empEquips.length} viaturas de ${emp.nome}`}
+                      >
+                        {empEquips.length}
+                      </button>
                     </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="font-mono font-bold text-emerald-400">{empClients.length}</span>
+                    <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setInspectModal({ isOpen: true, type: 'contactos', empresa: emp })}
+                        className="py-1 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-400 font-mono font-bold hover:scale-105 active:scale-95 transition-all inline-flex items-center justify-center min-w-[28px]"
+                        title={`Ver ${empClients.length} contactos de ${emp.nome}`}
+                      >
+                        {empClients.length}
+                      </button>
                     </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="font-mono font-bold text-amber-400">{emp.estaleiros?.length || 0}</span>
+                    <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setInspectModal({ isOpen: true, type: 'estaleiros', empresa: emp })}
+                        className="py-1 px-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 text-amber-400 font-mono font-bold hover:scale-105 active:scale-95 transition-all inline-flex items-center justify-center min-w-[28px]"
+                        title={`Ver ${emp.estaleiros?.length || 0} estaleiros de ${emp.nome}`}
+                      >
+                        {emp.estaleiros?.length || 0}
+                      </button>
                     </td>
-                    <td className="py-3 px-4 text-center font-mono text-slate-300">{empFolhas.length}</td>
+                    <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setInspectModal({ isOpen: true, type: 'servicos', empresa: emp })}
+                        className="py-1 px-2.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 font-mono font-bold hover:scale-105 active:scale-95 transition-all inline-flex items-center justify-center min-w-[28px]"
+                        title={`Ver ${empFolhas.length} obras/serviços de ${emp.nome}`}
+                      >
+                        {empFolhas.length}
+                      </button>
+                    </td>
                     <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
                       {emp.moradaSede && (
                         <div className="flex items-center justify-end gap-1.5">

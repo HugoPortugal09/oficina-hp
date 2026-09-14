@@ -194,13 +194,22 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
     }
   };
 
-  const filteredEquipamentos = equipamentos.filter(eq =>
-    eq.matricula.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    eq.marca.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    eq.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (eq.tipo && eq.tipo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (eq.nSerie && eq.nSerie.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredEquipamentos = equipamentos.filter(eq => {
+    const term = searchTerm.toLowerCase();
+    const emp = empresas.find(e => e.id === eq.empresaId);
+    const empNome = emp ? emp.nome.toLowerCase() : '';
+    const empNif = emp?.nif ? emp.nif.toLowerCase() : '';
+
+    return (
+      eq.matricula.toLowerCase().includes(term) ||
+      eq.marca.toLowerCase().includes(term) ||
+      eq.modelo.toLowerCase().includes(term) ||
+      (eq.tipo && eq.tipo.toLowerCase().includes(term)) ||
+      (eq.nSerie && eq.nSerie.toLowerCase().includes(term)) ||
+      empNome.includes(term) ||
+      empNif.includes(term)
+    );
+  });
 
   return (
     <div className="space-y-3.5">
@@ -210,7 +219,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Pesquisar por matrícula, marca, modelo, tipo, série..."
+            placeholder="Pesquisar por matrícula, marca, modelo, empresa proprietária, tipo, série..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-1.5 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-hp-500"
