@@ -3,7 +3,55 @@ import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa } from '../types';
 import { USERS } from '../types';
 import { generateEntregaFormacaoPDF } from './pdfService';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, cleanPersonName } from '../utils/dateUtils';
+
+/**
+ * Compresses and resizes an image Data URI or base64 string to a compact JPEG
+ * so photo attachments don't exceed email size limits.
+ */
+export async function resizeImageForEmail(
+  imageSource: string,
+  maxDim = 1024,
+  quality = 0.7
+): Promise<string> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return imageSource.includes(',') ? imageSource.split(',')[1] : imageSource;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl.split(',')[1]);
+      } else {
+        resolve(imageSource.includes(',') ? imageSource.split(',')[1] : imageSource);
+      }
+    };
+    img.onerror = () => {
+      resolve(imageSource.includes(',') ? imageSource.split(',')[1] : imageSource);
+    };
+    img.src = imageSource;
+  });
+}
 
 export interface TaskNotificationPayload {
   action: 'CRIADA' | 'CONCLUIDA';
@@ -374,7 +422,7 @@ export function resolveEntregaFormacaoRecipients(
 
   const findUserEmail = (identifier?: string): string | null => {
     if (!identifier) return null;
-    const cleanId = identifier.trim().toLowerCase();
+    const cleanId = cleanPersonName(identifier).toLowerCase();
     if (cleanId.includes('@') && cleanId.includes('.')) return cleanId;
 
     const matchByName = registeredUsers.find(
@@ -445,10 +493,10 @@ export function buildEntregaFormacaoHtml(
 ): string {
   const rawEntregaDate = folha.dataEntrega || equipamento?.dataEntrega;
   const dataEntrega = rawEntregaDate ? formatDate(rawEntregaDate) : 'Não especificada';
-  const entregaPor = folha.entregaPor || equipamento?.entregaPor || 'Não especificado';
+  const entregaPor = cleanPersonName(folha.entregaPor || equipamento?.entregaPor) || 'Não especificado';
   const rawFormacaoDate = folha.dataFormacao || equipamento?.dataFormacao;
   const dataFormacao = rawFormacaoDate ? formatDate(rawFormacaoDate) : 'Não especificada';
-  const formacaoPor = folha.formacaoPor || equipamento?.formacaoPor || 'Não especificado';
+  const formacaoPor = cleanPersonName(folha.formacaoPor || equipamento?.formacaoPor) || 'Não especificado';
   const nSerie = folha.nSerie || equipamento?.nSerie || 'N/A';
   const kms = folha.kmsAtuais || equipamento?.kmsAtuais || 0;
   const horas = folha.horasAtuais || equipamento?.horasAtuais || 0;
@@ -564,7 +612,7 @@ export function buildEntregaFormacaoHtml(
 
       <!-- Registo efetuado por -->
       <div style="font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px;">
-        Registo efetuado por: <strong style="color: #0f172a;">${currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Técnico Oficina HP'}</strong> &bull; ${new Date().toLocaleString('pt-PT')}
+        Registo efetuado por: <strong style="color: #0f172a;">${cleanPersonName(currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Hugo Portugal')}</strong> &bull; ${new Date().toLocaleString('pt-PT')}
       </div>
 
     </div>
@@ -582,7 +630,7 @@ export function buildEntregaFormacaoHtml(
 }
 
 /**
- * Sends or queues email notification for Entrega e Formação with PDF attachment
+ * Sends or queues email notification for Entrega e Formação with PDF attachment and optional photos
  */
 export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayload): Promise<{
   success: boolean;
@@ -590,14 +638,26 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
   message: string;
 }> {
   const { folha, equipamento, empresa, currentUser } = payload;
+  let targetEquip = equipamento;
+  if (!targetEquip && folha.equipamentoId) {
+    targetEquip = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS)?.find(e => e.id === folha.equipamentoId);
+  }
+  let targetEmpresa = empresa;
+  if (!targetEmpresa) {
+    const targetEmpresaId = folha.empresaId || (targetEquip ? targetEquip.empresaId : undefined);
+    if (targetEmpresaId) {
+      targetEmpresa = db.get<Empresa>(STORAGE_KEYS.EMPRESAS)?.find(e => e.id === targetEmpresaId);
+    }
+  }
+
   const { recipients } = resolveEntregaFormacaoRecipients(folha, currentUser);
   const subject = `[Oficina HP] Registo de Entrega e Formação: ${folha.matricula} (${folha.numero})`;
-  const htmlContent = buildEntregaFormacaoHtml(folha, equipamento, empresa, currentUser);
+  const htmlContent = buildEntregaFormacaoHtml(folha, targetEquip, targetEmpresa, currentUser);
 
   // 1. Gerar layout oficial em PDF igual ao modelo visual para anexo
   const attachments: any[] = [];
   try {
-    const doc = generateEntregaFormacaoPDF(folha, empresa, equipamento);
+    const doc = generateEntregaFormacaoPDF(folha, targetEmpresa, targetEquip);
     const pdfDataUri = doc.output('datauristring');
     const base64Content = pdfDataUri.split(',')[1];
     if (base64Content) {
@@ -613,6 +673,30 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
     }
   } catch (pdfErr) {
     console.error('[EmailService] Erro ao gerar PDF de Entrega e Formação para anexo:', pdfErr);
+  }
+
+  // 2. Se existirem fotos na folha de serviço, anexar também comprimidas para não ocupar muito espaço
+  const rawFotos = folha.fotos || [];
+  if (Array.isArray(rawFotos) && rawFotos.length > 0) {
+    for (let i = 0; i < rawFotos.length; i++) {
+      const foto = rawFotos[i];
+      if (!foto) continue;
+      try {
+        const compressedBase64 = await resizeImageForEmail(foto, 1024, 0.7);
+        if (compressedBase64) {
+          const cleanMatricula = (folha.matricula || 'Equipamento').replace(/[^a-zA-Z0-9_-]/g, '_');
+          attachments.push({
+            filename: `Foto_${cleanMatricula}_${i + 1}.jpg`,
+            content: compressedBase64,
+            encoding: 'base64',
+            contentType: 'image/jpeg'
+          });
+          console.log(`[EmailService] 📷 Foto ${i + 1} comprimida e adicionada aos anexos do email.`);
+        }
+      } catch (errFoto) {
+        console.warn(`[EmailService] Erro ao anexar foto ${i + 1}:`, errFoto);
+      }
+    }
   }
 
   // 2. Enviar email real via API interna (/api/send-email via Gmail SMTP) com o anexo PDF

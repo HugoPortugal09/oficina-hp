@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Utility functions for robust date parsing, formatting, and sorting across the application.
  */
 
@@ -139,3 +139,18 @@ export const sortByDateDesc = <T>(
     return 0;
   };
 };
+
+/**
+ * Strips any parenthetical roles, designations or job titles from a person's name
+ * (e.g. "Hugo Portugal (Administrador)" -> "Hugo Portugal", "Carlos (Mecânico)" -> "Carlos").
+ */
+export const cleanPersonName = (name?: string | null): string => {
+  if (!name) return '';
+  let cleaned = String(name).trim();
+  // Remove parenthetical roles e.g. "(Administrador)", "(Recetor)", etc.
+  cleaned = cleaned.replace(/\s*\([^)]*\)/g, '');
+  // Remove trailing role tags separated by dash or slash
+  cleaned = cleaned.replace(/\s*[-–—/]\s*(administrador|admin|mecânico|mecanico|técnico|tecnico|operador|utilizador|user|formador|cliente)\b.*$/i, '');
+  return cleaned.trim();
+};
+

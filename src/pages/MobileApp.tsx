@@ -49,7 +49,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
 import {
   transformPhotosToFolhaWithOllama,
@@ -562,9 +562,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       };
       if (folhaToSave.tipo === 'Entrega e Formação' || folhaToSave.dataEntrega || folhaToSave.dataFormacao) {
         if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') eqUpdate.dataEntrega = folhaToSave.dataEntrega;
-        if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') eqUpdate.entregaPor = folhaToSave.entregaPor;
+        if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') {
+          folhaToSave.entregaPor = cleanPersonName(folhaToSave.entregaPor);
+          eqUpdate.entregaPor = folhaToSave.entregaPor;
+        }
         if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') eqUpdate.dataFormacao = folhaToSave.dataFormacao;
-        if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') eqUpdate.formacaoPor = folhaToSave.formacaoPor;
+        if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') {
+          folhaToSave.formacaoPor = cleanPersonName(folhaToSave.formacaoPor);
+          eqUpdate.formacaoPor = folhaToSave.formacaoPor;
+        }
       }
       if (folhaToSave.nSerie && !targetEq.nSerie) {
         eqUpdate.nSerie = folhaToSave.nSerie;
@@ -1032,9 +1038,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const handleRegisterEntregaSelected = () => {
     if (!selectedFolha) return;
     const today = new Date().toISOString().split('T')[0];
-    const person = currentUser?.nome || 'Hugo Portugal';
+    const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     const newDate = selectedFolha.dataEntrega || today;
-    const newPerson = selectedFolha.entregaPor || person;
+    const newPerson = cleanPersonName(selectedFolha.entregaPor) || person;
     const updated = {
       ...selectedFolha,
       dataEntrega: newDate,
@@ -1054,9 +1060,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const handleRegisterFormacaoSelected = () => {
     if (!selectedFolha) return;
     const today = new Date().toISOString().split('T')[0];
-    const person = currentUser?.nome || 'Hugo Portugal';
+    const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     const newDate = selectedFolha.dataFormacao || today;
-    const newPerson = selectedFolha.formacaoPor || person;
+    const newPerson = cleanPersonName(selectedFolha.formacaoPor) || person;
     const newStatus = selectedFolha.tipo === 'Entrega e Formação' ? 'Feito' : selectedFolha.status;
     const updated: FolhaServico = {
       ...selectedFolha,
@@ -1122,21 +1128,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleRegisterEntregaManual = () => {
     const today = new Date().toISOString().split('T')[0];
-    const person = currentUser?.nome || 'Hugo Portugal';
+    const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     setManualFolha(prev => ({
       ...prev,
       dataEntrega: prev.dataEntrega || today,
-      entregaPor: prev.entregaPor || person
+      entregaPor: cleanPersonName(prev.entregaPor) || person
     }));
   };
 
   const handleRegisterFormacaoManual = () => {
     const today = new Date().toISOString().split('T')[0];
-    const person = currentUser?.nome || 'Hugo Portugal';
+    const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     setManualFolha(prev => ({
       ...prev,
       dataFormacao: prev.dataFormacao || today,
-      formacaoPor: prev.formacaoPor || person,
+      formacaoPor: cleanPersonName(prev.formacaoPor) || person,
       status: prev.tipo === 'Entrega e Formação' ? 'Feito' : prev.status
     }));
   };

@@ -45,7 +45,7 @@ import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
+import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
@@ -540,9 +540,9 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const handleRegisterEntrega = () => {
     const today = new Date().toISOString().split('T')[0];
-    const person = currentUser?.nome || 'Hugo Portugal';
+    const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     const newDate = editingFolha.dataEntrega || today;
-    const newPerson = editingFolha.entregaPor || person;
+    const newPerson = cleanPersonName(editingFolha.entregaPor) || person;
     setEditingFolha(prev => ({
       ...prev,
       dataEntrega: newDate,
@@ -558,9 +558,9 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const handleRegisterFormacao = () => {
     const today = new Date().toISOString().split('T')[0];
-    const person = currentUser?.nome || 'Hugo Portugal';
+    const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     const newDate = editingFolha.dataFormacao || today;
-    const newPerson = editingFolha.formacaoPor || person;
+    const newPerson = cleanPersonName(editingFolha.formacaoPor) || person;
     setEditingFolha(prev => ({
       ...prev,
       dataFormacao: newDate,
@@ -861,9 +861,15 @@ export const Oficina: React.FC<OficinaProps> = ({
       };
       if (folhaToSave.tipo === 'Entrega e Formação' || folhaToSave.dataEntrega || folhaToSave.dataFormacao) {
         if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') equipUpdate.dataEntrega = folhaToSave.dataEntrega;
-        if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') equipUpdate.entregaPor = folhaToSave.entregaPor;
+        if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') {
+          folhaToSave.entregaPor = cleanPersonName(folhaToSave.entregaPor);
+          equipUpdate.entregaPor = folhaToSave.entregaPor;
+        }
         if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') equipUpdate.dataFormacao = folhaToSave.dataFormacao;
-        if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') equipUpdate.formacaoPor = folhaToSave.formacaoPor;
+        if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') {
+          folhaToSave.formacaoPor = cleanPersonName(folhaToSave.formacaoPor);
+          equipUpdate.formacaoPor = folhaToSave.formacaoPor;
+        }
       }
       if (folhaToSave.nSerie && !targetEquip.nSerie) {
         equipUpdate.nSerie = folhaToSave.nSerie;
