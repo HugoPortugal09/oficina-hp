@@ -110,6 +110,12 @@ const CT_STATUSES: StatusFolhaServico[] = [
   'CT - Aguardar resposta Fornecedor'
 ];
 
+const EF_STATUSES: StatusFolhaServico[] = [
+  'A Agendar',
+  'Agendado',
+  'Feito'
+];
+
 const FEITO_STATUSES: StatusFolhaServico[] = [
   'FEITO - Resolvido',
   'FEITO - Faturar',
@@ -123,10 +129,14 @@ const ALL_STATUSES: StatusFolhaServico[] = [
   ...AT_STATUSES,
   ...OF_STATUSES,
   ...CT_STATUSES,
+  ...EF_STATUSES,
   ...FEITO_STATUSES
 ];
 
 function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
+  if (tipo === 'Entrega e Formação') {
+    return ['A Agendar', 'Agendado', 'Feito'];
+  }
   let baseStatuses: StatusFolhaServico[] = [];
   if (tipo === 'Assistência Técnica') {
     baseStatuses = [...AT_STATUSES];
@@ -135,7 +145,7 @@ function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = fal
   } else if (tipo === 'Contrato') {
     baseStatuses = [...CT_STATUSES, 'FEITO - Resolvido'];
   } else {
-    // Garantia, Entrega e Formação
+    // Garantia
     baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
   }
 
@@ -452,10 +462,20 @@ export const Oficina: React.FC<OficinaProps> = ({
     const isOficina = newTipo === 'Oficina';
     const isAT = newTipo === 'Assistência Técnica';
     const isContrato = newTipo === 'Contrato';
+    const isEF = newTipo === 'Entrega e Formação';
 
     let defaultStatus: StatusFolhaServico = 'OF - Com requisição - Aguardar agenda';
     if (isAT) defaultStatus = 'AT - Pedido de Assistência';
     else if (isContrato) defaultStatus = 'CT - Contrato';
+    else if (isEF) {
+      if (editingFolha.dataFormacao && editingFolha.dataFormacao.trim() !== '' && editingFolha.dataFormacao !== '-') {
+        defaultStatus = 'Feito';
+      } else if (editingFolha.dataPlaneada && editingFolha.dataPlaneada.trim() !== '' && editingFolha.dataPlaneada !== '-') {
+        defaultStatus = 'Agendado';
+      } else {
+        defaultStatus = 'A Agendar';
+      }
+    }
 
     setEditingFolha(prev => ({
       ...prev,
@@ -463,7 +483,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       localizacao: isOficina ? GRAUMP_LOCATION : (prev.localizacao === GRAUMP_LOCATION ? '' : prev.localizacao),
       localizacaoTipo: isOficina ? 'oficina' : prev.localizacaoTipo,
       distanciaKms: isOficina ? 0 : prev.distanciaKms,
-      status: prev.status?.startsWith('FEITO') ? prev.status : defaultStatus,
+      status: isEF ? defaultStatus : (prev.status?.startsWith('FEITO') ? prev.status : defaultStatus),
       matricula: newTipo === 'Contrato' && prev.equipamentoId && !contractEquipIds.includes(prev.equipamentoId)
         ? '' : prev.matricula
     }));
@@ -543,7 +563,8 @@ export const Oficina: React.FC<OficinaProps> = ({
     setEditingFolha(prev => ({
       ...prev,
       dataFormacao: newDate,
-      formacaoPor: newPerson
+      formacaoPor: newPerson,
+      status: prev.tipo === 'Entrega e Formação' ? 'Feito' : prev.status
     }));
     if (editingFolha.equipamentoId) {
       db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, {
@@ -568,7 +589,11 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleDateFormacaoChange = (val: string) => {
-    setEditingFolha(prev => ({ ...prev, dataFormacao: val }));
+    setEditingFolha(prev => ({
+      ...prev,
+      dataFormacao: val,
+      status: (prev.tipo === 'Entrega e Formação' && val && val.trim() !== '' && val !== '-') ? 'Feito' : prev.status
+    }));
     if (editingFolha.equipamentoId) {
       db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataFormacao: val });
     }
@@ -802,6 +827,16 @@ export const Oficina: React.FC<OficinaProps> = ({
       ...editingFolha,
       historicoEstados: history
     } as FolhaServico;
+
+    if (folhaToSave.tipo === 'Entrega e Formação') {
+      if (folhaToSave.dataFormacao && folhaToSave.dataFormacao.trim() !== '' && folhaToSave.dataFormacao !== '-') {
+        folhaToSave.status = 'Feito';
+      } else if (folhaToSave.dataPlaneada && folhaToSave.dataPlaneada.trim() !== '' && folhaToSave.dataPlaneada !== '-' && (folhaToSave.status === 'A Agendar' || !folhaToSave.status)) {
+        folhaToSave.status = 'Agendado';
+      } else if (!folhaToSave.status || !['A Agendar', 'Agendado', 'Feito'].includes(folhaToSave.status)) {
+        folhaToSave.status = 'A Agendar';
+      }
+    }
 
     const currentList = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
     const existingIndex = currentList.findIndex(f => f.id === folhaToSave.id);
@@ -1945,17 +1980,14 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
             )}
 
-            {/* SECTIONS FOR REPAIRS / SERVICES (Ocultas quando o tipo é Entrega e Formação) */}
-            {editingFolha.tipo !== 'Entrega e Formação' && (
-              <>
-                {/* Photo Gallery & AI Visual Inspection Section */}
-                <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="w-4 h-4 text-amber-400" />
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                        Fotografias da Obra / Inspeção IA ({editingFolha.fotos?.length || 0})
-                      </h4>
+            {/* Photo Gallery & AI Visual Inspection Section (Disponível para todos os tipos, incluindo Entrega e Formação) */}
+            <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-amber-400" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    {editingFolha.tipo === 'Entrega e Formação' ? 'Fotografias da Entrega e Formação' : 'Fotografias da Obra / Inspeção IA'} ({editingFolha.fotos?.length || 0})
+                  </h4>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -2014,7 +2046,10 @@ export const Oficina: React.FC<OficinaProps> = ({
               )}
             </div>
 
-            {/* 1. Services: MÃO-DE-OBRA & SERVIÇOS EFETUADOS */}
+            {/* SECTIONS FOR REPAIRS / SERVICES (Ocultas quando o tipo é Entrega e Formação) */}
+            {editingFolha.tipo !== 'Entrega e Formação' && (
+              <>
+                {/* 1. Services: MÃO-DE-OBRA & SERVIÇOS EFETUADOS */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">

@@ -62,7 +62,8 @@ export function getStatusBadgeVariant(status?: string): 'success' | 'orange' | '
   if (clean === 'FEITO - Faturado' || clean === 'FEITO – Faturado' || clean.toLowerCase().includes('faturado')) {
     return 'success'; // Verde
   }
-  if (clean.startsWith('FEITO')) {
+  const upper = clean.toUpperCase();
+  if (upper.startsWith('FEITO') || upper.includes('FEITO')) {
     return 'orange'; // Laranja
   }
   return 'warning'; // Amarelo

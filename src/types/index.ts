@@ -42,6 +42,13 @@ export type StatusFolhaServico =
   | 'CT - Agendar'
   | 'CT - Aguardar peças'
   | 'CT - Aguardar resposta Fornecedor'
+  // ENTREGA E FORMAÇÃO (EF)
+  | 'A Agendar'
+  | 'Agendado'
+  | 'Feito'
+  | 'EF - A Agendar'
+  | 'EF - Agendado'
+  | 'EF - Feito'
   // FINALIZADO (FEITO)
   | 'FEITO - Resolvido'
   | 'FEITO - Faturar'

@@ -49,7 +49,11 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
       'AT - Agendar – Com requisição',
       'AT - Agendado',
       'AT - Aguardar requisição',
-      'AT - Com requisição - Aguardar peças'
+      'AT - Com requisição - Aguardar peças',
+      'A Agendar',
+      'Agendado',
+      'EF - A Agendar',
+      'EF - Agendado'
     ]
   },
   {
@@ -88,7 +92,9 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
       'FEITO - Aguardar Requisição',
       'FEITO - Submeter Garantia',
       'FEITO - Aguardar Garantia',
-      'FEITO - Faturado'
+      'FEITO - Faturado',
+      'Feito',
+      'EF - Feito'
     ]
   }
 ];

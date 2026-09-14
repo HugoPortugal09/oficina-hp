@@ -104,6 +104,12 @@ const CT_STATUSES: StatusFolhaServico[] = [
   'CT - Aguardar resposta Fornecedor'
 ];
 
+const EF_STATUSES: StatusFolhaServico[] = [
+  'A Agendar',
+  'Agendado',
+  'Feito'
+];
+
 const FEITO_STATUSES: StatusFolhaServico[] = [
   'FEITO - Resolvido',
   'FEITO - Faturar',
@@ -114,6 +120,9 @@ const FEITO_STATUSES: StatusFolhaServico[] = [
 ];
 
 function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
+  if (tipo === 'Entrega e Formação') {
+    return ['A Agendar', 'Agendado', 'Feito'];
+  }
   let baseStatuses: StatusFolhaServico[] = [];
   if (tipo === 'Assistência Técnica') {
     baseStatuses = [...AT_STATUSES];
@@ -518,6 +527,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         }
       } catch (err) {
         console.error('AI Note interpretation error:', err);
+      }
+    }
+
+    if (folhaToSave.tipo === 'Entrega e Formação') {
+      if (folhaToSave.dataFormacao && folhaToSave.dataFormacao.trim() !== '' && folhaToSave.dataFormacao !== '-') {
+        folhaToSave.status = 'Feito';
+      } else if (folhaToSave.dataPlaneada && folhaToSave.dataPlaneada.trim() !== '' && folhaToSave.dataPlaneada !== '-' && (folhaToSave.status === 'A Agendar' || !folhaToSave.status)) {
+        folhaToSave.status = 'Agendado';
+      } else if (!folhaToSave.status || !['A Agendar', 'Agendado', 'Feito'].includes(folhaToSave.status)) {
+        folhaToSave.status = 'A Agendar';
       }
     }
 
@@ -1038,10 +1057,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     const person = currentUser?.nome || 'Hugo Portugal';
     const newDate = selectedFolha.dataFormacao || today;
     const newPerson = selectedFolha.formacaoPor || person;
-    const updated = {
+    const newStatus = selectedFolha.tipo === 'Entrega e Formação' ? 'Feito' : selectedFolha.status;
+    const updated: FolhaServico = {
       ...selectedFolha,
       dataFormacao: newDate,
-      formacaoPor: newPerson
+      formacaoPor: newPerson,
+      status: newStatus
     };
     setSelectedFolha(updated);
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
@@ -1078,9 +1099,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleDateFormacaoSelectedChange = (val: string) => {
     if (!selectedFolha) return;
-    const updated = { ...selectedFolha, dataFormacao: val };
+    const newStatus = (selectedFolha.tipo === 'Entrega e Formação' && val && val.trim() !== '' && val !== '-') ? 'Feito' : selectedFolha.status;
+    const updated: FolhaServico = { ...selectedFolha, dataFormacao: val, status: newStatus };
     setSelectedFolha(updated);
-    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataFormacao: val });
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataFormacao: val, status: newStatus });
     if (selectedFolha.equipamentoId) {
       db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataFormacao: val });
       setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
@@ -1114,7 +1136,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setManualFolha(prev => ({
       ...prev,
       dataFormacao: prev.dataFormacao || today,
-      formacaoPor: prev.formacaoPor || person
+      formacaoPor: prev.formacaoPor || person,
+      status: prev.tipo === 'Entrega e Formação' ? 'Feito' : prev.status
     }));
   };
 
@@ -3183,7 +3206,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         <input
                           type="date"
                           value={manualFolha.dataFormacao || ''}
-                          onChange={e => setManualFolha(prev => ({ ...prev, dataFormacao: e.target.value }))}
+                          onChange={e => setManualFolha(prev => ({
+                            ...prev,
+                            dataFormacao: e.target.value,
+                            status: (prev.tipo === 'Entrega e Formação' && e.target.value && e.target.value.trim() !== '' && e.target.value !== '-') ? 'Feito' : prev.status
+                          }))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
                         />
                       </div>
@@ -3412,68 +3439,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </div>
               </div>
 
-              {/* 7. Fotos da Folha */}
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <label className="text-xs font-black uppercase text-slate-300 block">Fotografias</label>
-                {manualFolha.fotos && manualFolha.fotos.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {manualFolha.fotos.map((img, i) => (
-                      <div key={i} className="relative">
-                        <img
-                          src={img}
-                          alt={`Foto ${i}`}
-                          onClick={() => setSelectedPhotoPreview(img)}
-                          className="w-full h-20 object-cover rounded-xl border border-slate-700 cursor-pointer"
-                        />
-                        <button
-                          onClick={() => {
-                            setManualFolha(prev => ({
-                              ...prev,
-                              fotos: prev.fotos?.filter((_, idx) => idx !== i)
-                            }));
-                          }}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px]"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => manualCameraInputRef.current?.click()}
-                    className="py-2.5 px-3 rounded-2xl border border-hp-500/40 bg-hp-600/15 text-hp-300 text-xs font-bold flex items-center justify-center gap-1.5"
-                  >
-                    <Camera className="w-4 h-4 text-hp-400" /> Tirar Foto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => manualPhotoInputRef.current?.click()}
-                    className="py-2.5 px-3 rounded-2xl border border-slate-700 bg-slate-900 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5"
-                  >
-                    <ImageIcon className="w-4 h-4 text-sky-400" /> Galeria
-                  </button>
-                </div>
-                <input
-                  ref={manualPhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={e => handlePhotoCapture(e, 'manual')}
-                  className="hidden"
-                />
-                <input
-                  ref={manualCameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={e => handlePhotoCapture(e, 'manual')}
-                  className="hidden"
-                />
-              </div>
-
               {/* 8. Viatura Operacional & Serviço Finalizado */}
               <div className="space-y-3 pt-2 border-t border-slate-800">
                 <div>
@@ -3548,6 +3513,68 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   </div>
                 </>
               )}
+
+              {/* 7. Fotos da Folha (Disponível para todos os tipos, incluindo Entrega e Formação) */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <label className="text-xs font-black uppercase text-slate-300 block">Fotografias</label>
+                {manualFolha.fotos && manualFolha.fotos.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {manualFolha.fotos.map((img, i) => (
+                      <div key={i} className="relative">
+                        <img
+                          src={img}
+                          alt={`Foto ${i}`}
+                          onClick={() => setSelectedPhotoPreview(img)}
+                          className="w-full h-20 object-cover rounded-xl border border-slate-700 cursor-pointer"
+                        />
+                        <button
+                          onClick={() => {
+                            setManualFolha(prev => ({
+                              ...prev,
+                              fotos: prev.fotos?.filter((_, idx) => idx !== i)
+                            }));
+                          }}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px]"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => manualCameraInputRef.current?.click()}
+                    className="py-2.5 px-3 rounded-2xl border border-hp-500/40 bg-hp-600/15 text-hp-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <Camera className="w-4 h-4 text-hp-400" /> Tirar Foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => manualPhotoInputRef.current?.click()}
+                    className="py-2.5 px-3 rounded-2xl border border-slate-700 bg-slate-900 text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <ImageIcon className="w-4 h-4 text-sky-400" /> Galeria
+                  </button>
+                </div>
+                <input
+                  ref={manualPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={e => handlePhotoCapture(e, 'manual')}
+                  className="hidden"
+                />
+                <input
+                  ref={manualCameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={e => handlePhotoCapture(e, 'manual')}
+                  className="hidden"
+                />
+              </div>
 
               {/* Notas Internas */}
               <div className="space-y-3 pt-2 border-t border-slate-800">

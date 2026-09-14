@@ -192,11 +192,16 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     } else if (item.type === 'folha') {
       const f = folhas.find(fol => fol.id === item!.id);
       if (f) {
+        let newStatus = f.status;
+        if (f.tipo === 'Entrega e Formação') {
+          newStatus = (f.dataFormacao && f.dataFormacao.trim() !== '' && f.dataFormacao !== '-') ? 'Feito' : 'Agendado';
+        }
         onUpdateFolha({
           ...f,
           dataPlaneada: targetDayIso,
           horaPlaneada: f.horaPlaneada || '09:00',
           tecnicoPlaneado: f.tecnicoPlaneado || (selectedTecnico !== 'TODOS' ? selectedTecnico : 'Hugo Portugal'),
+          status: newStatus,
           atualizadoEm: new Date().toISOString()
         });
       }
@@ -251,7 +256,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
 
   // Open Folhas de Serviço (not finalized)
   const openFolhas = useMemo(() => {
-    return folhas.filter(f => !f.status.startsWith('FEITO -'));
+    return folhas.filter(f => !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
   }, [folhas]);
 
   // Open Visita Modal (New or Edit)
@@ -338,11 +343,17 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     e.preventDefault();
     if (!selectedFolhaToSchedule) return;
 
+    let newStatus = selectedFolhaToSchedule.status;
+    if (selectedFolhaToSchedule.tipo === 'Entrega e Formação') {
+      newStatus = (selectedFolhaToSchedule.dataFormacao && selectedFolhaToSchedule.dataFormacao.trim() !== '' && selectedFolhaToSchedule.dataFormacao !== '-') ? 'Feito' : 'Agendado';
+    }
+
     const updated: FolhaServico = {
       ...selectedFolhaToSchedule,
       dataPlaneada: scheduleData.data,
       horaPlaneada: scheduleData.hora,
       tecnicoPlaneado: scheduleData.tecnico,
+      status: newStatus,
       atualizadoEm: new Date().toISOString()
     };
 
