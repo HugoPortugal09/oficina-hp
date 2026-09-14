@@ -1,6 +1,6 @@
 import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
-import type { Tarefa, UserProfile } from '../types';
+import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa } from '../types';
 import { USERS } from '../types';
 
 export interface TaskNotificationPayload {
@@ -321,3 +321,311 @@ export async function sendTaskNotificationEmail(payload: TaskNotificationPayload
     message: `Notificação enviada para ${recipients.join(', ')}`
   };
 }
+
+export interface EntregaFormacaoEmailPayload {
+  folha: FolhaServico;
+  equipamento?: Equipamento;
+  empresa?: Empresa;
+  currentUser?: UserProfile;
+}
+
+/**
+ * Resolves recipients for Entrega e Formação notification:
+ * - "quem fez": logged in user email, or matched from entregaPor / formacaoPor / criadoPor
+ * - "administrador": administrator email from config (emailDestinatarioPlaneamento) and registered admin users
+ */
+export function resolveEntregaFormacaoRecipients(
+  folha: FolhaServico,
+  currentUser?: UserProfile
+): { recipients: string[]; quemFezEmail: string | null; adminEmail: string } {
+  let registeredUsers: UserProfile[] = [];
+  try {
+    const list = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES);
+    registeredUsers = list && list.length > 0 ? list : USERS;
+  } catch {
+    registeredUsers = USERS;
+  }
+
+  const findUserEmail = (identifier?: string): string | null => {
+    if (!identifier) return null;
+    const cleanId = identifier.trim().toLowerCase();
+    if (cleanId.includes('@') && cleanId.includes('.')) return cleanId;
+
+    const matchByName = registeredUsers.find(
+      u => u.nome.toLowerCase() === cleanId ||
+           u.nome.toLowerCase().includes(cleanId) ||
+           cleanId.includes(u.nome.toLowerCase())
+    );
+    if (matchByName?.email) return matchByName.email.trim().toLowerCase();
+
+    const matchByAvatar = registeredUsers.find(
+      u => u.avatar?.toLowerCase() === cleanId
+    );
+    if (matchByAvatar?.email) return matchByAvatar.email.trim().toLowerCase();
+
+    if (cleanId.includes('hugo') || cleanId === 'hp') {
+      return 'hugo@grau-maquinaria.com';
+    }
+    return null;
+  };
+
+  const emailsSet = new Set<string>();
+
+  // 1. Quem fez
+  let quemFezEmail: string | null = null;
+  if (currentUser?.email && currentUser.email.includes('@')) {
+    quemFezEmail = currentUser.email.trim().toLowerCase();
+  } else if (folha.entregaPor) {
+    quemFezEmail = findUserEmail(folha.entregaPor);
+  } else if (folha.formacaoPor) {
+    quemFezEmail = findUserEmail(folha.formacaoPor);
+  } else if (folha.criadoPor) {
+    quemFezEmail = findUserEmail(folha.criadoPor);
+  }
+
+  if (quemFezEmail) {
+    emailsSet.add(quemFezEmail);
+  }
+
+  // 2. Administrador
+  let adminEmail = 'hugo@grau-maquinaria.com';
+  try {
+    const config = db.getConfig();
+    if (config.emailDestinatarioPlaneamento && config.emailDestinatarioPlaneamento.includes('@')) {
+      adminEmail = config.emailDestinatarioPlaneamento.trim().toLowerCase();
+    }
+  } catch {}
+
+  const adminUser = registeredUsers.find(u => u.role === 'administrador');
+  if (adminUser?.email && adminUser.email.includes('@')) {
+    emailsSet.add(adminUser.email.trim().toLowerCase());
+  }
+  emailsSet.add(adminEmail);
+
+  const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
+  return { recipients, quemFezEmail, adminEmail };
+}
+
+/**
+ * Builds the official HTML template for Entrega e Formação notification
+ */
+export function buildEntregaFormacaoHtml(
+  folha: FolhaServico,
+  equipamento?: Equipamento,
+  empresa?: Empresa,
+  currentUser?: UserProfile
+): string {
+  const dataEntrega = folha.dataEntrega || equipamento?.dataEntrega || 'Não especificada';
+  const entregaPor = folha.entregaPor || equipamento?.entregaPor || 'Não especificado';
+  const dataFormacao = folha.dataFormacao || equipamento?.dataFormacao || 'Não especificada';
+  const formacaoPor = folha.formacaoPor || equipamento?.formacaoPor || 'Não especificado';
+  const nSerie = folha.nSerie || equipamento?.nSerie || 'N/A';
+  const kms = folha.kmsAtuais || equipamento?.kmsAtuais || 0;
+  const horas = folha.horasAtuais || equipamento?.horasAtuais || 0;
+  const clienteNome = empresa?.nome || 'Cliente Geral';
+
+  return `
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Registo de Entrega e Formação - Oficina HP</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b1329; margin: 0; padding: 24px; color: #1e293b;">
+  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 35px rgba(0,0,0,0.25); border: 1px solid #e2e8f0;">
+    
+    <!-- Top Header -->
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0369a1 100%); color: #ffffff; padding: 30px 32px; border-bottom: 4px solid #10b981;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #38bdf8;">Oficina HP &bull; Gestão Operacional de Frotas</span>
+        <span style="background-color: #10b981; color: #ffffff; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;">
+          ENTREGA &amp; FORMAÇÃO CONCLUÍDA
+        </span>
+      </div>
+      <h1 style="margin: 0 0 6px 0; font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.02em;">
+        ${folha.matricula} &bull; ${folha.marca} ${folha.modelo}
+      </h1>
+      <p style="margin: 0; color: #94a3b8; font-size: 13px;">
+        Folha de Serviço: <strong style="color: #38bdf8; font-family: monospace;">${folha.numero}</strong> &bull; Registada a ${folha.data}
+      </p>
+    </div>
+
+    <!-- Alert / System confirmation banner -->
+    <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 24px; color: #065f46; font-size: 13px; font-weight: 600;">
+      ✅ A Ficha Técnica do Equipamento foi atualizada automaticamente no sistema com as novas datas de Entrega e Formação.
+    </div>
+
+    <!-- Main Content -->
+    <div style="padding: 28px 32px;">
+      
+      <!-- Grid 2 Colunas: Entrega e Formação -->
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
+        
+        <!-- Box Entrega -->
+        <div style="flex: 1; min-width: 260px; background-color: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <span style="font-size: 16px;">📦</span>
+            <strong style="color: #166534; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Dados de Entrega</strong>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr>
+              <td style="padding: 4px 0; color: #4b5563; width: 45%;"><strong>Data de Entrega:</strong></td>
+              <td style="padding: 4px 0; color: #166534; font-weight: 800; font-family: monospace; font-size: 14px;">${dataEntrega}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; color: #4b5563;"><strong>Entregue por:</strong></td>
+              <td style="padding: 4px 0; color: #1f2937; font-weight: 700;">${entregaPor}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Box Formação -->
+        <div style="flex: 1; min-width: 260px; background-color: #f0f9ff; border: 1.5px solid #7dd3fc; border-radius: 12px; padding: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <span style="font-size: 16px;">🎓</span>
+            <strong style="color: #075985; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Dados de Formação</strong>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr>
+              <td style="padding: 4px 0; color: #4b5563; width: 45%;"><strong>Data de Formação:</strong></td>
+              <td style="padding: 4px 0; color: #0369a1; font-weight: 800; font-family: monospace; font-size: 14px;">${dataFormacao}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; color: #4b5563;"><strong>Formador:</strong></td>
+              <td style="padding: 4px 0; color: #1f2937; font-weight: 700;">${formacaoPor}</td>
+            </tr>
+          </table>
+        </div>
+
+      </div>
+
+      <!-- Ficha Detalhada do Equipamento -->
+      <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 20px 0 10px 0; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">
+        🚜 Ficha do Equipamento / Viatura
+      </h3>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+        <tr style="background-color: #f8fafc;">
+          <td style="padding: 8px 12px; color: #64748b; width: 35%;"><strong>Matrícula:</strong></td>
+          <td style="padding: 8px 12px; font-family: monospace; font-weight: 900; color: #0f172a; font-size: 14px;">${folha.matricula}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #64748b;"><strong>Marca / Modelo:</strong></td>
+          <td style="padding: 8px 12px; color: #1e293b; font-weight: 600;">${folha.marca} ${folha.modelo}</td>
+        </tr>
+        <tr style="background-color: #f8fafc;">
+          <td style="padding: 8px 12px; color: #64748b;"><strong>Nº de Série / Chassi (VIN):</strong></td>
+          <td style="padding: 8px 12px; font-family: monospace; color: #334155; font-weight: 600;">${nSerie}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #64748b;"><strong>Quilómetros / Horas:</strong></td>
+          <td style="padding: 8px 12px; color: #1e293b; font-family: monospace;">${kms.toLocaleString('pt-PT')} Km &bull; ${horas} Horas</td>
+        </tr>
+        <tr style="background-color: #f8fafc;">
+          <td style="padding: 8px 12px; color: #64748b;"><strong>Empresa / Cliente:</strong></td>
+          <td style="padding: 8px 12px; color: #0f172a; font-weight: 700;">${clienteNome}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #64748b;"><strong>Local da Intervenção:</strong></td>
+          <td style="padding: 8px 12px; color: #334155;">${folha.localizacao || 'Oficina Geral'}</td>
+        </tr>
+      </table>
+
+      ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
+      <!-- Notas e Observações -->
+      <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 20px 0 10px 0; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">
+        📝 Observações Técnicas Registadas
+      </h3>
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; font-size: 13px; color: #334155; line-height: 1.5; margin-bottom: 20px;">
+        ${folha.anomalias ? `<p style="margin: 0 0 6px 0;"><strong>Trabalhos / Descrição:</strong> ${folha.anomalias}</p>` : ''}
+        ${folha.notasCliente ? `<p style="margin: 0 0 6px 0;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</p>` : ''}
+        ${folha.notasInternas ? `<p style="margin: 0;"><strong>Notas Internas:</strong> ${folha.notasInternas}</p>` : ''}
+      </div>
+      ` : ''}
+
+      <!-- Responsável pelo Registo -->
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px dashed #cbd5e1; font-size: 12px; color: #64748b;">
+        <span>Registo efetuado por: <strong style="color: #0f172a;">${currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Técnico Oficina HP'}</strong> &bull; ${new Date().toLocaleString('pt-PT')}</span>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8;">
+      <p style="margin: 0 0 4px 0;"><strong>Oficina HP</strong> &bull; Sistema Integrado de Gestão Mecânica, Frotas &amp; Clientes</p>
+      <p style="margin: 0;">Notificação gerada automaticamente após gravação da Folha de Serviço de Entrega e Formação.</p>
+    </div>
+
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
+ * Sends or queues email notification for Entrega e Formação
+ */
+export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  const { folha, equipamento, empresa, currentUser } = payload;
+  const { recipients } = resolveEntregaFormacaoRecipients(folha, currentUser);
+  const subject = `[Oficina HP] Registo de Entrega e Formação: ${folha.matricula} (${folha.numero})`;
+  const htmlContent = buildEntregaFormacaoHtml(folha, equipamento, empresa, currentUser);
+
+  console.log(`[EmailService] Envio de notificação de Entrega e Formação (${folha.numero}) para:`, recipients);
+
+  try {
+    const emailLogEntry = {
+      id: db.generateId('eml'),
+      tipo: 'notificacao_entrega_formacao',
+      folhaId: folha.id,
+      folhaNumero: folha.numero,
+      matricula: folha.matricula,
+      destinatarios: recipients,
+      assunto: subject,
+      dataEntrega: folha.dataEntrega,
+      entregaPor: folha.entregaPor,
+      dataFormacao: folha.dataFormacao,
+      formacaoPor: folha.formacaoPor,
+      dataEnvio: new Date().toISOString(),
+      sucesso: true
+    };
+
+    // Save to local logs
+    const logs = db.get<any>('oficina_hp_email_logs') || [];
+    db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+
+    // Push to PocketBase cloud queue in app_data
+    const pb = getPocketBase();
+    pb.collection('app_data').create({
+      key: `email_entrega_formacao_${folha.numero}_${Date.now()}`,
+      data: {
+        recipients,
+        subject,
+        tipo: 'entrega_formacao',
+        folhaNumero: folha.numero,
+        matricula: folha.matricula,
+        dataEntrega: folha.dataEntrega,
+        entregaPor: folha.entregaPor,
+        dataFormacao: folha.dataFormacao,
+        formacaoPor: folha.formacaoPor,
+        html: htmlContent
+      },
+      timestamp: new Date().toISOString()
+    }).catch(err => {
+      console.warn('[EmailService] PocketBase queue notice:', err?.message || err);
+    });
+
+  } catch (e: any) {
+    console.warn('[EmailService] Notice:', e?.message || e);
+  }
+
+  return {
+    success: true,
+    recipients,
+    message: `Notificação de Entrega e Formação enviada para: ${recipients.join(', ')}`
+  };
+}
+

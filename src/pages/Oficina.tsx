@@ -47,7 +47,7 @@ import { db, STORAGE_KEYS } from '../services/dbService';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
-import { sendTaskNotificationEmail } from '../services/emailService';
+import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type {
   FolhaServico,
@@ -310,6 +310,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [isAnalyzingNotes, setIsAnalyzingNotes] = useState(false);
   const [aiNoteSuggestion, setAiNoteSuggestion] = useState<TaskSuggestionFromNotes | null>(null);
   const [taskCreatedFeedback, setTaskCreatedFeedback] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   const filePhotoInputRef = useRef<HTMLInputElement>(null);
 
@@ -812,18 +813,43 @@ export const Oficina: React.FC<OficinaProps> = ({
     }
 
     // Update equipment mileage / hours and delivery/training in fleet
-    if (folhaToSave.equipamentoId) {
+    const targetEquip = equipamentos.find(
+      e => (folhaToSave.equipamentoId && e.id === folhaToSave.equipamentoId) ||
+           (folhaToSave.matricula && e.matricula && e.matricula.trim().toUpperCase() === folhaToSave.matricula.trim().toUpperCase())
+    );
+
+    if (targetEquip) {
       const equipUpdate: Partial<Equipamento> = {
-        kmsAtuais: folhaToSave.kmsAtuais,
-        horasAtuais: folhaToSave.horasAtuais
+        kmsAtuais: folhaToSave.kmsAtuais || targetEquip.kmsAtuais,
+        horasAtuais: folhaToSave.horasAtuais || targetEquip.horasAtuais
       };
-      if (folhaToSave.tipo === 'Entrega e Formação') {
-        if (folhaToSave.dataEntrega !== undefined) equipUpdate.dataEntrega = folhaToSave.dataEntrega;
-        if (folhaToSave.entregaPor !== undefined) equipUpdate.entregaPor = folhaToSave.entregaPor;
-        if (folhaToSave.dataFormacao !== undefined) equipUpdate.dataFormacao = folhaToSave.dataFormacao;
-        if (folhaToSave.formacaoPor !== undefined) equipUpdate.formacaoPor = folhaToSave.formacaoPor;
+      if (folhaToSave.tipo === 'Entrega e Formação' || folhaToSave.dataEntrega || folhaToSave.dataFormacao) {
+        if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') equipUpdate.dataEntrega = folhaToSave.dataEntrega;
+        if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') equipUpdate.entregaPor = folhaToSave.entregaPor;
+        if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') equipUpdate.dataFormacao = folhaToSave.dataFormacao;
+        if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') equipUpdate.formacaoPor = folhaToSave.formacaoPor;
       }
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, folhaToSave.equipamentoId, equipUpdate);
+      if (folhaToSave.nSerie && !targetEquip.nSerie) {
+        equipUpdate.nSerie = folhaToSave.nSerie;
+      }
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, targetEquip.id, equipUpdate);
+    }
+
+    // Se for Entrega e Formação, enviar email automático para quem fez e para o administrador
+    if (folhaToSave.tipo === 'Entrega e Formação') {
+      const targetEmpresa = empresas.find(e => e.id === folhaToSave.empresaId);
+      sendEntregaFormacaoEmail({
+        folha: folhaToSave,
+        equipamento: targetEquip,
+        empresa: targetEmpresa,
+        currentUser
+      }).then(res => {
+        setSaveFeedback(`Folha ${folhaToSave.numero} gravada com sucesso! Ficha da viatura ${folhaToSave.matricula} atualizada e email enviado para ${res.recipients.join(', ')}.`);
+        setTimeout(() => setSaveFeedback(null), 8000);
+      });
+    } else {
+      setSaveFeedback(`Folha ${folhaToSave.numero} gravada com sucesso!`);
+      setTimeout(() => setSaveFeedback(null), 4000);
     }
 
     setIsModalOpen(false);
@@ -1110,6 +1136,21 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   return (
     <div className="space-y-3.5">
+      {saveFeedback && (
+        <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-2xl flex items-center justify-between gap-3 text-xs text-emerald-300 animate-in fade-in shadow-lg">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{saveFeedback}</span>
+          </div>
+          <button
+            onClick={() => setSaveFeedback(null)}
+            className="p-1 text-emerald-400 hover:text-white rounded-lg font-bold text-sm leading-none"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {/* Controls & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5 flex-1">

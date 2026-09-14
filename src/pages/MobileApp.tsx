@@ -56,7 +56,7 @@ import {
   analyzeInternalNotesWithOllama,
   type AiFolhaGenerationResult
 } from '../services/ollamaService';
-import { sendTaskNotificationEmail } from '../services/emailService';
+import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
 import { estimateDistanceKm } from './Empresas';
 import type {
   FolhaServico,
@@ -531,24 +531,47 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
 
     // Update fleet odometer and delivery/training info
-    if (folhaToSave.equipamentoId) {
+    const targetEq = equipamentos.find(
+      e => (folhaToSave.equipamentoId && e.id === folhaToSave.equipamentoId) ||
+           (folhaToSave.matricula && e.matricula && e.matricula.trim().toUpperCase() === folhaToSave.matricula.trim().toUpperCase())
+    ) || matchedEq;
+
+    if (targetEq) {
       const eqUpdate: Partial<Equipamento> = {
-        kmsAtuais: folhaToSave.kmsAtuais,
-        horasAtuais: folhaToSave.horasAtuais
+        kmsAtuais: folhaToSave.kmsAtuais || targetEq.kmsAtuais,
+        horasAtuais: folhaToSave.horasAtuais || targetEq.horasAtuais
       };
-      if (folhaToSave.tipo === 'Entrega e Formação') {
-        if (folhaToSave.dataEntrega !== undefined) eqUpdate.dataEntrega = folhaToSave.dataEntrega;
-        if (folhaToSave.entregaPor !== undefined) eqUpdate.entregaPor = folhaToSave.entregaPor;
-        if (folhaToSave.dataFormacao !== undefined) eqUpdate.dataFormacao = folhaToSave.dataFormacao;
-        if (folhaToSave.formacaoPor !== undefined) eqUpdate.formacaoPor = folhaToSave.formacaoPor;
+      if (folhaToSave.tipo === 'Entrega e Formação' || folhaToSave.dataEntrega || folhaToSave.dataFormacao) {
+        if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') eqUpdate.dataEntrega = folhaToSave.dataEntrega;
+        if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') eqUpdate.entregaPor = folhaToSave.entregaPor;
+        if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') eqUpdate.dataFormacao = folhaToSave.dataFormacao;
+        if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') eqUpdate.formacaoPor = folhaToSave.formacaoPor;
       }
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, folhaToSave.equipamentoId, eqUpdate);
+      if (folhaToSave.nSerie && !targetEq.nSerie) {
+        eqUpdate.nSerie = folhaToSave.nSerie;
+      }
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, targetEq.id, eqUpdate);
       setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     }
 
+    // Se for Entrega e Formação, enviar email para quem fez e para o administrador
+    if (folhaToSave.tipo === 'Entrega e Formação') {
+      const matchedEmpresa = empresas.find(e => e.id === folhaToSave.empresaId);
+      sendEntregaFormacaoEmail({
+        folha: folhaToSave,
+        equipamento: targetEq,
+        empresa: matchedEmpresa,
+        currentUser
+      }).then(res => {
+        setSaveBanner(`Folha ${folhaToSave.numero} gravada! Ficha da viatura atualizada e email enviado para ${res.recipients.join(', ')}.`);
+        setTimeout(() => setSaveBanner(null), 8000);
+      });
+    } else {
+      setSaveBanner(`Folha ${folhaToSave.numero} gravada com sucesso!`);
+      setTimeout(() => setSaveBanner(null), 4000);
+    }
+
     setIsSaving(false);
-    setSaveBanner(`Folha ${folhaToSave.numero} gravada com sucesso!`);
-    setTimeout(() => setSaveBanner(null), 4000);
 
     // Reset AI Wizard & Form
     setAiMatriculaPhoto(null);

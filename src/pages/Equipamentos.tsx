@@ -26,6 +26,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { formatDate, formatDateToInput } from '../utils/dateUtils';
 import type { Equipamento, Empresa, FolhaServico } from '../types';
 
 interface EquipamentosProps {
@@ -627,9 +628,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                   </label>
                   <input
                     type="date"
-                    value={editingEquip.dataEntrega || ''}
-                    onChange={e => setEditingEquip(prev => ({ ...prev, dataEntrega: e.target.value }))}
-                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                    value={formatDateToInput(editingEquip.dataEntrega)}
+                    onChange={e => setEditingEquip(prev => ({ ...prev, dataEntrega: formatDate(e.target.value) }))}
+                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
                   />
                 </div>
                 <div>
@@ -654,9 +655,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                   </label>
                   <input
                     type="date"
-                    value={editingEquip.dataFormacao || ''}
-                    onChange={e => setEditingEquip(prev => ({ ...prev, dataFormacao: e.target.value }))}
-                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                    value={formatDateToInput(editingEquip.dataFormacao)}
+                    onChange={e => setEditingEquip(prev => ({ ...prev, dataFormacao: formatDate(e.target.value) }))}
+                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
                   />
                 </div>
                 <div>
