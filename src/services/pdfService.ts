@@ -785,183 +785,162 @@ export function generateEntregaFormacaoPDF(
     }
   };
 
-  // 1. TOP SLIM ACCENT BAR
-  doc.setFillColor(15, 23, 42); // Slate 900
-  doc.rect(0, 0, 210, 4, 'F');
-  doc.setFillColor(16, 185, 129); // Emerald accent
-  doc.rect(140, 0, 70, 4, 'F');
+  // 1. FULL-BLEED HERO HEADER BANNER (Navy #0b1528)
+  doc.setFillColor(11, 21, 40); // Dark Navy Slate
+  doc.rect(0, 0, 210, 36, 'F');
 
-  // 2. HERO HEADER BANNER (Matching exact design: Slate 900 container)
-  let curY = 10;
-  doc.setFillColor(15, 23, 42); // Navy Slate 900
-  doc.roundedRect(14, curY, 182, 30, 2.5, 2.5, 'F');
+  // Emerald bottom border (matching Image 1)
+  doc.setFillColor(16, 185, 129); // #10b981
+  doc.rect(0, 35, 210, 1.2, 'F');
 
-  // Top cyan subhead in banner
-  doc.setFontSize(7.5);
+  // Subhead row: Left cyan text
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(56, 189, 248); // Sky 400
-  doc.text('OFICINA HP • GESTÃO OPERACIONAL DE FROTAS', 20, curY + 7.5);
+  doc.setTextColor(56, 189, 248); // #38bdf8
+  doc.text('OFICINA HP • GESTÃO OPERACIONAL DE FROTAS', 18, 13);
 
-  // Top emerald badge in banner
-  doc.setFillColor(16, 185, 129); // Emerald 500
-  doc.roundedRect(124, curY + 4, 66, 5.5, 1.5, 1.5, 'F');
-  doc.setFontSize(6.5);
+  // Subhead row: Right emerald pill badge
+  doc.setFillColor(16, 185, 129); // #10b981
+  doc.roundedRect(132, 8, 60, 6.5, 3.2, 3.2, 'F');
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
-  doc.text('ENTREGA & FORMAÇÃO CONCLUÍDA', 157, curY + 7.8, { align: 'center' });
+  doc.text('ENTREGA & FORMAÇÃO CONCLUÍDA', 162, 12.4, { align: 'center' });
 
-  // Main vehicle title in banner
-  doc.setFontSize(14.5);
+  // Main vehicle title
+  doc.setFontSize(17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
   const equipHeaderTitle = `${folha.matricula || 'SEM MATRÍCULA'} • ${folha.marca || ''} ${folha.modelo || ''}`.trim();
-  doc.text(equipHeaderTitle, 20, curY + 17);
+  doc.text(equipHeaderTitle, 18, 23.5);
 
-  // Subtitle line in banner
+  // Subtitle line
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184); // Slate 400
-  doc.text('Folha de Serviço: ', 20, curY + 24.5);
+  doc.text('Folha de Serviço: ', 18, 30.5);
   const fsLabelW = doc.getTextWidth('Folha de Serviço: ');
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(56, 189, 248); // Sky 400
   const fsNum = folha.numero || folha.id || '---';
-  doc.text(fsNum, 20 + fsLabelW, curY + 24.5);
+  doc.text(fsNum, 18 + fsLabelW, 30.5);
   const fsNumW = doc.getTextWidth(fsNum);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184);
   const regDateStr = ` • Registada a ${formatDate(folha.data) || getTodayFormatted()}`;
-  doc.text(regDateStr, 20 + fsLabelW + fsNumW, curY + 24.5);
+  doc.text(regDateStr, 18 + fsLabelW + fsNumW, 30.5);
 
-  curY += 34;
+  // 2. FULL-BLEED GREEN CONFIRMATION BANNER (matching Image 1)
+  doc.setFillColor(236, 253, 245); // #ecfdf5
+  doc.rect(0, 36.2, 210, 10, 'F');
+  doc.setFillColor(16, 185, 129); // Green left accent
+  doc.rect(0, 36.2, 3.5, 10, 'F');
 
-  // 3. GREEN CONFIRMATION CALLOUT BANNER
-  doc.setFillColor(236, 253, 245); // Emerald 50
-  doc.setDrawColor(16, 185, 129); // Emerald 500
-  doc.setLineWidth(0.4);
-  doc.roundedRect(14, curY, 182, 8.5, 1.5, 1.5, 'FD');
-
-  // Vector checkmark circle
+  // Vector checkmark inside green circle
   doc.setFillColor(16, 185, 129);
-  doc.circle(18.5, curY + 4.25, 2.2, 'F');
+  doc.circle(21, 41.2, 2.2, 'F');
   doc.setDrawColor(255, 255, 255);
   doc.setLineWidth(0.5);
-  doc.line(17.4, curY + 4.25, 18.2, curY + 5.1);
-  doc.line(18.2, curY + 5.1, 19.6, curY + 3.4);
+  doc.line(19.9, 41.2, 20.7, 42.1);
+  doc.line(20.7, 42.1, 22.1, 40.4);
 
-  // Callout text
+  // Banner text
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(6, 95, 70); // Emerald 800
-  doc.text('A Ficha Técnica do Equipamento foi atualizada automaticamente no sistema com as novas datas de Entrega e Formação.', 23, curY + 5.5);
+  doc.setTextColor(6, 95, 70); // #065f46
+  doc.text('A Ficha Técnica do Equipamento foi atualizada automaticamente no sistema com as novas datas de Entrega e Formação.', 25.5, 42.3);
 
-  curY += 12;
+  let curY = 52;
 
-  // 4. DUAL CARDS: DADOS DE ENTREGA & DADOS DE FORMAÇÃO
-  const cardW = 88;
-  const cardH = 32;
+  // 3. DUAL CARDS: ENTREGA & FORMAÇÃO (Matching Image 1)
+  const cardW = 84;
+  const cardH = 30;
 
   // --- CARD 1: DADOS DE ENTREGA ---
-  doc.setFillColor(240, 253, 244); // Green 50
-  doc.setDrawColor(187, 247, 208); // Green 200
-  doc.setLineWidth(0.5);
-  doc.roundedRect(14, curY, cardW, cardH, 2, 2, 'FD');
+  doc.setFillColor(240, 253, 244); // #f0fdf4
+  doc.setDrawColor(134, 239, 172); // #86efac
+  doc.setLineWidth(0.4);
+  doc.roundedRect(18, curY, cardW, cardH, 2.5, 2.5, 'FD');
 
-  // Small pill badge
-  doc.setFillColor(16, 185, 129);
-  doc.roundedRect(18, curY + 4, 15, 4.8, 1, 1, 'F');
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(255, 255, 255);
-  doc.text('ENVIO', 25.5, curY + 7.4, { align: 'center' });
-
+  // Title with icon
+  doc.setFillColor(22, 101, 52);
+  doc.roundedRect(22, curY + 4, 4, 3.5, 0.4, 0.4, 'F');
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(22, 101, 52); // Green 800
-  doc.text('DADOS DE ENTREGA', 36, curY + 7.6);
+  doc.setTextColor(22, 101, 52); // #166534
+  doc.text('DADOS DE ENTREGA', 28, curY + 7);
 
   // Data de Entrega
   const rawEntregaDate = folha.dataEntrega || equipamento?.dataEntrega;
   const entregaDateStr = rawEntregaDate ? formatDate(rawEntregaDate) : 'Não especificada';
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Data de Entrega:', 18, curY + 16);
-  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Data de Entrega:', 22, curY + 16);
   doc.setFontSize(9.5);
-  doc.setTextColor(21, 128, 61); // Green 700
-  doc.text(entregaDateStr, 48, curY + 16);
+  doc.setTextColor(22, 101, 52);
+  doc.text(entregaDateStr, 54, curY + 16);
 
-  // Entregue por (Clean name without role/cargo!)
+  // Entregue por (Clean name without cargo!)
   const entregaNome = cleanPersonName(folha.entregaPor || equipamento?.entregaPor) || 'Hugo Portugal';
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Entregue por:', 18, curY + 24.5);
-  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Entregue por:', 22, curY + 24);
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(entregaNome, 48, curY + 24.5);
+  doc.text(entregaNome, 54, curY + 24);
 
   // --- CARD 2: DADOS DE FORMAÇÃO ---
   const card2X = 108;
-  doc.setFillColor(240, 249, 255); // Sky 50
-  doc.setDrawColor(186, 230, 253); // Sky 200
-  doc.setLineWidth(0.5);
-  doc.roundedRect(card2X, curY, cardW, cardH, 2, 2, 'FD');
+  doc.setFillColor(240, 249, 255); // #f0f9ff
+  doc.setDrawColor(125, 211, 252); // #7dd3fc
+  doc.setLineWidth(0.4);
+  doc.roundedRect(card2X, curY, cardW, cardH, 2.5, 2.5, 'FD');
 
-  // Small pill badge
-  doc.setFillColor(14, 165, 233);
-  doc.roundedRect(card2X + 4, curY + 4, 17, 4.8, 1, 1, 'F');
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(255, 255, 255);
-  doc.text('TREINO', card2X + 12.5, curY + 7.4, { align: 'center' });
-
+  // Title with icon
+  doc.setFillColor(3, 105, 161);
+  doc.roundedRect(card2X + 4, curY + 4, 4, 3.5, 0.4, 0.4, 'F');
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(3, 105, 161); // Sky 700
-  doc.text('DADOS DE FORMAÇÃO', card2X + 24, curY + 7.6);
+  doc.setTextColor(3, 105, 161); // #0369a1
+  doc.text('DADOS DE FORMAÇÃO', card2X + 10, curY + 7);
 
   // Data de Formação
   const rawFormacaoDate = folha.dataFormacao || equipamento?.dataFormacao;
   const formacaoDateStr = rawFormacaoDate ? formatDate(rawFormacaoDate) : 'Não especificada';
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
+  doc.setTextColor(71, 85, 105);
   doc.text('Data de Formação:', card2X + 4, curY + 16);
-  doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
-  doc.setTextColor(2, 132, 199); // Sky 600
-  doc.text(formacaoDateStr, card2X + 38, curY + 16);
+  doc.setTextColor(2, 132, 199);
+  doc.text(formacaoDateStr, card2X + 40, curY + 16);
 
-  // Formador (Clean name without role/cargo!)
+  // Formador (Clean name without cargo!)
   const formadorNome = cleanPersonName(folha.formacaoPor || equipamento?.formacaoPor) || 'Hugo Portugal';
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Formador:', card2X + 4, curY + 24.5);
-  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Formador:', card2X + 4, curY + 24);
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(formadorNome, card2X + 38, curY + 24.5);
+  doc.text(formadorNome, card2X + 40, curY + 24);
 
   curY += cardH + 7;
 
-  // 5. FICHA DO EQUIPAMENTO / VIATURA (TABLE)
+  // 4. SECTION: FICHA DO EQUIPAMENTO / VIATURA (Matching Image 1)
   const clienteNome = empresa?.nome || (folha as any).empresaNome || (folha as any).cliente || 'Cliente Geral';
   const nSerie = folha.nSerie || equipamento?.nSerie || 'N/A';
-  const kms = folha.kmsAtuais || equipamento?.kmsAtuais || 0;
-  const horas = folha.horasAtuais || equipamento?.horasAtuais || 0;
 
-  // Section heading with divider
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
-  doc.text('FICHA DO EQUIPAMENTO / VIATURA', 14, curY + 4);
+  doc.text('FICHA DO EQUIPAMENTO / VIATURA', 18, curY + 4);
+
   doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.5);
-  doc.line(14, curY + 6.5, 196, curY + 6.5);
+  doc.setLineWidth(0.4);
+  doc.line(18, curY + 6.5, 192, curY + 6.5);
   curY += 8;
 
   const equipRows: (string[])[] = [
@@ -977,9 +956,6 @@ export function generateEntregaFormacaoPDF(
   if (folha.localizacao) {
     equipRows.push(['Local da Intervenção:', folha.localizacao]);
   }
-  if (kms > 0 || horas > 0) {
-    equipRows.push(['Quilómetros / Horas:', `${kms > 0 ? `${kms.toLocaleString('pt-PT')} Km` : ''} ${horas > 0 ? `• ${horas} Horas` : ''}`.trim()]);
-  }
 
   runAutoTable({
     startY: curY,
@@ -994,51 +970,54 @@ export function generateEntregaFormacaoPDF(
     },
     columnStyles: {
       0: { cellWidth: 55, fontStyle: 'bold', textColor: [100, 116, 139] },
-      1: { cellWidth: 127, fontStyle: 'bold' }
+      1: { cellWidth: 119, fontStyle: 'bold' }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]
     },
-    margin: { left: 14, right: 14 }
+    margin: { left: 18, right: 18 }
   });
 
   curY = (doc as any).lastAutoTable.finalY + 6;
 
-  // 6. OBSERVAÇÕES TÉCNICAS REGISTADAS
+  // 5. SECTION: OBSERVAÇÕES TÉCNICAS REGISTADAS (Matching Image 1)
   const obsLines: string[] = [];
   if (folha.anomalias) obsLines.push(`Trabalhos / Descrição: ${folha.anomalias}`);
   if (folha.notasCliente) obsLines.push(`Notas Cliente: ${folha.notasCliente}`);
   if (folha.notasInternas) obsLines.push(`Notas Internas: ${folha.notasInternas}`);
 
-  doc.setFontSize(8.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('OBSERVAÇÕES TÉCNICAS REGISTADAS', 14, curY + 4);
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.5);
-  doc.line(14, curY + 6.5, 196, curY + 6.5);
-  curY += 8;
+  if (obsLines.length > 0) {
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('OBSERVAÇÕES TÉCNICAS REGISTADAS', 18, curY + 4);
 
-  const obsText = obsLines.length > 0 ? obsLines.join('\n\n') : 'Sem observações técnicas registadas.';
-  const obsSplit = doc.splitTextToSize(obsText, 172);
-  const obsBoxH = Math.max(14, obsSplit.length * 4.2 + 8);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(18, curY + 6.5, 192, curY + 6.5);
+    curY += 8;
 
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(14, curY, 182, obsBoxH, 2, 2, 'FD');
+    const obsText = obsLines.join('\n\n');
+    const obsSplit = doc.splitTextToSize(obsText, 166);
+    const obsBoxH = Math.max(12, obsSplit.length * 4.2 + 8);
 
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(51, 65, 85);
-  doc.text(obsSplit, 18, curY + 6.5);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(18, curY, 174, obsBoxH, 2, 2, 'FD');
 
-  curY += obsBoxH + 6;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.text(obsSplit, 22, curY + 6.5);
 
-  // 7. DOTTED LINE & REGISTRATION
+    curY += obsBoxH + 6;
+  }
+
+  // 6. DOTTED LINE & REGISTO EFETUADO POR (Matching Image 1)
   doc.setDrawColor(203, 213, 225);
   doc.setLineDashPattern([1.5, 1.5], 0);
-  doc.line(14, curY, 196, curY);
+  doc.line(18, curY, 192, curY);
   doc.setLineDashPattern([], 0);
   curY += 5;
 
@@ -1047,88 +1026,44 @@ export function generateEntregaFormacaoPDF(
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text('Registo efetuado por: ', 14, curY);
+  doc.text('Registo efetuado por: ', 18, curY);
   const regLblW = doc.getTextWidth('Registo efetuado por: ');
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${registadoPorLimpo}`, 14 + regLblW, curY);
+  doc.text(`${registadoPorLimpo}`, 18 + regLblW, curY);
   const regNameW = doc.getTextWidth(registadoPorLimpo);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text(` • ${dataRegisto}`, 14 + regLblW + regNameW, curY);
+  doc.text(` • ${dataRegisto}`, 18 + regLblW + regNameW, curY);
 
-  curY += 7;
-
-  // 8. SIGNATURES / VALIDAÇÃO E CONFORMIDADE
-  if (curY > 230) {
-    doc.addPage();
-    curY = 16;
-  }
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('VALIDAÇÃO E CONFORMIDADE', 14, curY + 4);
-  curY += 6;
-
-  const sigBoxW = 88;
-  const sigBoxH = 26;
-
-  // Box Left: GRAUMP
-  doc.setDrawColor(203, 213, 225);
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, curY, sigBoxW, sigBoxH, 2, 2, 'FD');
-  doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('O Responsável Técnico / Formador (GRAUMP)', 18, curY + 5.5);
-  doc.line(18, curY + 18, 14 + sigBoxW - 6, curY + 18);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(100, 116, 139);
-  const respTechLimpo = cleanPersonName(folha.formacaoPor || folha.entregaPor || folha.criadoPor || 'Hugo Portugal');
-  doc.text(`Nome: ${respTechLimpo}`, 18, curY + 22.5);
-
-  // Box Right: CLIENTE
-  doc.setDrawColor(203, 213, 225);
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(108, curY, sigBoxW, sigBoxH, 2, 2, 'FD');
-  doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('O Cliente / Operador Recetor', 112, curY + 5.5);
-  doc.line(112, curY + 18, 108 + sigBoxW - 6, curY + 18);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Carimbo / Assinatura e Data', 112, curY + 22.5);
-
-  // 9. PHOTO GALLERY (IF PHOTOS EXIST)
+  // 7. PHOTO GALLERY (ONLY IF PHOTOS EXIST ON PAGE 2)
   const rawFotos = folha.fotos || [];
   if (Array.isArray(rawFotos) && rawFotos.length > 0) {
     doc.addPage();
 
     // Page 2 header
-    doc.setFillColor(15, 23, 42);
-    doc.roundedRect(14, 12, 182, 16, 2, 2, 'F');
-    doc.setFontSize(10.5);
+    doc.setFillColor(11, 21, 40);
+    doc.rect(0, 0, 210, 24, 'F');
+    doc.setFillColor(16, 185, 129);
+    doc.rect(0, 23.5, 210, 0.8, 'F');
+
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('REGISTO FOTOGRÁFICO DA ENTREGA E FORMAÇÃO', 20, 22.5);
+    doc.text('REGISTO FOTOGRÁFICO DA ENTREGA E FORMAÇÃO', 18, 15);
 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    doc.text(`${folha.matricula || ''} • FS ${folha.numero || ''} • (${rawFotos.length} fotografia${rawFotos.length > 1 ? 's' : ''})`, 190, 22.5, { align: 'right' });
+    doc.text(`${folha.matricula || ''} • FS ${folha.numero || ''} • (${rawFotos.length} fotografia${rawFotos.length > 1 ? 's' : ''})`, 192, 15, { align: 'right' });
 
-    let photoStartY = 34;
-    const colW = 88;
-    const colH = 64;
+    let photoStartY = 32;
+    const colW = 84;
+    const colH = 62;
     const gapX = 6;
     const gapY = 8;
 
     rawFotos.forEach((foto, idx) => {
-      const pageIndex = Math.floor(idx / 6); // 6 photos per page max (2 cols x 3 rows)
       const indexInPage = idx % 6;
       if (idx > 0 && indexInPage === 0) {
         doc.addPage();
@@ -1136,7 +1071,7 @@ export function generateEntregaFormacaoPDF(
       }
       const col = indexInPage % 2;
       const row = Math.floor(indexInPage / 2);
-      const px = 14 + col * (colW + gapX);
+      const px = 18 + col * (colW + gapX);
       const py = photoStartY + row * (colH + gapY);
 
       doc.setFillColor(248, 250, 252);
@@ -1159,32 +1094,6 @@ export function generateEntregaFormacaoPDF(
       doc.setTextColor(71, 85, 105);
       doc.text(`Fotografia ${idx + 1}`, px + 6, py + colH - 3.8);
     });
-  }
-
-  // 10. MULTI-PAGE FOOTER
-  const pageCount = (doc as any).internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFillColor(15, 23, 42); // Navy
-    doc.rect(0, 287, 210, 10, 'F');
-    doc.setFillColor(16, 185, 129); // Emerald
-    try { doc.triangle(0, 297, 45, 297, 0, 278, 'F'); } catch (e) {}
-    doc.rect(0, 290, 32, 7, 'F');
-
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 255, 255);
-    doc.text('GRAUMP', 15, 293.5);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(203, 213, 225);
-    doc.text(' • Oficina HP Gestão & Frotas', 29, 293.5);
-
-    doc.setTextColor(148, 163, 184);
-    doc.text('Certificado Oficial de Entrega & Formação • Processado por Computador', 115, 293.5, { align: 'center' });
-
-    doc.setTextColor(255, 255, 255);
-    doc.text(`Página ${i} de ${pageCount}`, 196, 293.5, { align: 'right' });
   }
 
   return doc;
