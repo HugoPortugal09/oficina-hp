@@ -50,6 +50,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
+import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
 import {
   transformPhotosToFolhaWithOllama,
@@ -339,7 +340,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     };
   }, []);
 
-  const handlePhotoCapture = (
+  const handlePhotoCapture = async (
     e: React.ChangeEvent<HTMLInputElement>,
     target: 'all-ai' | 'matricula' | 'odometro' | 'pecas' | 'manual' | 'new-equip'
   ) => {
@@ -348,9 +349,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const base64 = ev.target?.result as string;
+      try {
+        const base64 = await compressImageFile(file, 1280, 0.75);
+        if (!base64) continue;
         if (target === 'all-ai') {
           setAiPhotos(prev => [...prev, base64]);
         } else if (target === 'matricula') {
@@ -370,9 +371,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             fotos: [...(prev.fotos || []), base64]
           }));
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('Erro ao processar imagem:', err);
+      }
     }
+    if (e.target) e.target.value = '';
   };
 
   // Run AI Transformation with Ollama (All-in-One Multi-Photo Auto-Classification)
@@ -995,23 +998,38 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { [key]: updatedList });
   };
 
-  const handleSelectedFolhaPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectedFolhaPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || !selectedFolha) return;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const base64 = ev.target?.result as string;
+    if (!files || !selectedFolha || files.length === 0) return;
+    try {
+      const newPhotos: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressed = await compressImageFile(files[i], 1280, 0.75);
+        if (compressed) newPhotos.push(compressed);
+      }
+      if (newPhotos.length > 0) {
         setSelectedFolha(prev => {
           if (!prev) return null;
-          const updatedPhotos = [...(prev.fotos || []), base64];
+          const updatedPhotos = [...(prev.fotos || []), ...newPhotos];
           db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, prev.id, { fotos: updatedPhotos });
           return { ...prev, fotos: updatedPhotos };
         });
-      };
-      reader.readAsDataURL(file);
+      }
+    } catch (err) {
+      console.error('Erro ao processar foto na folha:', err);
+    } finally {
+      if (e.target) e.target.value = '';
     }
+  };
+
+  const handleRemoveSelectedFolhaPhoto = (index: number) => {
+    if (!selectedFolha) return;
+    setSelectedFolha(prev => {
+      if (!prev) return null;
+      const updatedPhotos = (prev.fotos || []).filter((_, i) => i !== index);
+      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, prev.id, { fotos: updatedPhotos });
+      return { ...prev, fotos: updatedPhotos };
+    });
   };
 
   const handleSaveSelectedFolha = () => {
@@ -1685,6 +1703,63 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* Fotografias da Entrega & Formação */}
+                  <div className="p-3 bg-slate-950/80 rounded-xl border border-emerald-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-emerald-400 block uppercase">
+                          Fotografias ({selectedFolha.fotos?.length || 0})
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Entrega e sessão de formação
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => selectedFolhaCameraInputRef.current?.click()}
+                          className="px-2.5 py-1.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1 border border-emerald-500/30 transition-all active:scale-95"
+                        >
+                          <Camera className="w-3.5 h-3.5" /> Tirar Foto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => selectedFolhaPhotoInputRef.current?.click()}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-700 transition-all active:scale-95"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> Galeria
+                        </button>
+                      </div>
+                    </div>
+
+                    {selectedFolha.fotos && selectedFolha.fotos.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2 pt-1">
+                        {selectedFolha.fotos.map((img, i) => (
+                          <div key={i} className="relative group">
+                            <img
+                              src={img}
+                              alt={`Foto ${i + 1}`}
+                              onClick={() => setSelectedPhotoPreview(img)}
+                              className="w-full h-20 object-cover rounded-xl border border-emerald-500/30 cursor-pointer active:scale-95 transition-transform"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSelectedFolhaPhoto(i)}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center text-[10px] shadow-md transition-colors"
+                              title="Remover foto"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 italic p-2 text-center bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
+                        Nenhuma fotografia anexada à entrega/formação.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -2305,13 +2380,22 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 {selectedFolha.fotos && selectedFolha.fotos.length > 0 && (
                   <div className="grid grid-cols-3 gap-2">
                     {selectedFolha.fotos.map((img, i) => (
-                      <img
-                        key={i}
-                        src={img}
-                        alt={`Foto ${i + 1}`}
-                        onClick={() => setSelectedPhotoPreview(img)}
-                        className="w-full h-20 object-cover rounded-xl border border-slate-700 cursor-pointer active:scale-95 transition-transform"
-                      />
+                      <div key={i} className="relative group">
+                        <img
+                          src={img}
+                          alt={`Foto ${i + 1}`}
+                          onClick={() => setSelectedPhotoPreview(img)}
+                          className="w-full h-20 object-cover rounded-xl border border-slate-700 cursor-pointer active:scale-95 transition-transform"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSelectedFolhaPhoto(i)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center text-[10px] shadow-md transition-colors"
+                          title="Remover foto"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -3234,6 +3318,68 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         />
                       </div>
                     </div>
+                  </div>
+
+                  {/* Fotografias da Entrega & Formação */}
+                  <div className="p-3 bg-slate-950/80 rounded-xl border border-emerald-500/30 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-emerald-400 block uppercase">
+                          Fotografias ({manualFolha.fotos?.length || 0})
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Entrega e sessão de formação
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => manualCameraInputRef.current?.click()}
+                          className="px-2.5 py-1.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1 border border-emerald-500/30 transition-all active:scale-95"
+                        >
+                          <Camera className="w-3.5 h-3.5" /> Tirar Foto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => manualPhotoInputRef.current?.click()}
+                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-700 transition-all active:scale-95"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> Galeria
+                        </button>
+                      </div>
+                    </div>
+
+                    {manualFolha.fotos && manualFolha.fotos.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2 pt-1">
+                        {manualFolha.fotos.map((img, i) => (
+                          <div key={i} className="relative group">
+                            <img
+                              src={img}
+                              alt={`Foto ${i + 1}`}
+                              onClick={() => setSelectedPhotoPreview(img)}
+                              className="w-full h-20 object-cover rounded-xl border border-emerald-500/30 cursor-pointer active:scale-95 transition-transform"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualFolha(prev => ({
+                                  ...prev,
+                                  fotos: prev.fotos?.filter((_, idx) => idx !== i)
+                                }));
+                              }}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center text-[10px] shadow-md transition-colors"
+                              title="Remover foto"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 italic p-2 text-center bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
+                        Nenhuma fotografia adicionada ainda.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

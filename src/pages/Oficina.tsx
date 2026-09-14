@@ -46,6 +46,7 @@ import { Modal } from '../components/Modal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
+import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
@@ -324,6 +325,9 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   const filePhotoInputRef = useRef<HTMLInputElement>(null);
+  const efCameraInputRef = useRef<HTMLInputElement>(null);
+  const efGalleryInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingEFPhotos, setIsUploadingEFPhotos] = useState(false);
 
   // Contract covered equipment IDs
   const contractEquipIds = contratos
@@ -684,18 +688,49 @@ export const Oficina: React.FC<OficinaProps> = ({
     }
   };
 
-  const handleDirectPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const base64 = ev.target?.result as string;
+  const handleDirectPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      const newPhotos: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressed = await compressImageFile(files[i], 1280, 0.75);
+        if (compressed) newPhotos.push(compressed);
+      }
+      if (newPhotos.length > 0) {
         setEditingFolha(prev => ({
           ...prev,
-          fotos: [...(prev.fotos || []), base64]
+          fotos: [...(prev.fotos || []), ...newPhotos]
         }));
-      };
-      reader.readAsDataURL(file);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar fotos:', err);
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleEFPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploadingEFPhotos(true);
+    try {
+      const newPhotos: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressed = await compressImageFile(files[i], 1280, 0.75);
+        if (compressed) newPhotos.push(compressed);
+      }
+      if (newPhotos.length > 0) {
+        setEditingFolha(prev => ({
+          ...prev,
+          fotos: [...(prev.fotos || []), ...newPhotos]
+        }));
+      }
+    } catch (err) {
+      console.error('Erro ao processar fotos de Entrega e Formação:', err);
+    } finally {
+      setIsUploadingEFPhotos(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -2018,16 +2053,104 @@ export const Oficina: React.FC<OficinaProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Fotografias da Entrega & Formação */}
+                <div className="p-4 bg-slate-950/70 rounded-xl border border-emerald-500/30 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Camera className="w-4 h-4 text-emerald-400" />
+                      <div>
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">
+                          Fotografias da Entrega & Formação ({editingFolha.fotos?.length || 0})
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          (Fotos da entrega ao cliente / sessão de formação - anexadas no PDF e no Email oficial)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {isUploadingEFPhotos && (
+                        <span className="text-xs text-emerald-400 font-semibold animate-pulse flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 animate-spin" /> A processar fotos...
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => efCameraInputRef.current?.click()}
+                        disabled={isUploadingEFPhotos}
+                        className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 border border-emerald-500/40 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                      >
+                        <Camera className="w-3.5 h-3.5" /> Tirar Foto
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => efGalleryInputRef.current?.click()}
+                        disabled={isUploadingEFPhotos}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                      >
+                        <Upload className="w-3.5 h-3.5" /> Adicionar Fotos
+                      </button>
+
+                      <input
+                        ref={efCameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleEFPhotosUpload}
+                      />
+                      <input
+                        ref={efGalleryInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={handleEFPhotosUpload}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Photos Thumbnails Grid */}
+                  {editingFolha.fotos && editingFolha.fotos.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 pt-1">
+                      {editingFolha.fotos.map((foto, idx) => (
+                        <div key={idx} className="relative group rounded-xl overflow-hidden aspect-video border border-emerald-500/40 bg-slate-900 shadow">
+                          <img
+                            src={foto}
+                            alt={`Foto Entrega/Formação ${idx + 1}`}
+                            onClick={() => setPreviewEnlargedPhoto(foto)}
+                            className="w-full h-full object-cover cursor-pointer group-hover:scale-105 transition-transform"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            className="absolute top-1 right-1 p-1 bg-slate-950/80 text-rose-400 hover:text-white hover:bg-rose-600 rounded-lg transition-colors shadow"
+                            title="Remover foto"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-slate-900/40 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-400">
+                      Nenhuma fotografia adicionada ainda. Clique em "Tirar Foto" ou "Adicionar Fotos" para registar a entrega ou formação.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Photo Gallery & AI Visual Inspection Section (Disponível para todos os tipos, incluindo Entrega e Formação) */}
-            <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
+            {/* Photo Gallery & AI Visual Inspection Section (Apenas para outros tipos de serviço) */}
+            {editingFolha.tipo !== 'Entrega e Formação' && (
+              <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <ImageIcon className="w-4 h-4 text-amber-400" />
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                    {editingFolha.tipo === 'Entrega e Formação' ? 'Fotografias da Entrega e Formação' : 'Fotografias da Obra / Inspeção IA'} ({editingFolha.fotos?.length || 0})
+                    Fotografias da Obra / Inspeção IA ({editingFolha.fotos?.length || 0})
                   </h4>
                 </div>
 
@@ -2086,6 +2209,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                 </div>
               )}
             </div>
+          )}
 
             {/* SECTIONS FOR REPAIRS / SERVICES (Ocultas quando o tipo é Entrega e Formação) */}
             {editingFolha.tipo !== 'Entrega e Formação' && (
