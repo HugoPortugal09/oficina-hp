@@ -58,7 +58,8 @@ export function generateFolhaServicoPDF(
   doc.setFontSize(20);
   
   let docTitle = 'GUIA DE TRABALHO';
-  if (folha.tipo === 'Oficina') docTitle = 'FOLHA DE OFICINA';
+  if (folha.tipo === 'Validação e Preparação') docTitle = 'VALIDAÇÃO E PREPARAÇÃO';
+  else if (folha.tipo === 'Oficina') docTitle = 'FOLHA DE OFICINA';
   else if (folha.tipo === 'Garantia') docTitle = 'FOLHA DE GARANTIA';
   else if (folha.tipo === 'Contrato') docTitle = 'MANUTENÇÃO CONTRATO';
   else if (folha.tipo === 'Assistência Técnica') docTitle = 'GUIA DE TRABALHO';
@@ -180,7 +181,7 @@ export function generateFolhaServicoPDF(
 
   // 5. ANOMALIAS / OBSERVAÇÕES TÉCNICAS
   const anomaliaTexto = (folha.anomalias || '').trim();
-  if (anomaliaTexto) {
+  if (anomaliaTexto && folha.tipo !== 'Validação e Preparação') {
     autoTable(doc, {
       startY: currentY,
       head: [['ANOMALIAS REPORTADAS / OBSERVAÇÕES TÉCNICAS']],
@@ -197,6 +198,44 @@ export function generateFolhaServicoPDF(
         cellPadding: 3.5,
         textColor: [30, 41, 59],
         lineColor: [226, 232, 240]
+      },
+      margin: { left: 14, right: 14 }
+    });
+    currentY = (doc as any).lastAutoTable.finalY + 6;
+  }
+
+  // 5.1 CONTROLO DE VALIDAÇÃO & PREPARAÇÃO (Se aplicável)
+  if (folha.tipo === 'Validação e Preparação') {
+    const valText = folha.validacaoFeita
+      ? `[X] Realizada em ${folha.validacaoData || '---'} por: ${folha.validacaoPor || 'HP'}`
+      : `[ ] Pendente`;
+    const prepText = folha.preparacaoFeita
+      ? `[X] Realizada em ${folha.preparacaoData || '---'} por: ${folha.preparacaoPor || 'HP'}`
+      : `[ ] Pendente`;
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['ETAPA DE CONTROLO', 'ESTADO / REGISTO']],
+      body: [
+        ['VALIDAÇÃO', valText],
+        ['PREPARAÇÃO', prepText]
+      ],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [16, 185, 129], // Emerald
+        textColor: 255,
+        fontStyle: 'bold',
+        fontSize: 8.5
+      },
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 3.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240]
+      },
+      columnStyles: {
+        0: { cellWidth: 50, fontStyle: 'bold' },
+        1: { cellWidth: 132 }
       },
       margin: { left: 14, right: 14 }
     });
@@ -325,7 +364,7 @@ export function generateFolhaServicoPDF(
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(13, 148, 136); // Teal
-  if (folha.previsaoRevisaoKms > 0 || folha.previsaoRevisaoHoras > 0) {
+  if (folha.tipo !== 'Validação e Preparação' && (folha.previsaoRevisaoKms > 0 || folha.previsaoRevisaoHoras > 0)) {
     const revStr = `Próxima Revisão: ${folha.previsaoRevisaoKms > 0 ? `${folha.previsaoRevisaoKms.toLocaleString()} Kms` : ''} ${folha.previsaoRevisaoHoras > 0 ? `| ${folha.previsaoRevisaoHoras} Horas` : ''}`;
     doc.text(revStr.trim(), 14, currentY);
     currentY += 5;

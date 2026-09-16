@@ -557,19 +557,73 @@ const INITIAL_AUTOMACOES: AutomacaoItem[] = [
     frequencia: 'Instantâneo (Ao alterar estado)',
     ativo: false,
     destinatarios: ['hugo@grau-maquinaria.com'],
-    canaisEnvio: ['email'],
-    anexoTipo: 'pdf',
-    icone: 'CheckCircle2',
-    proximoDisparo: 'Em tempo real'
+    canaisEnvio: ['email']
   }
 ];
+
+export function normalizeFolhaServico(f: any): FolhaServico {
+  let status: StatusFolhaServico = f.status || 'Aguardar agenda';
+  let requisicao: 'Sim' | 'Não' = f.requisicao || 'Não';
+  let faturacao: any = f.faturacao || 'Pendente';
+
+  const s = (f.status || '').trim();
+
+  // Legacy mappings
+  if (s.startsWith('AT - ') || s.startsWith('OF - ') || s.startsWith('CT - ') || s.startsWith('EF - ') || s.startsWith('FEITO - ') || s.includes(' – ')) {
+    if (s.toLowerCase().includes('com requisição') || s.toLowerCase().includes('com requisicao')) {
+      requisicao = 'Sim';
+    } else if (s.toLowerCase().includes('sem requisição') || s.toLowerCase().includes('sem requisicao')) {
+      requisicao = 'Não';
+    }
+
+    if (s.includes('A ser intervencionado') || s.includes('Em Intervenção') || s.includes('Em intervenção')) {
+      status = 'A ser intervencionado';
+    } else if (s.includes('Pedido de Assistência')) {
+      status = 'Pedido de Assistência';
+    } else if (s.includes('Fazer orçamento')) {
+      status = 'Fazer orçamento';
+    } else if (s.includes('Enviar orçamento') || s.includes('Enviar proposta')) {
+      status = 'Enviar orçamento';
+      if (s.includes('Enviar proposta')) faturacao = 'Enviar proposta';
+    } else if (s.includes('Orçamento Enviado') || s.includes('Orçamento enviado') || s.includes('Aguardar resposta')) {
+      status = 'Orçamento enviado – Aguardar resposta';
+    } else if (s.includes('Aguardar agenda') || s.includes('Agendar') || s === 'A Agendar') {
+      status = 'Aguardar agenda';
+    } else if (s.includes('Agendado')) {
+      status = 'Agendado';
+    } else if (s.includes('Aguardar viatura')) {
+      status = 'Aguardar viatura';
+    } else if (s.includes('Aguardar peças')) {
+      status = 'Aguardar peças';
+    } else if (s.startsWith('FEITO') || s === 'Feito' || s === 'EF - Feito') {
+      status = 'Concluído';
+      if (s.includes('Faturado')) faturacao = 'Faturado';
+      else if (s.includes('Faturar')) faturacao = 'Faturar';
+      else if (s.includes('Aguardar Requisição')) faturacao = 'Aguardar Requisição';
+      else if (s.includes('Submeter Garantia')) faturacao = 'Submeter Garantia';
+      else if (s.includes('Aguardar Garantia')) faturacao = 'Garantia submetida';
+      else if (s.includes('Resolvido') || s === 'Feito') faturacao = 'Pendente';
+    }
+  }
+
+  return {
+    ...f,
+    status,
+    requisicao,
+    faturacao
+  };
+}
 
 export const db = {
   get<T>(key: string): T[] {
     try {
       const data = localStorage.getItem(key);
       if (!data) return [];
-      return JSON.parse(data) as T[];
+      const parsed = JSON.parse(data) as T[];
+      if (key === STORAGE_KEYS.FOLHAS_SERVICO && Array.isArray(parsed)) {
+        return parsed.map(item => normalizeFolhaServico(item)) as unknown as T[];
+      }
+      return parsed;
     } catch {
       return [];
     }

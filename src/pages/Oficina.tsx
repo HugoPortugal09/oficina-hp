@@ -51,7 +51,7 @@ import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfSer
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
 import { estimateDistanceKm } from '../services/distanceService';
-import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
+import { getTipoStyles, getStatusBadgeVariant, getStatusLabel, getFaturacaoBadgeVariant } from '../utils/statusColors';
 import type {
   FolhaServico,
   Empresa,
@@ -62,6 +62,7 @@ import type {
   Proposta,
   PropostaLinha,
   StatusFolhaServico,
+  StatusFaturacao,
   TipoServico,
   ServicoItem,
   PecaItem,
@@ -85,80 +86,59 @@ interface OficinaProps {
   currentUser?: UserProfile;
 }
 
-const AT_STATUSES: StatusFolhaServico[] = [
-  'AT - Pedido de Assistência',
-  'AT - Enviar proposta',
-  'AT - Agendar – Sem requisição',
-  'AT - Agendar – Com requisição',
-  'AT - Agendado',
-  'AT - Aguardar requisição',
-  'AT - Com requisição - Aguardar peças'
+export const OPERATIONAL_STATUSES: StatusFolhaServico[] = [
+  'A ser intervencionado',
+  'Pedido de Assistência',
+  'Fazer orçamento',
+  'Enviar orçamento',
+  'Orçamento enviado – Aguardar resposta',
+  'Aguardar agenda',
+  'Agendado',
+  'Aguardar viatura',
+  'Aguardar peças',
+  'Concluído'
 ];
 
-const OF_STATUSES: StatusFolhaServico[] = [
-  'OF - Fazer orçamento',
-  'OF - Orçamento Enviado – Aguardar resposta',
-  'OF - Com requisição - Aguardar agenda',
-  'OF - Com requisição - Aguardar viatura',
-  'OF - A ser intervencionado',
-  'OF - Em Intervenção',
-  'OF - Com requisição - Aguardar peças',
-  'OF - Sem requisição - Aguardar peças'
-];
-
-const CT_STATUSES: StatusFolhaServico[] = [
-  'CT - Contrato',
-  'CT - Agendar',
-  'CT - Aguardar peças',
-  'CT - Aguardar resposta Fornecedor'
-];
-
-const EF_STATUSES: StatusFolhaServico[] = [
+export const EF_STATUSES: StatusFolhaServico[] = [
   'A Agendar',
   'Agendado',
   'Feito'
 ];
 
-const FEITO_STATUSES: StatusFolhaServico[] = [
-  'FEITO - Resolvido',
-  'FEITO - Faturar',
-  'FEITO - Aguardar Requisição',
-  'FEITO - Submeter Garantia',
-  'FEITO - Aguardar Garantia',
-  'FEITO - Faturado'
+export const FATURACAO_OPTIONS: StatusFaturacao[] = [
+  'Pendente',
+  'Enviar proposta',
+  'Aguardar Requisição',
+  'Faturar',
+  'Faturado',
+  'Submeter Garantia',
+  'Garantia submetida',
+  'Garantia recebida',
+  'N/A'
 ];
 
-const ALL_STATUSES: StatusFolhaServico[] = [
-  ...AT_STATUSES,
-  ...OF_STATUSES,
-  ...CT_STATUSES,
-  ...EF_STATUSES,
-  ...FEITO_STATUSES
+export const DEFAULT_VALIDACAO_PECAS = [
+  'Matrícula',
+  'Tampões de rodas',
+  'Colete e triângulo',
+  'Cabo de carregamento',
+  'Manuais'
 ];
 
-function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
+export const ALL_STATUSES: StatusFolhaServico[] = [
+  ...OPERATIONAL_STATUSES,
+  ...EF_STATUSES
+];
+
+function getAvailableStatusesForFolha(tipo?: TipoServico, _isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
   if (tipo === 'Entrega e Formação') {
     return ['A Agendar', 'Agendado', 'Feito'];
   }
-  let baseStatuses: StatusFolhaServico[] = [];
-  if (tipo === 'Assistência Técnica') {
-    baseStatuses = [...AT_STATUSES];
-  } else if (tipo === 'Oficina') {
-    baseStatuses = [...OF_STATUSES];
-  } else if (tipo === 'Contrato') {
-    baseStatuses = [...CT_STATUSES, 'FEITO - Resolvido'];
-  } else {
-    // Garantia
-    baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
+  const statuses = [...OPERATIONAL_STATUSES];
+  if (currentStatus && !statuses.includes(currentStatus)) {
+    statuses.push(currentStatus);
   }
-
-  if (isAdmin) {
-    baseStatuses = [...baseStatuses, ...FEITO_STATUSES];
-  } else if (currentStatus && currentStatus.startsWith('FEITO') && !baseStatuses.includes(currentStatus)) {
-    baseStatuses = [...baseStatuses, currentStatus];
-  }
-
-  return Array.from(new Set(baseStatuses));
+  return Array.from(new Set(statuses));
 }
 
 const GRAUMP_LOCATION = 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)';
@@ -303,6 +283,8 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('TODOS');
   const [filterTipo, setFilterTipo] = useState<string>('TODOS');
+  const [filterRequisicao, setFilterRequisicao] = useState<string>('TODOS');
+  const [filterFaturacao, setFilterFaturacao] = useState<string>('TODOS');
 
   // Modal / Form state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -420,7 +402,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
     const initialHistory: EstadoHistoricoItem[] = [
       {
-        status: 'OF - Com requisição - Aguardar agenda',
+        status: 'A ser intervencionado',
         dataEntrada: new Date().toISOString()
       }
     ];
@@ -435,7 +417,9 @@ export const Oficina: React.FC<OficinaProps> = ({
       dataRequisicao: '',
       dataConclusao: '',
       guiaAT: '',
-      status: 'OF - Com requisição - Aguardar agenda',
+      status: 'A ser intervencionado',
+      requisicao: 'Não',
+      faturacao: 'Pendente',
       empresaId: '',
       equipamentoId: '',
       matricula: '',
@@ -462,6 +446,8 @@ export const Oficina: React.FC<OficinaProps> = ({
       equipamentoFuncionando: 'Sim',
       equipamentoOperacional: 'Sim',
       equipamentoFinalizado: 'Não',
+      validacaoFeita: false,
+      preparacaoFeita: false,
       historicoEstados: initialHistory
     });
     setPlateQuery('');
@@ -469,14 +455,13 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleTipoChange = (newTipo: TipoServico) => {
-    const isOficina = newTipo === 'Oficina';
-    const isAT = newTipo === 'Assistência Técnica';
-    const isContrato = newTipo === 'Contrato';
+    const isOficina = newTipo === 'Oficina' || newTipo === 'Validação e Preparação';
     const isEF = newTipo === 'Entrega e Formação';
+    const isValPrep = newTipo === 'Validação e Preparação';
 
-    let defaultStatus: StatusFolhaServico = 'OF - Com requisição - Aguardar agenda';
-    if (isAT) defaultStatus = 'AT - Pedido de Assistência';
-    else if (isContrato) defaultStatus = 'CT - Contrato';
+    let defaultStatus: StatusFolhaServico = 'A ser intervencionado';
+    if (newTipo === 'Assistência Técnica') defaultStatus = 'Pedido de Assistência';
+    else if (newTipo === 'Contrato') defaultStatus = 'A ser intervencionado';
     else if (isEF) {
       if (editingFolha.dataFormacao && editingFolha.dataFormacao.trim() !== '' && editingFolha.dataFormacao !== '-') {
         defaultStatus = 'Feito';
@@ -487,13 +472,29 @@ export const Oficina: React.FC<OficinaProps> = ({
       }
     }
 
+    let nextPecas = editingFolha.pecas || [];
+    if (isValPrep && (!nextPecas || nextPecas.length === 0)) {
+      nextPecas = DEFAULT_VALIDACAO_PECAS.map(nome => ({
+        id: db.generateId('pec'),
+        referencia: '-',
+        designacao: nome,
+        qtd: 1,
+        pvp: 0,
+        desconto: 0,
+        subtotal: 0,
+        isLivre: true,
+        concluido: false
+      }));
+    }
+
     setEditingFolha(prev => ({
       ...prev,
       tipo: newTipo,
       localizacao: isOficina ? GRAUMP_LOCATION : (prev.localizacao === GRAUMP_LOCATION ? '' : prev.localizacao),
       localizacaoTipo: isOficina ? 'oficina' : prev.localizacaoTipo,
       distanciaKms: isOficina ? 0 : prev.distanciaKms,
-      status: isEF ? defaultStatus : (prev.status?.startsWith('FEITO') ? prev.status : defaultStatus),
+      status: isEF ? defaultStatus : (prev.status ? prev.status : defaultStatus),
+      pecas: nextPecas,
       matricula: newTipo === 'Contrato' && prev.equipamentoId && !contractEquipIds.includes(prev.equipamentoId)
         ? '' : prev.matricula
     }));
@@ -505,18 +506,15 @@ export const Oficina: React.FC<OficinaProps> = ({
       setEditingFolha(prev => ({
         ...prev,
         equipamentoFinalizado: 'Sim',
-        status: 'FEITO - Faturar',
+        status: prev.tipo === 'Entrega e Formação' ? 'Feito' : 'Concluído',
+        faturacao: prev.faturacao && prev.faturacao !== 'Pendente' ? prev.faturacao : 'Faturar',
         dataConclusao: prev.dataConclusao || now
       }));
     } else {
       setEditingFolha(prev => ({
         ...prev,
         equipamentoFinalizado: 'Não',
-        status: prev.tipo === 'Assistência Técnica'
-          ? 'AT - Agendado'
-          : prev.tipo === 'Contrato'
-          ? 'CT - Contrato'
-          : 'OF - Com requisição - Aguardar agenda'
+        status: prev.tipo === 'Entrega e Formação' ? 'A Agendar' : 'A ser intervencionado'
       }));
     }
   };
@@ -782,18 +780,14 @@ export const Oficina: React.FC<OficinaProps> = ({
       });
     }
 
-    const newTipo: TipoServico | undefined = newStatus.startsWith('AT -')
-      ? 'Assistência Técnica'
-      : newStatus.startsWith('OF -')
-      ? 'Oficina'
-      : newStatus.startsWith('CT -')
-      ? 'Contrato'
-      : undefined;
+    const isConcluido = newStatus === 'Concluído' || newStatus === 'Feito';
 
     setEditingFolha(prev => ({
       ...prev,
       status: newStatus,
-      ...(newTipo ? { tipo: newTipo } : {}),
+      equipamentoFinalizado: isConcluido ? 'Sim' : prev.equipamentoFinalizado,
+      dataConclusao: isConcluido ? (prev.dataConclusao || now.split('T')[0]) : prev.dataConclusao,
+      faturacao: (isConcluido && (!prev.faturacao || prev.faturacao === 'Pendente')) ? 'Faturar' : prev.faturacao,
       historicoEstados: history
     }));
   };
@@ -1234,19 +1228,11 @@ export const Oficina: React.FC<OficinaProps> = ({
       (f.anomalias && f.anomalias.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = filterStatus === 'TODOS' || f.status === filterStatus;
-    
-    // Resolve effective category from status prefix or tipo
-    const effectiveTipo = f.status.startsWith('AT -')
-      ? 'Assistência Técnica'
-      : f.status.startsWith('OF -')
-      ? 'Oficina'
-      : f.status.startsWith('CT -')
-      ? 'Contrato'
-      : f.tipo;
+    const matchesTipo = filterTipo === 'TODOS' || f.tipo === filterTipo;
+    const matchesReq = filterRequisicao === 'TODOS' || (f.requisicao || 'Não') === filterRequisicao;
+    const matchesFat = filterFaturacao === 'TODOS' || (f.faturacao || 'Pendente') === filterFaturacao;
 
-    const matchesTipo = filterTipo === 'TODOS' || effectiveTipo === filterTipo || f.tipo === filterTipo;
-
-    return matchesSearch && matchesStatus && matchesTipo;
+    return matchesSearch && matchesStatus && matchesTipo && matchesReq && matchesFat;
   }).sort(sortByDateDesc(f => f.data, f => f.numero));
 
   const hasAdicionais = ((editingFolha.servicosAdicionais?.length || 0) > 0) || ((editingFolha.pecasAdicionais?.length || 0) > 0);
@@ -1272,7 +1258,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5 flex-1">
           {/* Search */}
-          <div className="relative flex-1 min-w-[200px] max-w-md">
+          <div className="relative flex-1 min-w-[180px] max-w-sm">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -1302,12 +1288,40 @@ export const Oficina: React.FC<OficinaProps> = ({
             className="py-1.5 px-3 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-hp-500"
           >
             <option value="TODOS">Todos os Tipos</option>
+            <option value="Validação e Preparação">Validação e Preparação</option>
             <option value="Oficina">Oficina</option>
             <option value="Assistência Técnica">Assistência Técnica</option>
             <option value="Garantia">Garantia</option>
             <option value="Entrega e Formação">Entrega e Formação</option>
             <option value="Contrato">Contrato</option>
           </select>
+
+          {/* Requisicao Filter */}
+          <select
+            value={filterRequisicao}
+            onChange={e => setFilterRequisicao(e.target.value)}
+            className="py-1.5 px-3 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-hp-500"
+            title="Filtrar por Requisição"
+          >
+            <option value="TODOS">Req: Todas</option>
+            <option value="Sim">Req: Sim</option>
+            <option value="Não">Req: Não</option>
+          </select>
+
+          {/* Faturacao Filter (Admin Only) */}
+          {currentUser?.role === 'administrador' && (
+            <select
+              value={filterFaturacao}
+              onChange={e => setFilterFaturacao(e.target.value)}
+              className="py-1.5 px-3 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs text-amber-300 focus:outline-none focus:border-hp-500"
+              title="Filtrar por Estado de Faturação"
+            >
+              <option value="TODOS">Faturação: Todas</option>
+              {FATURACAO_OPTIONS.map(f => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -1395,11 +1409,25 @@ export const Oficina: React.FC<OficinaProps> = ({
                       </p>
                     </div>
 
-                    <div className="text-right">
+                    <div className="text-right flex flex-col items-end gap-1">
                       <Badge variant={getStatusBadgeVariant(fs.status)}>
                         {getStatusLabel(fs.status)}
                       </Badge>
-                      <p className="text-[10px] text-slate-400 font-mono mt-1">{formatDate(fs.data)}</p>
+                      <div className="flex items-center gap-1 flex-wrap justify-end">
+                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                          fs.requisicao === 'Sim'
+                            ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                            : 'bg-slate-900 text-slate-400 border-slate-700/60'
+                        }`}>
+                          Req: {fs.requisicao || 'Não'}
+                        </span>
+                        {currentUser?.role === 'administrador' && fs.faturacao && (
+                          <Badge variant={getFaturacaoBadgeVariant(fs.faturacao)}>
+                            {fs.faturacao}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatDate(fs.data)}</p>
                     </div>
                   </div>
 
@@ -1488,6 +1516,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                   <th className="py-3 px-4">Empresa</th>
                   <th className="py-3 px-4">Tipo</th>
                   <th className="py-3 px-4">Estado / Kanban</th>
+                  <th className="py-3 px-4 text-center">Req.</th>
+                  {currentUser?.role === 'administrador' && <th className="py-3 px-4">Faturação</th>}
                   <th className="py-3 px-4">Data</th>
                   <th className="py-3 px-4 text-center">Ações</th>
                 </tr>
@@ -1520,6 +1550,22 @@ export const Oficina: React.FC<OficinaProps> = ({
                           {getStatusLabel(fs.status)}
                         </Badge>
                       </td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border font-mono ${
+                          fs.requisicao === 'Sim'
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                            : 'bg-slate-900 text-slate-400 border-slate-700/60'
+                        }`}>
+                          {fs.requisicao || 'Não'}
+                        </span>
+                      </td>
+                      {currentUser?.role === 'administrador' && (
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <Badge variant={getFaturacaoBadgeVariant(fs.faturacao)}>
+                            {fs.faturacao || 'Pendente'}
+                          </Badge>
+                        </td>
+                      )}
                       <td className="py-3 px-4 font-mono text-slate-400">{formatDate(fs.data)}</td>
                       <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
@@ -1619,8 +1665,8 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
             </div>
 
-            {/* Top Row: Meta Info & Status */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-slate-950/60 rounded-2xl border border-slate-800">
+            {/* Top Row: Meta Info, Status, Requisição & Faturação */}
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${currentUser?.role === 'administrador' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3 p-4 bg-slate-950/60 rounded-2xl border border-slate-800`}>
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Tipo de Serviço</label>
                 <select
@@ -1629,6 +1675,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                   className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 >
                   <option value="Oficina">Oficina</option>
+                  <option value="Validação e Preparação">Validação e Preparação</option>
                   <option value="Assistência Técnica">Assistência Técnica</option>
                   <option value="Garantia">Garantia</option>
                   <option value="Entrega e Formação">Entrega e Formação</option>
@@ -1637,24 +1684,47 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-400 block">Estado / Etapa Kanban</label>
-                  {currentUser?.role !== 'administrador' && (
-                    <span className="text-[9px] text-slate-500 font-mono" title="Estados FEITO reservados a Administrador">
-                      Restrito
-                    </span>
-                  )}
-                </div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Estado / Etapa Kanban</label>
                 <select
-                  value={editingFolha.status || (editingFolha.tipo === 'Assistência Técnica' ? 'AT - Pedido de Assistência' : 'OF - Com requisição - Aguardar agenda')}
+                  value={editingFolha.status || (editingFolha.tipo === 'Assistência Técnica' ? 'Pedido de Assistência' : 'A ser intervencionado')}
                   onChange={e => handleStatusChange(e.target.value as StatusFolhaServico)}
-                  className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                  className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-medium"
                 >
                   {getAvailableStatusesForFolha(editingFolha.tipo, currentUser?.role === 'administrador', editingFolha.status).map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">Requisição</label>
+                <select
+                  value={editingFolha.requisicao || 'Não'}
+                  onChange={e => setEditingFolha(prev => ({ ...prev, requisicao: e.target.value as 'Sim' | 'Não' }))}
+                  className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-medium"
+                >
+                  <option value="Não">Não</option>
+                  <option value="Sim">Sim</option>
+                </select>
+              </div>
+
+              {currentUser?.role === 'administrador' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-amber-300 block">Faturação</label>
+                    <span className="text-[9px] text-amber-400/80 font-mono">Admin</span>
+                  </div>
+                  <select
+                    value={editingFolha.faturacao || 'Pendente'}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, faturacao: e.target.value as StatusFaturacao }))}
+                    className="w-full py-1.5 px-3 bg-slate-900 border border-amber-500/50 rounded-xl text-xs text-amber-200 font-medium"
+                  >
+                    {FATURACAO_OPTIONS.map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Data da Intervenção</label>
@@ -1665,23 +1735,10 @@ export const Oficina: React.FC<OficinaProps> = ({
                   className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 />
               </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">
-                  Data de Abertura <span className="text-[10px] text-emerald-400 font-mono">(Automática)</span>
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  disabled
-                  value={formatDate(editingFolha.dataAbertura || editingFolha.data || getTodayFormatted())}
-                  className="w-full py-1.5 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono cursor-not-allowed"
-                />
-              </div>
             </div>
 
             {/* Dates: Entrada Oficina, Requisição, Conclusão (Disponíveis apenas para Oficina, Contrato ou Garantia) */}
-            {editingFolha.tipo !== 'Entrega e Formação' && (
+            {editingFolha.tipo !== 'Entrega e Formação' && editingFolha.tipo !== 'Validação e Preparação' && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/40 rounded-xl border border-slate-800/80 text-xs">
                 {['Oficina', 'Contrato', 'Garantia'].includes(editingFolha.tipo || '') ? (
                   <div>
@@ -1953,6 +2010,159 @@ export const Oficina: React.FC<OficinaProps> = ({
                 )}
               </div>
             </div>
+
+            {/* VALIDAÇÃO & PREPARAÇÃO CARD */}
+            {editingFolha.tipo === 'Validação e Preparação' && (
+              <div className="p-5 bg-gradient-to-br from-slate-950/80 via-slate-900/60 to-slate-950/80 rounded-2xl border-2 border-emerald-500/30 shadow-xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        Controlo de Validação & Preparação
+                      </h4>
+                      <p className="text-xs text-slate-400">
+                        Registe a conclusão da Validação e da Preparação com data e iniciais do responsável.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Card 1: VALIDAÇÃO */}
+                  <div className={`p-4 rounded-xl border transition-all space-y-3 ${
+                    editingFolha.validacaoFeita
+                      ? 'bg-emerald-950/40 border-emerald-500/50'
+                      : 'bg-slate-950/60 border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-4 h-4 ${editingFolha.validacaoFeita ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Validação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextState = !editingFolha.validacaoFeita;
+                          const today = getTodayFormatted();
+                          const userInitials = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+                            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+                            || 'HP';
+                          setEditingFolha(prev => ({
+                            ...prev,
+                            validacaoFeita: nextState,
+                            validacaoData: nextState ? (prev.validacaoData || today) : prev.validacaoData,
+                            validacaoPor: nextState ? (prev.validacaoPor || userInitials) : prev.validacaoPor
+                          }));
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                          editingFolha.validacaoFeita
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30 hover:bg-emerald-500'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {editingFolha.validacaoFeita ? 'Validação Concluída' : 'Marcar Validação'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Data de Validação
+                        </label>
+                        <input
+                          type="date"
+                          value={formatDateToInput(editingFolha.validacaoData)}
+                          onChange={e => setEditingFolha(prev => ({ ...prev, validacaoData: formatDate(e.target.value) }))}
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Iniciais / Responsável
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: HP"
+                          maxLength={6}
+                          value={editingFolha.validacaoPor || ''}
+                          onChange={e => setEditingFolha(prev => ({ ...prev, validacaoPor: e.target.value.toUpperCase() }))}
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-emerald-400 font-mono font-bold uppercase text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: PREPARAÇÃO */}
+                  <div className={`p-4 rounded-xl border transition-all space-y-3 ${
+                    editingFolha.preparacaoFeita
+                      ? 'bg-emerald-950/40 border-emerald-500/50'
+                      : 'bg-slate-950/60 border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-4 h-4 ${editingFolha.preparacaoFeita ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Preparação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextState = !editingFolha.preparacaoFeita;
+                          const today = getTodayFormatted();
+                          const userInitials = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+                            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+                            || 'HP';
+                          setEditingFolha(prev => ({
+                            ...prev,
+                            preparacaoFeita: nextState,
+                            preparacaoData: nextState ? (prev.preparacaoData || today) : prev.preparacaoData,
+                            preparacaoPor: nextState ? (prev.preparacaoPor || userInitials) : prev.preparacaoPor
+                          }));
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                          editingFolha.preparacaoFeita
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30 hover:bg-emerald-500'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {editingFolha.preparacaoFeita ? 'Preparação Concluída' : 'Marcar Preparação'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Data de Preparação
+                        </label>
+                        <input
+                          type="date"
+                          value={formatDateToInput(editingFolha.preparacaoData)}
+                          onChange={e => setEditingFolha(prev => ({ ...prev, preparacaoData: formatDate(e.target.value) }))}
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                          Iniciais / Responsável
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: HP"
+                          maxLength={6}
+                          value={editingFolha.preparacaoPor || ''}
+                          onChange={e => setEditingFolha(prev => ({ ...prev, preparacaoPor: e.target.value.toUpperCase() }))}
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-emerald-400 font-mono font-bold uppercase text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ENTREGA & FORMAÇÃO CARD (Apenas quando o tipo de serviço é Entrega e Formação) */}
             {editingFolha.tipo === 'Entrega e Formação' && (
@@ -2310,95 +2520,124 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
             </div>
 
-            {/* 2. Services: MÃO-DE-OBRA & SERVIÇOS ADICIONAIS */}
-            <div className="space-y-3 pt-3 border-t border-slate-800">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-amber-400" />
-                    Mão-de-Obra & Serviços Adicionais ({editingFolha.servicosAdicionais?.length || 0})
-                  </h4>
-                  <p className="text-[10px] text-slate-400">Serviços efetuados que não constavam do orçamento inicial</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAddService(true)}
-                  className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-amber-500/30 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Adicionar Serviço Adicional
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {editingFolha.servicosAdicionais?.map(srv => (
-                  <div key={srv.id} className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 rounded-xl border transition-all ${srv.concluido ? 'bg-amber-950/20 border-amber-500/40' : 'bg-slate-950/80 border-amber-900/40'}`}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={srv.concluido}
-                        onChange={e => handleUpdateService(srv.id, 'concluido', e.target.checked, true)}
-                        className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
-                      />
-                      {srv.concluido && srv.dataConclusao && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0" title="Data em que o serviço adicional foi concluído">
-                          📅 {srv.dataConclusao}
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="Descrição do serviço adicional..."
-                      value={srv.descricao}
-                      onChange={e => handleUpdateService(srv.id, 'descricao', e.target.value, true)}
-                      className={`flex-1 py-1 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white ${srv.concluido ? 'line-through text-slate-400' : ''}`}
-                    />
-                    <div className="flex items-center justify-between sm:justify-end gap-2">
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          step="0.5"
-                          placeholder="Horas"
-                          value={srv.horas}
-                          onChange={e => handleUpdateService(srv.id, 'horas', Number(e.target.value), true)}
-                          className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono text-center font-bold"
-                        />
-                        <span className="text-[11px] text-slate-400 font-mono">h</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Téc:</span>
-                        <input
-                          type="text"
-                          placeholder="HP"
-                          maxLength={4}
-                          value={getInitials(srv.tecnico || 'HP')}
-                          onChange={e => handleUpdateService(srv.id, 'tecnico', e.target.value.toUpperCase(), true)}
-                          className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-amber-400 font-mono font-bold text-center uppercase"
-                          title="Iniciais do Técnico"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveService(srv.id, true)}
-                        className="p-1 text-slate-400 hover:text-rose-400 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+            {/* 2. Services: MÃO-DE-OBRA & SERVIÇOS ADICIONAIS (Oculto em Validação e Preparação) */}
+            {editingFolha.tipo !== 'Validação e Preparação' && (
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                      <Wrench className="w-4 h-4 text-amber-400" />
+                      Mão-de-Obra & Serviços Adicionais ({editingFolha.servicosAdicionais?.length || 0})
+                    </h4>
+                    <p className="text-[10px] text-slate-400">Serviços efetuados que não constavam do orçamento inicial</p>
                   </div>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => handleAddService(true)}
+                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-amber-500/30 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Adicionar Serviço Adicional
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {editingFolha.servicosAdicionais?.map(srv => (
+                    <div key={srv.id} className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 rounded-xl border transition-all ${srv.concluido ? 'bg-amber-950/20 border-amber-500/40' : 'bg-slate-950/80 border-amber-900/40'}`}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={srv.concluido}
+                          onChange={e => handleUpdateService(srv.id, 'concluido', e.target.checked, true)}
+                          className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
+                        />
+                        {srv.concluido && srv.dataConclusao && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0" title="Data em que o serviço adicional foi concluído">
+                            📅 {srv.dataConclusao}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Descrição do serviço adicional..."
+                        value={srv.descricao}
+                        onChange={e => handleUpdateService(srv.id, 'descricao', e.target.value, true)}
+                        className={`flex-1 py-1 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white ${srv.concluido ? 'line-through text-slate-400' : ''}`}
+                      />
+                      <div className="flex items-center justify-between sm:justify-end gap-2">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            placeholder="Horas"
+                            value={srv.horas}
+                            onChange={e => handleUpdateService(srv.id, 'horas', Number(e.target.value), true)}
+                            className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono text-center font-bold"
+                          />
+                          <span className="text-[11px] text-slate-400 font-mono">h</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase">Téc:</span>
+                          <input
+                            type="text"
+                            placeholder="HP"
+                            maxLength={4}
+                            value={getInitials(srv.tecnico || 'HP')}
+                            onChange={e => handleUpdateService(srv.id, 'tecnico', e.target.value.toUpperCase(), true)}
+                            className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-amber-400 font-mono font-bold text-center uppercase"
+                            title="Iniciais do Técnico"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveService(srv.id, true)}
+                          className="p-1 text-slate-400 hover:text-rose-400 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* 3. Parts: PEÇAS & MATERIAIS APLICADOS (Price-Free) */}
             <div className="space-y-3 pt-3 border-t border-slate-800">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                   <Wrench className="w-4 h-4 text-emerald-400" />
-                  Peças & Materiais Aplicados ({editingFolha.pecas?.length || 0})
+                  {editingFolha.tipo === 'Validação e Preparação' ? 'Checklist de Peças & Acessórios' : 'Peças & Materiais Aplicados'} ({editingFolha.pecas?.length || 0})
                 </h4>
 
                 <div className="flex items-center gap-2">
+                  {editingFolha.tipo === 'Validação e Preparação' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultItems = DEFAULT_VALIDACAO_PECAS.map(nome => ({
+                          id: db.generateId('pec'),
+                          referencia: '-',
+                          designacao: nome,
+                          qtd: 1,
+                          pvp: 0,
+                          desconto: 0,
+                          subtotal: 0,
+                          isLivre: true,
+                          concluido: false
+                        }));
+                        setEditingFolha(prev => ({
+                          ...prev,
+                          pecas: defaultItems
+                        }));
+                      }}
+                      className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-emerald-500/30 transition-all"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Checklist Base (5 Itens)
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => handleOpenInlineScanner('peca')}
@@ -2489,135 +2728,139 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
             </div>
 
-            {/* 4. Parts: PEÇAS & MATERIAIS ADICIONAIS (Price-Free) */}
-            <div className="space-y-3 pt-3 border-t border-slate-800">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-amber-400" />
-                    Peças & Materiais Adicionais ({editingFolha.pecasAdicionais?.length || 0})
-                  </h4>
-                  <p className="text-[10px] text-slate-400">Peças aplicadas não orçamentadas inicialmente</p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleAddPart(true)}
-                  className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-amber-500/30 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Adicionar Peça Adicional
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {editingFolha.pecasAdicionais?.map(pec => (
-                  <div key={pec.id} className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 rounded-xl border transition-all ${pec.concluido ? 'bg-amber-950/20 border-amber-500/40' : 'bg-slate-950/80 border-amber-900/40'}`}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={pec.concluido}
-                        onChange={e => handleUpdatePart(pec.id, 'concluido', e.target.checked, true)}
-                        className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
-                      />
-                      {pec.concluido && pec.dataConclusao && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0" title="Data em que a peça adicional foi aplicada">
-                          📅 {pec.dataConclusao}
-                        </span>
-                      )}
-                      <SearchablePartSelect
-                        value={pec.pecaId}
-                        referencia={pec.referencia}
-                        isLivre={pec.isLivre}
-                        catalogo={catalogoPecas}
-                        onSelect={part => handleSelectCatalogPart(part, pec.id, true)}
-                      />
+            {/* 4. Parts: PEÇAS & MATERIAIS ADICIONAIS, GUIA AT, NOTAS CLIENTE (Ocultos em Validação e Preparação) */}
+            {editingFolha.tipo !== 'Validação e Preparação' && (
+              <>
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                        <Wrench className="w-4 h-4 text-amber-400" />
+                        Peças & Materiais Adicionais ({editingFolha.pecasAdicionais?.length || 0})
+                      </h4>
+                      <p className="text-[10px] text-slate-400">Peças aplicadas não orçamentadas inicialmente</p>
                     </div>
 
-                    <input
-                      type="text"
-                      placeholder="Designação da peça adicional..."
-                      value={pec.designacao}
-                      onChange={e => handleUpdatePart(pec.id, 'designacao', e.target.value, true)}
-                      className={`flex-1 py-1 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white ${pec.concluido ? 'line-through text-slate-400' : ''}`}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAddPart(true)}
+                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-amber-500/30 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar Peça Adicional
+                    </button>
+                  </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-2">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[11px] text-slate-400 font-medium">Qtd:</span>
-                        <input
-                          type="number"
-                          placeholder="Qtd"
-                          value={pec.qtd}
-                          onChange={e => handleUpdatePart(pec.id, 'qtd', Number(e.target.value), true)}
-                          className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono text-center font-bold"
-                        />
-                      </div>
+                  <div className="space-y-2">
+                    {editingFolha.pecasAdicionais?.map(pec => (
+                      <div key={pec.id} className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 rounded-xl border transition-all ${pec.concluido ? 'bg-amber-950/20 border-amber-500/40' : 'bg-slate-950/80 border-amber-900/40'}`}>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={pec.concluido}
+                            onChange={e => handleUpdatePart(pec.id, 'concluido', e.target.checked, true)}
+                            className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
+                          />
+                          {pec.concluido && pec.dataConclusao && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0" title="Data em que a peça adicional foi aplicada">
+                              📅 {pec.dataConclusao}
+                            </span>
+                          )}
+                          <SearchablePartSelect
+                            value={pec.pecaId}
+                            referencia={pec.referencia}
+                            isLivre={pec.isLivre}
+                            catalogo={catalogoPecas}
+                            onSelect={part => handleSelectCatalogPart(part, pec.id, true)}
+                          />
+                        </div>
 
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Téc:</span>
                         <input
                           type="text"
-                          placeholder="HP"
-                          maxLength={4}
-                          value={getInitials(pec.iniciaisConclusao || 'HP')}
-                          onChange={e => handleUpdatePart(pec.id, 'iniciaisConclusao', e.target.value.toUpperCase(), true)}
-                          className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-amber-400 font-mono font-bold text-center uppercase"
-                          title="Iniciais do Técnico"
+                          placeholder="Designação da peça adicional..."
+                          value={pec.designacao}
+                          onChange={e => handleUpdatePart(pec.id, 'designacao', e.target.value, true)}
+                          className={`flex-1 py-1 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white ${pec.concluido ? 'line-through text-slate-400' : ''}`}
                         />
+
+                        <div className="flex items-center justify-between sm:justify-end gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[11px] text-slate-400 font-medium">Qtd:</span>
+                            <input
+                              type="number"
+                              placeholder="Qtd"
+                              value={pec.qtd}
+                              onChange={e => handleUpdatePart(pec.id, 'qtd', Number(e.target.value), true)}
+                              className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono text-center font-bold"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">Téc:</span>
+                            <input
+                              type="text"
+                              placeholder="HP"
+                              maxLength={4}
+                              value={getInitials(pec.iniciaisConclusao || 'HP')}
+                              onChange={e => handleUpdatePart(pec.id, 'iniciaisConclusao', e.target.value.toUpperCase(), true)}
+                              className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-amber-400 font-mono font-bold text-center uppercase"
+                              title="Iniciais do Técnico"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePart(pec.id, true)}
+                            className="p-1 text-slate-400 hover:text-rose-400 rounded-lg"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemovePart(pec.id, true)}
-                        className="p-1 text-slate-400 hover:text-rose-400 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            {/* 5. Nº GUIA AT (Depois do campo Peças & Materiais Adicionais) */}
-            <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-hp-400" />
-                  Nº Guia AT
-                </label>
-                <span className="text-[10px] text-slate-400">
-                  Guia de Transporte / Assistência Técnica
-                </span>
-              </div>
-              <input
-                type="text"
-                placeholder="Ex: GAT-2026-00123 ou Nº de documento de saída..."
-                value={editingFolha.guiaAT || ''}
-                onChange={e => setEditingFolha(prev => ({ ...prev, guiaAT: e.target.value }))}
-                className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:border-hp-500"
-              />
-            </div>
+                {/* 5. Nº GUIA AT */}
+                <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-hp-400" />
+                      Nº Guia AT
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      Guia de Transporte / Assistência Técnica
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Ex: GAT-2026-00123 ou Nº de documento de saída..."
+                    value={editingFolha.guiaAT || ''}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, guiaAT: e.target.value }))}
+                    className="w-full py-1.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:border-hp-500"
+                  />
+                </div>
 
-            {/* 6. NOTAS PARA O CLIENTE (Depois das Peças Adicionais e Guia AT) */}
-            <div className="p-4 bg-slate-950/40 rounded-2xl border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
-                  Notas para o Cliente
-                </label>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-400">
-                  Visível no PDF do Cliente
-                </span>
-              </div>
-              <textarea
-                rows={2}
-                value={editingFolha.notasCliente || ''}
-                onChange={e => setEditingFolha(prev => ({ ...prev, notasCliente: e.target.value }))}
-                placeholder="Observações, recomendações e notas que irão constar na folha entregue ao cliente..."
-                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-              />
-            </div>
+                {/* 6. NOTAS PARA O CLIENTE */}
+                <div className="p-4 bg-slate-950/40 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                      Notas para o Cliente
+                    </label>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-400">
+                      Visível no PDF do Cliente
+                    </span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={editingFolha.notasCliente || ''}
+                    onChange={e => setEditingFolha(prev => ({ ...prev, notasCliente: e.target.value }))}
+                    placeholder="Observações, recomendações e notas que irão constar na folha entregue ao cliente..."
+                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                  />
+                </div>
+              </>
+            )}
           </>
         )}
 
@@ -2711,7 +2954,7 @@ export const Oficina: React.FC<OficinaProps> = ({
               )}
             </div>
 
-            {editingFolha.tipo !== 'Entrega e Formação' && (
+            {editingFolha.tipo !== 'Entrega e Formação' && editingFolha.tipo !== 'Validação e Preparação' && (
               <>
                 {/* 6. PRÓXIMA REVISÃO (Depois das Notas para o Cliente) */}
                 <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800 space-y-3">

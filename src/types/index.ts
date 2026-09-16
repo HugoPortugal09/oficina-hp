@@ -19,50 +19,36 @@ export type NavigationTab =
   | 'configuracoes';
 
 export type StatusFolhaServico =
-  // ASSISTÊNCIA TÉCNICA (AT)
-  | 'AT - Pedido de Assistência'
-  | 'AT - Enviar proposta'
-  | 'AT - Agendar – Sem requisição'
-  | 'AT - Agendar – Com requisição'
-  | 'AT - Agendado'
-  | 'AT - Aguardar requisição'
-  | 'AT - Com requisição - Aguardar peças'
-  // OFICINA (OF)
-  | 'OF - Fazer orçamento'
-  | 'OF - Orçamento Enviado – Aguardar resposta'
-  | 'OF - Com requisição - Aguardar agenda'
-  | 'OF - Com requisição - Aguardar viatura'
-  | 'OF - A ser intervencionado'
-  | 'OF - Em Intervenção'
-  | 'OF – Em Intervenção'
-  | 'OF - Com requisição - Aguardar peças'
-  | 'OF - Sem requisição - Aguardar peças'
-  // CONTRATO (CT)
-  | 'CT - Contrato'
-  | 'CT - Agendar'
-  | 'CT - Aguardar peças'
-  | 'CT - Aguardar resposta Fornecedor'
-  // ENTREGA E FORMAÇÃO (EF)
-  | 'A Agendar'
+  | 'A ser intervencionado'
+  | 'Pedido de Assistência'
+  | 'Fazer orçamento'
+  | 'Enviar orçamento'
+  | 'Orçamento enviado – Aguardar resposta'
+  | 'Aguardar agenda'
   | 'Agendado'
-  | 'Feito'
-  | 'EF - A Agendar'
-  | 'EF - Agendado'
-  | 'EF - Feito'
-  // FINALIZADO (FEITO)
-  | 'FEITO - Resolvido'
-  | 'FEITO - Faturar'
-  | 'FEITO - Aguardar Requisição'
-  | 'FEITO - Submeter Garantia'
-  | 'FEITO - Aguardar Garantia'
-  | 'FEITO - Faturado';
+  | 'Aguardar viatura'
+  | 'Aguardar peças'
+  | 'Concluído'
+  | (string & {});
+
+export type StatusFaturacao =
+  | 'Pendente'
+  | 'Enviar proposta'
+  | 'Aguardar Requisição'
+  | 'Faturar'
+  | 'Faturado'
+  | 'Submeter Garantia'
+  | 'Garantia submetida'
+  | 'Garantia recebida'
+  | 'N/A';
 
 export type TipoServico = 
   | 'Assistência Técnica'
   | 'Oficina'
   | 'Garantia'
   | 'Entrega e Formação'
-  | 'Contrato';
+  | 'Contrato'
+  | 'Validação e Preparação';
 
 export interface Estaleiro {
   id: string;
@@ -202,6 +188,14 @@ export interface FolhaServico {
   formacaoPor?: string;
   guiaAT?: string;
   pessoaPresente?: string;
+  requisicao?: 'Sim' | 'Não';
+  faturacao?: StatusFaturacao;
+  validacaoFeita?: boolean;
+  validacaoData?: string;
+  validacaoPor?: string;
+  preparacaoFeita?: boolean;
+  preparacaoData?: string;
+  preparacaoPor?: string;
   equipamentoFuncionando?: 'Sim' | 'Não';
   equipamentoOperacional?: 'Sim' | 'Não';
   equipamentoFinalizado?: 'Sim' | 'Não';

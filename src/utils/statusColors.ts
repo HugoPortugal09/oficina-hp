@@ -1,4 +1,4 @@
-import { TipoServico } from '../types';
+import { TipoServico, StatusFaturacao } from '../types';
 
 export interface TipoStyle {
   text: string;
@@ -7,7 +7,7 @@ export interface TipoStyle {
 }
 
 /**
- * Retorna as classes visuais específicas para cada Tipo de Serviço (Oficina, Garantia, Assistência Técnica, etc.)
+ * Retorna as classes visuais específicas para cada Tipo de Serviço
  */
 export function getTipoStyles(tipo?: string | TipoServico): TipoStyle {
   switch (tipo) {
@@ -41,6 +41,12 @@ export function getTipoStyles(tipo?: string | TipoServico): TipoStyle {
         badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
         dot: 'bg-indigo-400'
       };
+    case 'Validação e Preparação':
+      return {
+        text: 'text-emerald-400',
+        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        dot: 'bg-emerald-400'
+      };
     default:
       return {
         text: 'text-slate-300',
@@ -51,34 +57,70 @@ export function getTipoStyles(tipo?: string | TipoServico): TipoStyle {
 }
 
 /**
- * Regra de cores do Estado:
- * - Verde: "FEITO - Faturado"
- * - Laranja: QualQuer estado que comece por "FEITO" (exceto Faturado)
- * - Amarelo: Quando não está em qualquer estado que comece por FEITO
+ * Regra de cores do Estado Operacional da Folha
  */
-export function getStatusBadgeVariant(status?: string): 'success' | 'orange' | 'warning' {
+export function getStatusBadgeVariant(status?: string): 'success' | 'orange' | 'warning' | 'info' | 'danger' {
   if (!status) return 'warning';
-  const clean = status.trim();
-  if (clean === 'FEITO - Faturado' || clean === 'FEITO – Faturado' || clean.toLowerCase().includes('faturado')) {
+  const clean = status.trim().toLowerCase();
+
+  if (clean === 'concluído' || clean === 'concluido' || clean === 'feito' || clean.startsWith('feito - resolvido') || clean.includes('resolvido')) {
     return 'success'; // Verde
   }
-  const upper = clean.toUpperCase();
-  if (upper.startsWith('FEITO') || upper.includes('FEITO')) {
+  if (clean === 'a ser intervencionado' || clean.includes('intervenção') || clean.includes('intervencionado')) {
     return 'orange'; // Laranja
   }
-  return 'warning'; // Amarelo
+  if (clean === 'agendado') {
+    return 'info'; // Azul / Sky
+  }
+  if (clean === 'pedido de assistência' || clean.includes('pedido de assistência')) {
+    return 'danger'; // Vermelho
+  }
+  if (clean.includes('orçamento') || clean.includes('orcamento') || clean.includes('proposta')) {
+    return 'info'; // Indigo / Roxo
+  }
+  if (clean.includes('faturado')) {
+    return 'success';
+  }
+  if (clean.startsWith('feito')) {
+    return 'orange';
+  }
+  return 'warning'; // Amarelo (Aguardar agenda, Aguardar peças, etc.)
 }
 
 /**
- * Retorna o texto simplificado do estado sem o prefixo (ex: "OF - Em Intervenção" -> "Em Intervenção")
+ * Retorna o texto simplificado do estado sem o prefixo antigo
  */
 export function getStatusLabel(status?: string): string {
   if (!status) return '';
-  if (status.includes(' - ')) {
+  if (status.startsWith('AT - ') || status.startsWith('OF - ') || status.startsWith('CT - ') || status.startsWith('EF - ') || status.startsWith('FEITO - ')) {
     return status.split(' - ').slice(1).join(' - ');
   }
   if (status.includes(' – ')) {
     return status.split(' – ').slice(1).join(' – ');
   }
   return status;
+}
+
+/**
+ * Cores e badges do estado de Faturação
+ */
+export function getFaturacaoBadgeVariant(faturacao?: StatusFaturacao | string): 'success' | 'warning' | 'purple' | 'info' | 'neutral' | 'orange' {
+  switch (faturacao) {
+    case 'Faturado':
+      return 'success';
+    case 'Faturar':
+      return 'warning';
+    case 'Submeter Garantia':
+    case 'Garantia submetida':
+      return 'purple';
+    case 'Garantia recebida':
+      return 'success';
+    case 'Enviar proposta':
+    case 'Aguardar Requisição':
+      return 'info';
+    case 'Pendente':
+    case 'N/A':
+    default:
+      return 'neutral';
+  }
 }

@@ -44,7 +44,8 @@ import {
   Compass,
   PackageCheck,
   GraduationCap,
-  Handshake
+  Handshake,
+  ShieldCheck
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -68,6 +69,7 @@ import type {
   PedidoPeca,
   Tarefa,
   StatusFolhaServico,
+  StatusFaturacao,
   TipoServico,
   ServicoItem,
   PecaItem,
@@ -76,72 +78,56 @@ import type {
 } from '../types';
 import { getInitials } from '../types';
 import { syncPullFromCloud, subscribeToRealtimeSync } from '../services/pocketbaseSync';
+import { getTipoStyles, getStatusBadgeVariant, getStatusLabel, getFaturacaoBadgeVariant } from '../utils/statusColors';
 
-const AT_STATUSES: StatusFolhaServico[] = [
-  'AT - Pedido de Assistência',
-  'AT - Enviar proposta',
-  'AT - Agendar – Sem requisição',
-  'AT - Agendar – Com requisição',
-  'AT - Agendado',
-  'AT - Aguardar requisição',
-  'AT - Com requisição - Aguardar peças'
+export const OPERATIONAL_STATUSES: StatusFolhaServico[] = [
+  'A ser intervencionado',
+  'Pedido de Assistência',
+  'Fazer orçamento',
+  'Enviar orçamento',
+  'Orçamento enviado – Aguardar resposta',
+  'Aguardar agenda',
+  'Agendado',
+  'Aguardar viatura',
+  'Aguardar peças',
+  'Concluído'
 ];
 
-const OF_STATUSES: StatusFolhaServico[] = [
-  'OF - Fazer orçamento',
-  'OF - Orçamento Enviado – Aguardar resposta',
-  'OF - Com requisição - Aguardar agenda',
-  'OF - Com requisição - Aguardar viatura',
-  'OF - A ser intervencionado',
-  'OF - Em Intervenção',
-  'OF - Com requisição - Aguardar peças',
-  'OF - Sem requisição - Aguardar peças'
-];
-
-const CT_STATUSES: StatusFolhaServico[] = [
-  'CT - Contrato',
-  'CT - Agendar',
-  'CT - Aguardar peças',
-  'CT - Aguardar resposta Fornecedor'
-];
-
-const EF_STATUSES: StatusFolhaServico[] = [
+export const EF_STATUSES: StatusFolhaServico[] = [
   'A Agendar',
   'Agendado',
   'Feito'
 ];
 
-const FEITO_STATUSES: StatusFolhaServico[] = [
-  'FEITO - Resolvido',
-  'FEITO - Faturar',
-  'FEITO - Aguardar Requisição',
-  'FEITO - Submeter Garantia',
-  'FEITO - Aguardar Garantia',
-  'FEITO - Faturado'
+export const FATURACAO_OPTIONS: StatusFaturacao[] = [
+  'Pendente',
+  'Enviar proposta',
+  'Aguardar Requisição',
+  'Faturar',
+  'Faturado',
+  'Submeter Garantia',
+  'Garantia submetida',
+  'Garantia recebida',
+  'N/A'
 ];
 
-function getAvailableStatusesForFolha(tipo?: TipoServico, isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
+export const DEFAULT_VALIDACAO_PECAS = [
+  'Matrícula',
+  'Tampões de rodas',
+  'Colete e triângulo',
+  'Cabo de carregamento',
+  'Manuais'
+];
+
+function getAvailableStatusesForFolha(tipo?: TipoServico, _isAdmin: boolean = false, currentStatus?: StatusFolhaServico): StatusFolhaServico[] {
   if (tipo === 'Entrega e Formação') {
     return ['A Agendar', 'Agendado', 'Feito'];
   }
-  let baseStatuses: StatusFolhaServico[] = [];
-  if (tipo === 'Assistência Técnica') {
-    baseStatuses = [...AT_STATUSES];
-  } else if (tipo === 'Oficina') {
-    baseStatuses = [...OF_STATUSES];
-  } else if (tipo === 'Contrato') {
-    baseStatuses = [...CT_STATUSES, 'FEITO - Resolvido'];
-  } else {
-    baseStatuses = [...AT_STATUSES, ...OF_STATUSES];
+  const statuses = [...OPERATIONAL_STATUSES];
+  if (currentStatus && !statuses.includes(currentStatus)) {
+    statuses.push(currentStatus);
   }
-
-  if (isAdmin) {
-    baseStatuses = [...baseStatuses, ...FEITO_STATUSES];
-  } else if (currentStatus && currentStatus.startsWith('FEITO') && !baseStatuses.includes(currentStatus)) {
-    baseStatuses = [...baseStatuses, currentStatus];
-  }
-
-  return Array.from(new Set(baseStatuses));
+  return Array.from(new Set(statuses));
 }
 
 interface MobileAppProps {
@@ -263,7 +249,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Manual Folha Form State
   const [manualFolha, setManualFolha] = useState<Partial<FolhaServico>>({
     tipo: 'Oficina',
-    status: 'OF - Com requisição - Aguardar agenda',
+    status: 'A ser intervencionado',
+    requisicao: 'Não',
+    faturacao: 'Pendente',
+    validacaoFeita: false,
+    preparacaoFeita: false,
     kmsAtuais: 0,
     horasAtuais: 0,
     servicos: [],
@@ -620,7 +610,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       numero: newNum,
       tipo: 'Oficina',
       data: now,
-      status: 'OF - Com requisição - Aguardar agenda',
+      status: 'A ser intervencionado',
+      requisicao: 'Não',
+      faturacao: 'Pendente',
+      validacaoFeita: false,
+      preparacaoFeita: false,
       matricula: prefilledEq?.matricula || '',
       marca: prefilledEq?.marca || '',
       modelo: prefilledEq?.modelo || '',
@@ -833,7 +827,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       f.matricula.toLowerCase().includes(q) ||
       (f.marca && f.marca.toLowerCase().includes(q));
 
-    const matchesStatus = statusFilter === 'TODAS' || f.status.startsWith(statusFilter);
+    const matchesStatus = statusFilter === 'TODAS' || f.status === statusFilter || f.status.startsWith(statusFilter);
     return matchesQ && matchesStatus;
   }).sort(sortByDateDesc(f => f.data, f => f.numero));
 
@@ -1313,11 +1307,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
               {/* Status Filter Chips */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {['TODAS', 'AT', 'OF', 'CT', 'FEITO'].map(st => (
+                {['TODAS', 'A ser intervencionado', 'Pedido de Assistência', 'Aguardar agenda', 'Agendado', 'Aguardar viatura', 'Aguardar peças', 'Concluído'].map(st => (
                   <button
                     key={st}
                     onClick={() => setStatusFilter(st)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all ${
                       statusFilter === st
                         ? 'bg-hp-600 text-white shadow-sm'
                         : theme === 'light'
@@ -1325,15 +1319,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         : 'bg-slate-900 text-slate-400 border border-slate-800'
                     }`}
                   >
-                    {st === 'TODAS'
-                      ? 'Todas'
-                      : st === 'AT'
-                      ? 'Assistências (AT)'
-                      : st === 'OF'
-                      ? 'Oficina (OF)'
-                      : st === 'CT'
-                      ? 'Contratos (CT)'
-                      : 'Concluídas (FEITO)'}
+                    {st === 'TODAS' ? 'Todas' : st}
                   </button>
                 ))}
               </div>
@@ -1372,6 +1358,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
                             {f.tipo || 'Oficina'}
                           </span>
+                          {f.requisicao === 'Sim' && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Req: Sim
+                            </span>
+                          )}
+                          {currentUser?.role === 'administrador' && f.faturacao && (
+                            <Badge variant={getFaturacaoBadgeVariant(f.faturacao)}>
+                              {f.faturacao}
+                            </Badge>
+                          )}
                         </div>
                         <h3 className="text-lg font-black tracking-tight text-white font-mono mt-1">
                           {f.matricula}
@@ -1379,16 +1375,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         <p className="text-xs text-slate-400 font-medium">{f.marca} {f.modelo}</p>
                       </div>
 
-                      <Badge
-                        variant={
-                          f.status.startsWith('FEITO')
-                            ? 'success'
-                            : f.status.startsWith('AT')
-                            ? 'warning'
-                            : 'info'
-                        }
-                      >
-                        {f.status.split(' - ')[1] || f.status}
+                      <Badge variant={getStatusBadgeVariant(f.status)}>
+                        {f.status}
                       </Badge>
                     </div>
 
@@ -1443,8 +1431,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   <h2 className="text-2xl font-black font-mono text-white mt-1">{selectedFolha.matricula}</h2>
                   <p className="text-xs text-slate-400 font-semibold">{selectedFolha.marca} {selectedFolha.modelo}</p>
                 </div>
-                <Badge variant={selectedFolha.status.startsWith('FEITO') ? 'success' : selectedFolha.status.startsWith('AT') ? 'warning' : 'info'}>
-                  {selectedFolha.status.split(' - ')[1] || selectedFolha.status}
+                <Badge variant={getStatusBadgeVariant(selectedFolha.status)}>
+                  {selectedFolha.status}
                 </Badge>
               </div>
 
@@ -1456,22 +1444,38 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     value={selectedFolha.tipo || 'Oficina'}
                     onChange={e => {
                       const newTipo = e.target.value as TipoServico;
-                      const isOficina = newTipo === 'Oficina';
+                      const isOficina = newTipo === 'Oficina' || newTipo === 'Validação e Preparação';
                       const defaultStatus = isOficina
-                        ? 'OF - Com requisição - Aguardar agenda'
+                        ? 'A ser intervencionado'
                         : newTipo === 'Assistência Técnica'
-                        ? 'AT - Pedido de Assistência'
+                        ? 'Pedido de Assistência'
                         : newTipo === 'Contrato'
-                        ? 'CT - Contrato'
+                        ? 'A ser intervencionado'
                         : selectedFolha.status;
+
+                      let nextPecas = selectedFolha.pecas || [];
+                      if (newTipo === 'Validação e Preparação' && nextPecas.length === 0) {
+                        nextPecas = DEFAULT_VALIDACAO_PECAS.map(nome => ({
+                          id: db.generateId('pec'),
+                          referencia: '-',
+                          designacao: nome,
+                          qtd: 1,
+                          pvp: 0,
+                          desconto: 0,
+                          subtotal: 0,
+                          isLivre: true,
+                          concluido: false
+                        }));
+                      }
 
                       const updated = {
                         ...selectedFolha,
                         tipo: newTipo,
+                        pecas: nextPecas,
                         localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : selectedFolha.localizacao,
                         localizacaoTipo: isOficina ? 'oficina' as const : selectedFolha.localizacaoTipo,
                         distanciaKms: isOficina ? 0 : selectedFolha.distanciaKms,
-                        status: selectedFolha.status?.startsWith('FEITO') ? selectedFolha.status : defaultStatus
+                        status: selectedFolha.status ? selectedFolha.status : defaultStatus
                       };
                       setSelectedFolha(updated);
                       db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
@@ -1479,6 +1483,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
                   >
                     <option value="Oficina">Oficina</option>
+                    <option value="Validação e Preparação">Validação e Preparação</option>
                     <option value="Assistência Técnica">Assistência Técnica</option>
                     <option value="Garantia">Garantia</option>
                     <option value="Entrega e Formação">Entrega e Formação</option>
@@ -1487,18 +1492,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-400 block uppercase">Estado da Folha</label>
-                    {currentUser?.role !== 'administrador' && (
-                      <span className="text-[9px] text-slate-500 font-mono">Restrito</span>
-                    )}
-                  </div>
+                  <label className="text-xs font-bold text-slate-400 block uppercase">Estado da Folha</label>
                   <select
                     value={selectedFolha.status}
                     onChange={e => {
                       const newSt = e.target.value as StatusFolhaServico;
-                      setSelectedFolha(prev => (prev ? { ...prev, status: newSt } : null));
-                      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { status: newSt });
+                      const isConcluido = newSt === 'Concluído' || newSt === 'Feito';
+                      const updated: FolhaServico = {
+                        ...selectedFolha,
+                        status: newSt,
+                        equipamentoFinalizado: isConcluido ? 'Sim' : selectedFolha.equipamentoFinalizado,
+                        faturacao: (isConcluido && (!selectedFolha.faturacao || selectedFolha.faturacao === 'Pendente')) ? 'Faturar' : selectedFolha.faturacao
+                      };
+                      setSelectedFolha(updated);
+                      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
                     }}
                     className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
                   >
@@ -1507,6 +1514,44 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     ))}
                   </select>
                 </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 block uppercase">Requisição</label>
+                  <select
+                    value={selectedFolha.requisicao || 'Não'}
+                    onChange={e => {
+                      const val = e.target.value as 'Sim' | 'Não';
+                      setSelectedFolha(prev => (prev ? { ...prev, requisicao: val } : null));
+                      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { requisicao: val });
+                    }}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    <option value="Não">Não</option>
+                    <option value="Sim">Sim</option>
+                  </select>
+                </div>
+
+                {currentUser?.role === 'administrador' && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-amber-300 block uppercase">Faturação</label>
+                      <span className="text-[9px] text-amber-400/80 font-mono">Admin</span>
+                    </div>
+                    <select
+                      value={selectedFolha.faturacao || 'Pendente'}
+                      onChange={e => {
+                        const val = e.target.value as StatusFaturacao;
+                        setSelectedFolha(prev => (prev ? { ...prev, faturacao: val } : null));
+                        db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { faturacao: val });
+                      }}
+                      className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-amber-500/50 text-xs font-bold text-amber-200 focus:outline-none focus:border-amber-400"
+                    >
+                      {FATURACAO_OPTIONS.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Editable Readings: Kms & Horas Atuais */}
@@ -1695,6 +1740,181 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   </div>
                 );
               })()}
+
+              {/* VALIDAÇÃO & PREPARAÇÃO CARD (Apenas quando o tipo é Validação e Preparação) */}
+              {selectedFolha.tipo === 'Validação e Preparação' && (
+                <div className="p-4 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/90 rounded-2xl border-2 border-emerald-500/40 shadow-xl space-y-4">
+                  <div className="flex items-center gap-2 pb-2.5 border-b border-slate-800">
+                    <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Validação & Preparação
+                      </h4>
+                      <p className="text-[10px] text-slate-400">
+                        Registe a conclusão da Validação e Preparação com data e iniciais.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Milestone 1: Validação */}
+                  <div className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                    selectedFolha.validacaoFeita
+                      ? 'bg-emerald-950/30 border-emerald-500/40'
+                      : 'bg-slate-950/70 border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className={`w-4 h-4 ${selectedFolha.validacaoFeita ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-black text-emerald-400 uppercase">Validação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !selectedFolha.validacaoFeita;
+                          const today = getTodayFormatted();
+                          const initials = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+                            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+                            || 'HP';
+                          const updated = {
+                            ...selectedFolha,
+                            validacaoFeita: next,
+                            validacaoData: next ? (selectedFolha.validacaoData || today) : '',
+                            validacaoPor: next ? (selectedFolha.validacaoPor || initials) : ''
+                          };
+                          setSelectedFolha(updated);
+                          db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                        }}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          selectedFolha.validacaoFeita
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {selectedFolha.validacaoFeita ? 'Validação Concluída' : 'Marcar Validação'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedFolha.validacaoData || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const updated = { ...selectedFolha, validacaoData: val };
+                            setSelectedFolha(updated);
+                            db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                          }}
+                          placeholder="DD/MM/AAAA"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Iniciais
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={selectedFolha.validacaoPor || ''}
+                          onChange={e => {
+                            const val = e.target.value.toUpperCase();
+                            const updated = { ...selectedFolha, validacaoPor: val };
+                            setSelectedFolha(updated);
+                            db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                          }}
+                          placeholder="HP"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-emerald-400 font-mono font-bold text-center uppercase focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Milestone 2: Preparação */}
+                  <div className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                    selectedFolha.preparacaoFeita
+                      ? 'bg-sky-950/30 border-sky-500/40'
+                      : 'bg-slate-950/70 border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className={`w-4 h-4 ${selectedFolha.preparacaoFeita ? 'text-sky-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-black text-sky-400 uppercase">Preparação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !selectedFolha.preparacaoFeita;
+                          const today = getTodayFormatted();
+                          const initials = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+                            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+                            || 'HP';
+                          const updated = {
+                            ...selectedFolha,
+                            preparacaoFeita: next,
+                            preparacaoData: next ? (selectedFolha.preparacaoData || today) : '',
+                            preparacaoPor: next ? (selectedFolha.preparacaoPor || initials) : ''
+                          };
+                          setSelectedFolha(updated);
+                          db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                        }}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          selectedFolha.preparacaoFeita
+                            ? 'bg-sky-600 text-white shadow-sky-600/30'
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {selectedFolha.preparacaoFeita ? 'Preparação Concluída' : 'Marcar Preparação'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedFolha.preparacaoData || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const updated = { ...selectedFolha, preparacaoData: val };
+                            setSelectedFolha(updated);
+                            db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                          }}
+                          placeholder="DD/MM/AAAA"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Iniciais
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={selectedFolha.preparacaoPor || ''}
+                          onChange={e => {
+                            const val = e.target.value.toUpperCase();
+                            const updated = { ...selectedFolha, preparacaoPor: val };
+                            setSelectedFolha(updated);
+                            db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                          }}
+                          placeholder="HP"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-sky-400 font-mono font-bold text-center uppercase focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ENTREGA & FORMAÇÃO CARD (Apenas quando o tipo é Entrega e Formação) */}
               {selectedFolha.tipo === 'Entrega e Formação' && (
@@ -1976,109 +2196,111 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               </div>
 
               {/* 2. MÃO-DE-OBRA & SERVIÇOS ADICIONAIS */}
-              <div className="space-y-3 pt-3 border-t border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                      <Wrench className="w-4 h-4 text-amber-400" />
-                      Mão-de-Obra Adicional ({selectedFolha.servicosAdicionais?.length || 0})
-                    </h4>
-                    <p className="text-[10px] text-slate-400">Serviços adicionais fora do orçamento</p>
+              {selectedFolha.tipo !== 'Validação e Preparação' && (
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <Wrench className="w-4 h-4 text-amber-400" />
+                        Mão-de-Obra Adicional ({selectedFolha.servicosAdicionais?.length || 0})
+                      </h4>
+                      <p className="text-[10px] text-slate-400">Serviços adicionais fora do orçamento</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddServiceToSelected(true)}
+                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-amber-500/30 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAddServiceToSelected(true)}
-                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-amber-500/30 transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
-                </div>
 
-                <div className="space-y-2">
-                  {(!selectedFolha.servicosAdicionais || selectedFolha.servicosAdicionais.length === 0) ? (
-                    <p className="text-[11px] text-slate-500 italic p-3 text-center bg-slate-950/40 rounded-2xl border border-slate-800/60">
-                      Nenhum serviço adicional registado.
-                    </p>
-                  ) : (
-                    selectedFolha.servicosAdicionais.map((s, idx) => (
-                      <div
-                        key={s.id || idx}
-                        className={`p-3 rounded-2xl border transition-all space-y-2 ${
-                          s.concluido
-                            ? 'bg-amber-950/20 border-amber-500/40'
-                            : 'bg-slate-950/80 border-slate-800'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleServiceConcluido(s.id, true)}
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-colors shrink-0 ${
-                              s.concluido
-                                ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-sm'
-                                : 'bg-slate-900 border-slate-700 text-transparent hover:border-slate-500'
-                            }`}
-                          >
-                            <Check className="w-4 h-4 stroke-[3]" />
-                          </button>
+                  <div className="space-y-2">
+                    {(!selectedFolha.servicosAdicionais || selectedFolha.servicosAdicionais.length === 0) ? (
+                      <p className="text-[11px] text-slate-500 italic p-3 text-center bg-slate-950/40 rounded-2xl border border-slate-800/60">
+                        Nenhum serviço adicional registado.
+                      </p>
+                    ) : (
+                      selectedFolha.servicosAdicionais.map((s, idx) => (
+                        <div
+                          key={s.id || idx}
+                          className={`p-3 rounded-2xl border transition-all space-y-2 ${
+                            s.concluido
+                              ? 'bg-amber-950/20 border-amber-500/40'
+                              : 'bg-slate-950/80 border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleServiceConcluido(s.id, true)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-colors shrink-0 ${
+                                s.concluido
+                                  ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-sm'
+                                  : 'bg-slate-900 border-slate-700 text-transparent hover:border-slate-500'
+                              }`}
+                            >
+                              <Check className="w-4 h-4 stroke-[3]" />
+                            </button>
 
-                          <input
-                            type="text"
-                            placeholder="Descrição do serviço adicional..."
-                            value={s.descricao}
-                            onChange={e => handleUpdateServiceInSelected(s.id, 'descricao', e.target.value, true)}
-                            className={`flex-1 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500 ${
-                              s.concluido ? 'line-through text-slate-400' : ''
-                            }`}
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveServiceFromSelected(s.id, true)}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 pl-8 text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-slate-400 font-semibold uppercase">Horas:</span>
                             <input
-                              type="number"
-                              step="0.5"
-                              value={s.horas}
-                              onChange={e => handleUpdateServiceInSelected(s.id, 'horas', Number(e.target.value), true)}
-                              className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-center font-bold"
+                              type="text"
+                              placeholder="Descrição do serviço adicional..."
+                              value={s.descricao}
+                              onChange={e => handleUpdateServiceInSelected(s.id, 'descricao', e.target.value, true)}
+                              className={`flex-1 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500 ${
+                                s.concluido ? 'line-through text-slate-400' : ''
+                              }`}
                             />
-                            <span className="text-[11px] text-slate-400 font-mono">h</span>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveServiceFromSelected(s.id, true)}
+                              className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            {s.concluido && s.dataConclusao && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0">
-                                📅 {s.dataConclusao}
-                              </span>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-slate-400 font-semibold uppercase">Téc:</span>
+                          <div className="flex items-center justify-between gap-2 pl-8 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400 font-semibold uppercase">Horas:</span>
                               <input
-                                type="text"
-                                value={getInitials(s.tecnico || 'HP')}
-                                placeholder="HP"
-                                maxLength={4}
-                                onChange={e => handleUpdateServiceInSelected(s.id, 'tecnico', e.target.value.toUpperCase(), true)}
-                                className="w-28 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center uppercase text-xs"
-                                title="Iniciais do Técnico"
+                                type="number"
+                                step="0.5"
+                                value={s.horas}
+                                onChange={e => handleUpdateServiceInSelected(s.id, 'horas', Number(e.target.value), true)}
+                                className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-center font-bold"
                               />
+                              <span className="text-[11px] text-slate-400 font-mono">h</span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {s.concluido && s.dataConclusao && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0">
+                                  📅 {s.dataConclusao}
+                                </span>
+                              )}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase">Téc:</span>
+                                <input
+                                  type="text"
+                                  value={getInitials(s.tecnico || 'HP')}
+                                  placeholder="HP"
+                                  maxLength={4}
+                                  onChange={e => handleUpdateServiceInSelected(s.id, 'tecnico', e.target.value.toUpperCase(), true)}
+                                  className="w-28 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center uppercase text-xs"
+                                  title="Iniciais do Técnico"
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 3. PEÇAS & MATERIAIS APLICADOS */}
               <div className="space-y-3 pt-3 border-t border-slate-800">
@@ -2087,13 +2309,39 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     <Package className="w-4 h-4 text-emerald-400" />
                     Peças & Materiais ({selectedFolha.pecas?.length || 0})
                   </h4>
-                  <button
-                    type="button"
-                    onClick={() => handleAddPartToSelected(false)}
-                    className="px-2.5 py-1 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1 border border-emerald-500/30 transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {selectedFolha.tipo === 'Validação e Preparação' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaultPecas = DEFAULT_VALIDACAO_PECAS.map(nome => ({
+                            id: db.generateId('pec'),
+                            referencia: '-',
+                            designacao: nome,
+                            qtd: 1,
+                            pvp: 0,
+                            desconto: 0,
+                            subtotal: 0,
+                            isLivre: true,
+                            concluido: false
+                          }));
+                          const updated = { ...selectedFolha, pecas: defaultPecas };
+                          setSelectedFolha(updated);
+                          db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                        }}
+                        className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-[11px] font-bold border border-emerald-500/30 transition-all"
+                      >
+                        Checklist Base (5 Itens)
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleAddPartToSelected(false)}
+                      className="px-2.5 py-1 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1 border border-emerald-500/30 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -2190,139 +2438,143 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               </div>
 
               {/* 4. PEÇAS & MATERIAIS ADICIONAIS */}
-              <div className="space-y-3 pt-3 border-t border-slate-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                      <Package className="w-4 h-4 text-amber-400" />
-                      Peças Adicionais ({selectedFolha.pecasAdicionais?.length || 0})
-                    </h4>
-                    <p className="text-[10px] text-slate-400">Peças aplicadas não orçamentadas inicialmente</p>
+              {selectedFolha.tipo !== 'Validação e Preparação' && (
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <Package className="w-4 h-4 text-amber-400" />
+                        Peças Adicionais ({selectedFolha.pecasAdicionais?.length || 0})
+                      </h4>
+                      <p className="text-[10px] text-slate-400">Peças aplicadas não orçamentadas inicialmente</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPartToSelected(true)}
+                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-amber-500/30 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAddPartToSelected(true)}
-                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-amber-500/30 transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
-                </div>
 
-                <div className="space-y-2">
-                  {(!selectedFolha.pecasAdicionais || selectedFolha.pecasAdicionais.length === 0) ? (
-                    <p className="text-[11px] text-slate-500 italic p-3 text-center bg-slate-950/40 rounded-2xl border border-slate-800/60">
-                      Nenhuma peça adicional registada.
-                    </p>
-                  ) : (
-                    selectedFolha.pecasAdicionais.map((p, idx) => (
-                      <div
-                        key={p.id || idx}
-                        className={`p-3 rounded-2xl border transition-all space-y-2 ${
-                          p.concluido
-                            ? 'bg-amber-950/20 border-amber-500/40'
-                            : 'bg-slate-950/80 border-slate-800'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePecaConcluido(p.id, true)}
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-colors shrink-0 ${
-                              p.concluido
-                                ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-sm'
-                                : 'bg-slate-900 border-slate-700 text-transparent hover:border-slate-500'
-                            }`}
-                          >
-                            <Check className="w-4 h-4 stroke-[3]" />
-                          </button>
-
-                          <div className="grid grid-cols-3 gap-1.5 flex-1">
-                            <input
-                              type="text"
-                              placeholder="Ref..."
-                              value={p.referencia || ''}
-                              onChange={e => handleUpdatePartInSelected(p.id, 'referencia', e.target.value, true)}
-                              className="py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] text-amber-400 font-mono font-bold"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Designação da peça adicional..."
-                              value={p.designacao}
-                              onChange={e => handleUpdatePartInSelected(p.id, 'designacao', e.target.value, true)}
-                              className={`col-span-2 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white ${
-                                p.concluido ? 'line-through text-slate-400' : ''
+                  <div className="space-y-2">
+                    {(!selectedFolha.pecasAdicionais || selectedFolha.pecasAdicionais.length === 0) ? (
+                      <p className="text-[11px] text-slate-500 italic p-3 text-center bg-slate-950/40 rounded-2xl border border-slate-800/60">
+                        Nenhuma peça adicional registada.
+                      </p>
+                    ) : (
+                      selectedFolha.pecasAdicionais.map((p, idx) => (
+                        <div
+                          key={p.id || idx}
+                          className={`p-3 rounded-2xl border transition-all space-y-2 ${
+                            p.concluido
+                              ? 'bg-amber-950/20 border-amber-500/40'
+                              : 'bg-slate-950/80 border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePecaConcluido(p.id, true)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-colors shrink-0 ${
+                                p.concluido
+                                  ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-sm'
+                                  : 'bg-slate-900 border-slate-700 text-transparent hover:border-slate-500'
                               }`}
-                            />
+                            >
+                              <Check className="w-4 h-4 stroke-[3]" />
+                            </button>
+
+                            <div className="grid grid-cols-3 gap-1.5 flex-1">
+                              <input
+                                type="text"
+                                placeholder="Ref..."
+                                value={p.referencia || ''}
+                                onChange={e => handleUpdatePartInSelected(p.id, 'referencia', e.target.value, true)}
+                                className="py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] text-amber-400 font-mono font-bold"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Designação da peça adicional..."
+                                value={p.designacao}
+                                onChange={e => handleUpdatePartInSelected(p.id, 'designacao', e.target.value, true)}
+                                className={`col-span-2 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white ${
+                                  p.concluido ? 'line-through text-slate-400' : ''
+                                }`}
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400 font-mono font-bold">x</span>
+                              <input
+                                type="number"
+                                value={p.qtd}
+                                onChange={e => handleUpdatePartInSelected(p.id, 'qtd', Number(e.target.value), true)}
+                                className="w-12 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center text-xs"
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePartFromSelected(p.id, true)}
+                              className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
 
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-400 font-mono font-bold">x</span>
-                            <input
-                              type="number"
-                              value={p.qtd}
-                              onChange={e => handleUpdatePartInSelected(p.id, 'qtd', Number(e.target.value), true)}
-                              className="w-12 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center text-xs"
-                            />
-                          </div>
+                          {/* Footer row with Date and Technician Initials */}
+                          <div className="flex items-center justify-between gap-2 pl-8 text-xs">
+                            {p.concluido && p.dataConclusao ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40">
+                                📅 {p.dataConclusao}
+                              </span>
+                            ) : <span />}
 
-                          <button
-                            type="button"
-                            onClick={() => handleRemovePartFromSelected(p.id, true)}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400 font-semibold uppercase">Téc:</span>
+                              <input
+                                type="text"
+                                value={getInitials(p.iniciaisConclusao || 'HP')}
+                                placeholder="HP"
+                                maxLength={4}
+                                onChange={e => handleUpdatePartInSelected(p.id, 'iniciaisConclusao', e.target.value.toUpperCase(), true)}
+                                className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center uppercase text-xs"
+                                title="Iniciais do Técnico"
+                              />
+                            </div>
+                          </div>
                         </div>
-
-                        {/* Footer row with Date and Technician Initials */}
-                        <div className="flex items-center justify-between gap-2 pl-8 text-xs">
-                          {p.concluido && p.dataConclusao ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40">
-                              📅 {p.dataConclusao}
-                            </span>
-                          ) : <span />}
-
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-400 font-semibold uppercase">Téc:</span>
-                            <input
-                              type="text"
-                              value={getInitials(p.iniciaisConclusao || 'HP')}
-                              placeholder="HP"
-                              maxLength={4}
-                              onChange={e => handleUpdatePartInSelected(p.id, 'iniciaisConclusao', e.target.value.toUpperCase(), true)}
-                              className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center uppercase text-xs"
-                              title="Iniciais do Técnico"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 5. NOTAS PARA O CLIENTE */}
-              <div className="p-3.5 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
-                    Notas para o Cliente
-                  </label>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-400 font-medium">
-                    Visível no PDF do Cliente
-                  </span>
+              {selectedFolha.tipo !== 'Validação e Preparação' && (
+                <div className="p-3.5 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                      Notas para o Cliente
+                    </label>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-400 font-medium">
+                      Visível no PDF do Cliente
+                    </span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={selectedFolha.notasCliente || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setSelectedFolha(prev => prev ? { ...prev, notasCliente: val } : null);
+                      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { notasCliente: val });
+                    }}
+                    placeholder="Observações e recomendações que constarão na folha entregue ao cliente..."
+                    className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
+                  />
                 </div>
-                <textarea
-                  rows={2}
-                  value={selectedFolha.notasCliente || ''}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setSelectedFolha(prev => prev ? { ...prev, notasCliente: val } : null);
-                    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { notasCliente: val });
-                  }}
-                  placeholder="Observações e recomendações que constarão na folha entregue ao cliente..."
-                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
-                />
-              </div>
+              )}
             </>
           )}
 
@@ -2353,42 +2605,44 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               {selectedFolha.tipo !== 'Entrega e Formação' && (
                 <>
                   {/* 7. PRÓXIMA REVISÃO RECOMENDADA */}
-                  <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-hp-400" />
-                  Próxima Revisão Recomendada
-                </h4>
+                  {selectedFolha.tipo !== 'Validação e Preparação' && (
+                    <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-hp-400" />
+                        Próxima Revisão Recomendada
+                      </h4>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-semibold text-slate-400 block mb-1 uppercase">Próxima Revisão (KMS)</label>
-                    <input
-                      type="number"
-                      value={selectedFolha.previsaoRevisaoKms || 0}
-                      onChange={e => {
-                        const val = Number(e.target.value);
-                        setSelectedFolha(prev => prev ? { ...prev, previsaoRevisaoKms: val } : null);
-                        db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { previsaoRevisaoKms: val });
-                      }}
-                      className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-hp-500"
-                    />
-                  </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-semibold text-slate-400 block mb-1 uppercase">Próxima Revisão (KMS)</label>
+                          <input
+                            type="number"
+                            value={selectedFolha.previsaoRevisaoKms || 0}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              setSelectedFolha(prev => prev ? { ...prev, previsaoRevisaoKms: val } : null);
+                              db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { previsaoRevisaoKms: val });
+                            }}
+                            className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-hp-500"
+                          />
+                        </div>
 
-                  <div>
-                    <label className="text-[10px] font-semibold text-slate-400 block mb-1 uppercase">Próxima Revisão (HORAS)</label>
-                    <input
-                      type="number"
-                      value={selectedFolha.previsaoRevisaoHoras || 0}
-                      onChange={e => {
-                        const val = Number(e.target.value);
-                        setSelectedFolha(prev => prev ? { ...prev, previsaoRevisaoHoras: val } : null);
-                        db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { previsaoRevisaoHoras: val });
-                      }}
-                      className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-hp-500"
-                    />
-                  </div>
-                </div>
-              </div>
+                        <div>
+                          <label className="text-[10px] font-semibold text-slate-400 block mb-1 uppercase">Próxima Revisão (HORAS)</label>
+                          <input
+                            type="number"
+                            value={selectedFolha.previsaoRevisaoHoras || 0}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              setSelectedFolha(prev => prev ? { ...prev, previsaoRevisaoHoras: val } : null);
+                              db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { previsaoRevisaoHoras: val });
+                            }}
+                            className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-hp-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
               {/* 8. Viatura Operacional & Responsável no Local */}
               <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-3">
@@ -2562,9 +2816,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   Tipo de Serviço
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {(['Oficina', 'Assistência Técnica', 'Garantia', 'Entrega e Formação', 'Contrato'] as TipoServico[]).map(t => {
+                  {(['Oficina', 'Validação e Preparação', 'Assistência Técnica', 'Garantia', 'Entrega e Formação', 'Contrato'] as TipoServico[]).map(t => {
                     const isSelected = aiTipoServico === t;
-                    const icon = t === 'Oficina' ? '🏢' : t === 'Assistência Técnica' ? '🚜' : t === 'Garantia' ? '🛡️' : t === 'Entrega e Formação' ? '🤝' : '📑';
+                    const icon = t === 'Validação e Preparação' ? '✨' : t === 'Oficina' ? '🏢' : t === 'Assistência Técnica' ? '🚜' : t === 'Garantia' ? '🛡️' : t === 'Entrega e Formação' ? '🤝' : '📑';
                     return (
                       <button
                         key={t}
@@ -3082,7 +3336,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 Registo de Folha de Serviço
               </h2>
 
-              {/* Tipo de Serviço & Estado Inicial */}
+              {/* Tipo de Serviço, Estado, Requisição & Faturação */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-3 border-b border-slate-800">
                 <div className="space-y-1.5">
                   <label className="text-xs font-black uppercase text-slate-300 block">
@@ -3092,18 +3346,34 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     value={manualFolha.tipo || 'Oficina'}
                     onChange={e => {
                       const newTipo = e.target.value as TipoServico;
-                      const isOficina = newTipo === 'Oficina';
+                      const isOficina = newTipo === 'Oficina' || newTipo === 'Validação e Preparação';
                       const defaultStatus = isOficina
-                        ? 'OF - Com requisição - Aguardar agenda'
+                        ? 'A ser intervencionado'
                         : newTipo === 'Assistência Técnica'
-                        ? 'AT - Pedido de Assistência'
+                        ? 'Pedido de Assistência'
                         : newTipo === 'Contrato'
-                        ? 'CT - Contrato'
-                        : 'OF - Com requisição - Aguardar agenda';
+                        ? 'A ser intervencionado'
+                        : 'A ser intervencionado';
+
+                      let nextPecas = manualFolha.pecas || [];
+                      if (newTipo === 'Validação e Preparação' && nextPecas.length === 0) {
+                        nextPecas = DEFAULT_VALIDACAO_PECAS.map(nome => ({
+                          id: db.generateId('pec'),
+                          referencia: '-',
+                          designacao: nome,
+                          qtd: 1,
+                          pvp: 0,
+                          desconto: 0,
+                          subtotal: 0,
+                          isLivre: true,
+                          concluido: false
+                        }));
+                      }
 
                       setManualFolha(prev => ({
                         ...prev,
                         tipo: newTipo,
+                        pecas: nextPecas,
                         status: defaultStatus as StatusFolhaServico,
                         localizacao: isOficina ? 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)' : prev.localizacao,
                         localizacaoTipo: isOficina ? 'oficina' : 'sede',
@@ -3113,6 +3383,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
                   >
                     <option value="Oficina">🏢 Oficina</option>
+                    <option value="Validação e Preparação">✨ Validação e Preparação</option>
                     <option value="Assistência Técnica">🚜 Assistência Técnica</option>
                     <option value="Garantia">🛡️ Garantia</option>
                     <option value="Entrega e Formação">🤝 Entrega e Formação</option>
@@ -3125,12 +3396,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     <label className="text-xs font-black uppercase text-slate-300 block">
                       Estado da Folha *
                     </label>
-                    {currentUser?.role !== 'administrador' && (
-                      <span className="text-[9px] text-slate-500 font-mono">Restrito</span>
-                    )}
                   </div>
                   <select
-                    value={manualFolha.status || 'OF - Com requisição - Aguardar agenda'}
+                    value={manualFolha.status || 'A ser intervencionado'}
                     onChange={e => setManualFolha(prev => ({ ...prev, status: e.target.value as StatusFolhaServico }))}
                     className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
                   >
@@ -3139,6 +3407,40 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     ))}
                   </select>
                 </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black uppercase text-slate-300 block">
+                    Requisição
+                  </label>
+                  <select
+                    value={manualFolha.requisicao || 'Não'}
+                    onChange={e => setManualFolha(prev => ({ ...prev, requisicao: e.target.value as 'Sim' | 'Não' }))}
+                    className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                  >
+                    <option value="Não">Não</option>
+                    <option value="Sim">Sim</option>
+                  </select>
+                </div>
+
+                {currentUser?.role === 'administrador' && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black uppercase text-amber-300 block">
+                        Faturação
+                      </label>
+                      <span className="text-[9px] text-amber-400 font-mono">Admin</span>
+                    </div>
+                    <select
+                      value={manualFolha.faturacao || 'Pendente'}
+                      onChange={e => setManualFolha(prev => ({ ...prev, faturacao: e.target.value as StatusFaturacao }))}
+                      className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-amber-500/50 text-xs font-bold text-amber-200 focus:outline-none focus:border-amber-400"
+                    >
+                      {FATURACAO_OPTIONS.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* 1. Matrícula (Com Seletor / Pesquisa Tátil) */}
@@ -3385,6 +3687,157 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   />
                 </div>
               </div>
+
+              {/* VALIDAÇÃO & PREPARAÇÃO CARD (Nova Folha Manual) */}
+              {manualFolha.tipo === 'Validação e Preparação' && (
+                <div className="p-4 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/90 rounded-2xl border-2 border-emerald-500/40 shadow-xl space-y-4">
+                  <div className="flex items-center gap-2 pb-2.5 border-b border-slate-800">
+                    <div className="p-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Validação & Preparação
+                      </h4>
+                      <p className="text-[10px] text-slate-400">
+                        Registe a conclusão da Validação e Preparação com data e iniciais.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Milestone 1: Validação */}
+                  <div className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                    manualFolha.validacaoFeita
+                      ? 'bg-emerald-950/30 border-emerald-500/40'
+                      : 'bg-slate-950/70 border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className={`w-4 h-4 ${manualFolha.validacaoFeita ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-black text-emerald-400 uppercase">Validação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !manualFolha.validacaoFeita;
+                          const today = getTodayFormatted();
+                          const initials = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+                            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+                            || 'HP';
+                          setManualFolha(prev => ({
+                            ...prev,
+                            validacaoFeita: next,
+                            validacaoData: next ? (prev.validacaoData || today) : '',
+                            validacaoPor: next ? (prev.validacaoPor || initials) : ''
+                          }));
+                        }}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          manualFolha.validacaoFeita
+                            ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {manualFolha.validacaoFeita ? 'Validação Concluída' : 'Marcar Validação'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          value={manualFolha.validacaoData || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, validacaoData: e.target.value }))}
+                          placeholder="DD/MM/AAAA"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Iniciais
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={manualFolha.validacaoPor || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, validacaoPor: e.target.value.toUpperCase() }))}
+                          placeholder="HP"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-emerald-400 font-mono font-bold text-center uppercase focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Milestone 2: Preparação */}
+                  <div className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                    manualFolha.preparacaoFeita
+                      ? 'bg-sky-950/30 border-sky-500/40'
+                      : 'bg-slate-950/70 border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className={`w-4 h-4 ${manualFolha.preparacaoFeita ? 'text-sky-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-black text-sky-400 uppercase">Preparação</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !manualFolha.preparacaoFeita;
+                          const today = getTodayFormatted();
+                          const initials = (currentUser?.avatar && currentUser.avatar !== 'IA' ? currentUser.avatar : null)
+                            || (currentUser?.nome ? getInitials(currentUser.nome) : null)
+                            || 'HP';
+                          setManualFolha(prev => ({
+                            ...prev,
+                            preparacaoFeita: next,
+                            preparacaoData: next ? (prev.preparacaoData || today) : '',
+                            preparacaoPor: next ? (prev.preparacaoPor || initials) : ''
+                          }));
+                        }}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all ${
+                          manualFolha.preparacaoFeita
+                            ? 'bg-sky-600 text-white shadow-sky-600/30'
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {manualFolha.preparacaoFeita ? 'Preparação Concluída' : 'Marcar Preparação'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          value={manualFolha.preparacaoData || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, preparacaoData: e.target.value }))}
+                          placeholder="DD/MM/AAAA"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-300 block uppercase mb-1">
+                          Iniciais
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={manualFolha.preparacaoPor || ''}
+                          onChange={e => setManualFolha(prev => ({ ...prev, preparacaoPor: e.target.value.toUpperCase() }))}
+                          placeholder="HP"
+                          className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-sky-400 font-mono font-bold text-center uppercase focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ENTREGA & FORMAÇÃO CARD (Nova Folha Manual) */}
               {manualFolha.tipo === 'Entrega e Formação' && (
@@ -3707,22 +4160,46 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               <div className="space-y-2 pt-2 border-t border-slate-800">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black uppercase text-slate-300">Peças & Material</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newP: PecaItem = {
-                        id: db.generateId('pec'),
-                        designacao: '',
-                        qtd: 1,
-                        concluido: false,
-                        isLivre: true
-                      };
-                      setManualFolha(prev => ({ ...prev, pecas: [...(prev.pecas || []), newP] }));
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-hp-600 text-white text-xs font-bold flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Adicionar
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {manualFolha.tipo === 'Validação e Preparação' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaultPecas = DEFAULT_VALIDACAO_PECAS.map(nome => ({
+                            id: db.generateId('pec'),
+                            referencia: '-',
+                            designacao: nome,
+                            qtd: 1,
+                            pvp: 0,
+                            desconto: 0,
+                            subtotal: 0,
+                            isLivre: true,
+                            concluido: false
+                          }));
+                          setManualFolha(prev => ({ ...prev, pecas: defaultPecas }));
+                        }}
+                        className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-[11px] font-bold border border-emerald-500/30 transition-all"
+                      >
+                        Checklist Base (5 Itens)
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newP: PecaItem = {
+                          id: db.generateId('pec'),
+                          designacao: '',
+                          qtd: 1,
+                          concluido: false,
+                          isLivre: true
+                        };
+                        setManualFolha(prev => ({ ...prev, pecas: [...(prev.pecas || []), newP] }));
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-hp-600 text-white text-xs font-bold flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -3838,16 +4315,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               </div>
 
               {/* 9. Notas para o Cliente & Notas Internas */}
-                  <div>
-                    <label className="text-xs font-bold text-slate-400 block uppercase">Notas para o Cliente (PDF)</label>
-                    <textarea
-                      rows={2}
-                      value={manualFolha.notasCliente || ''}
-                      onChange={e => setManualFolha(prev => ({ ...prev, notasCliente: e.target.value }))}
-                      placeholder="Observações entregues ao cliente..."
-                      className="w-full py-2 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-xs text-white"
-                    />
-                  </div>
+                  {manualFolha.tipo !== 'Validação e Preparação' && (
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 block uppercase">Notas para o Cliente (PDF)</label>
+                      <textarea
+                        rows={2}
+                        value={manualFolha.notasCliente || ''}
+                        onChange={e => setManualFolha(prev => ({ ...prev, notasCliente: e.target.value }))}
+                        placeholder="Observações entregues ao cliente..."
+                        className="w-full py-2 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-xs text-white"
+                      />
+                    </div>
+                  )}
                 </>
               )}
 
