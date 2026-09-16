@@ -135,14 +135,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Center/Right: Mobile Mode Button, Scanner Button, PB Indicator & Quick Action */}
+      {/* Center/Right: Mobile Mode Button, Theme Toggle, PB Indicator & User Profile */}
       <div className="flex items-center gap-2">
         {/* Mobile Mode Route Switcher Button */}
         {onSwitchToMobile && (
           <button
             onClick={onSwitchToMobile}
             title="Abrir Modo Telemóvel (/mobile)"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900/80 border border-slate-700/60 text-slate-300 hover:text-white hover:border-hp-500 transition-colors text-xs font-bold"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-slate-300 hover:text-white hover:border-hp-500 transition-colors text-xs font-bold"
           >
             <Smartphone className="w-3.5 h-3.5 text-hp-400" />
             <span className="hidden sm:inline">Modo Telemóvel</span>
@@ -156,59 +156,38 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="p-1.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-slate-300 hover:text-white hover:border-hp-500 transition-colors flex items-center justify-center"
         >
           {theme === 'dark' ? (
-            <Sun className="w-3.5 h-3.5 text-amber-400" />
+            <Sun className="w-4 h-4 text-amber-400" />
           ) : (
-            <Moon className="w-3.5 h-3.5 text-hp-500" />
+            <Moon className="w-4 h-4 text-hp-500" />
           )}
-        </button>
-
-        {/* AI Scanner Trigger Button */}
-        <button
-          onClick={onOpenScanner}
-          title="Digitalizar Matrícula ou Peça com IA"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gradient-to-r from-hp-600/30 to-indigo-600/30 border border-hp-500/40 text-hp-300 hover:text-white hover:border-hp-400 transition-all text-xs font-semibold shadow-sm group"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse group-hover:rotate-12 transition-transform" />
-          <span className="hidden sm:inline">Scanner IA</span>
         </button>
 
         {/* PocketBase Status Badge */}
         <div
           title={pbStatus.message}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-xl text-[10px] font-mono border backdrop-blur-md ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono border backdrop-blur-md ${
             pbStatus.connected
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
               : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
           }`}
         >
-          <Database className="w-3 h-3" />
+          <Database className="w-3.5 h-3.5" />
           <span className="hidden xl:inline">
-            {pbStatus.connected ? 'PB Online' : 'Modo Offline (Local)'}
+            {pbStatus.connected ? 'Online' : 'Offline'}
           </span>
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-2 h-2 rounded-full ${
               pbStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
             }`}
           />
         </div>
-
-        {/* Global Quick Action: New Folha (Only for Admin and Técnico) */}
-        {onCreateNewService && currentUser.role !== 'gestor' && (
-          <button
-            onClick={onCreateNewService}
-            className="flex items-center gap-1 px-3 py-1 rounded-xl bg-hp-600 hover:bg-hp-500 text-white font-bold text-xs shadow-md shadow-hp-600/20 transition-all active:scale-95 shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Nova Folha</span>
-          </button>
-        )}
 
         {/* User Profile Selector Dropdown */}
         <div className="relative" ref={userMenuRef}>
           <button
             type="button"
             onClick={() => setIsUserMenuOpen(prev => !prev)}
-            className={`flex items-center gap-2 py-1 px-2 rounded-xl border transition-all ${
+            className={`flex items-center gap-2 py-1 px-2.5 rounded-xl border transition-all ${
               currentUser.role === 'administrador'
                 ? 'bg-purple-950/40 border-purple-500/40 text-purple-200 hover:border-purple-400'
                 : currentUser.role === 'gestor'
@@ -227,7 +206,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             <div className="flex flex-col text-left hidden sm:flex">
-              <span className="text-[11px] font-bold leading-tight truncate max-w-[120px]">
+              <span className="text-[11px] font-bold leading-tight truncate max-w-[130px]">
                 {currentUser.nome}
               </span>
               <span className="text-[9px] font-mono opacity-80 uppercase leading-none">
@@ -239,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
 
-            <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+            <ChevronDown className="w-3.5 h-3.5 opacity-60 ml-0.5" />
           </button>
 
           {/* User Profile Menu */}
@@ -263,7 +242,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <p className="text-[11px] text-slate-400 truncate">
                     {currentUser.email}
                   </p>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono uppercase inline-block mt-1 ${
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono uppercase inline-block mt-1 ${
                     currentUser.role === 'administrador'
                       ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                       : currentUser.role === 'gestor'
@@ -275,9 +254,48 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-                {currentUser.descricao}
-              </div>
+              {currentUser.descricao && (
+                <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                  {currentUser.descricao}
+                </div>
+              )}
+
+              {/* Switch User List if multiple users exist */}
+              {users && users.length > 1 && (
+                <div className="pt-2 border-t border-slate-800/80 space-y-1">
+                  <p className="text-[10px] uppercase font-mono text-slate-400 font-bold px-1">Alternar Utilizador</p>
+                  <div className="space-y-1 max-h-36 overflow-y-auto custom-scrollbar">
+                    {users.map(u => {
+                      const isSelected = u.id === currentUser.id;
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            onSelectUser(u);
+                            setIsUserMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-1.5 rounded-xl text-xs transition-colors ${
+                            isSelected
+                              ? 'bg-hp-600/20 text-hp-300 font-bold border border-hp-500/30'
+                              : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${
+                              u.role === 'administrador' ? 'bg-purple-600' : u.role === 'gestor' ? 'bg-sky-600' : 'bg-amber-600'
+                            }`}>
+                              {u.avatar}
+                            </div>
+                            <span className="truncate">{u.nome}</span>
+                          </div>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {onLogout && (
                 <button
@@ -286,7 +304,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setIsUserMenuOpen(false);
                     onLogout();
                   }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold"
+                  className="w-full py-2 px-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition-colors flex items-center justify-center gap-2 text-xs font-bold pt-2 border-t border-slate-800"
                 >
                   <LogOut className="w-4 h-4" />
                   Terminar Sessão

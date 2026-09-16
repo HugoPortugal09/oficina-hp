@@ -1349,19 +1349,20 @@ export const Oficina: React.FC<OficinaProps> = ({
 
           <button
             onClick={onOpenScanner}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Digitalizar Matrícula ou Peça com IA"
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-hp-600/25 to-indigo-600/25 hover:from-hp-600/40 hover:to-indigo-600/40 text-hp-300 hover:text-white border border-hp-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm group"
           >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">Scanner Geral</span>
+            <Sparkles className="w-4 h-4 text-amber-400 group-hover:rotate-12 transition-transform" />
+            <span>Scanner IA</span>
           </button>
 
           {permissions.canEditServicos && (
             <button
               onClick={handleOpenCreate}
-              className="glass-btn px-4 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-hp-600/30"
+              className="glass-btn px-4 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-hp-600/30 active:scale-95 transition-transform"
             >
               <Plus className="w-4 h-4" />
-              Nova Folha
+              <span>Nova Folha</span>
             </button>
           )}
         </div>
