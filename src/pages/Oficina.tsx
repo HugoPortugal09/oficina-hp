@@ -50,6 +50,7 @@ import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
+import { estimateDistanceKm } from '../services/distanceService';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type {
   FolhaServico,
@@ -366,19 +367,23 @@ export const Oficina: React.FC<OficinaProps> = ({
   ];
 
   if (selectedCompany) {
+    const sedeOneWay = selectedCompany.distanciaKmGRAUMP || estimateDistanceKm(selectedCompany.moradaSede) || 0;
+    const sedeRoundTrip = Math.round(sedeOneWay * 2 * 10) / 10;
     locationOptions.push({
-      label: `Sede: ${selectedCompany.nome} (${selectedCompany.moradaSede})`,
-      value: `Sede: ${selectedCompany.moradaSede}`,
+      label: `Sede: ${selectedCompany.nome} (${selectedCompany.moradaSede || 'Sede'}) [${sedeRoundTrip} KM Ida e Volta]`,
+      value: `Sede: ${selectedCompany.moradaSede || selectedCompany.nome}`,
       type: 'sede',
-      defaultKm: 46
+      defaultKm: sedeRoundTrip
     });
 
     selectedCompany.estaleiros?.forEach(est => {
+      const estOneWay = est.distanciaKmGRAUMP || estimateDistanceKm(est.morada) || sedeOneWay;
+      const estRoundTrip = Math.round(estOneWay * 2 * 10) / 10;
       locationOptions.push({
-        label: `Estaleiro: ${est.nome} (${est.morada})`,
-        value: `Estaleiro ${est.nome}: ${est.morada}`,
+        label: `Estaleiro: ${est.nome} (${est.morada || 'Estaleiro'}) [${estRoundTrip} KM Ida e Volta]`,
+        value: `Estaleiro ${est.nome}: ${est.morada || est.nome}`,
         type: 'estaleiro',
-        defaultKm: 58
+        defaultKm: estRoundTrip
       });
     });
   }
@@ -518,26 +523,39 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const handleSelectPlateItem = (eq: Equipamento) => {
     const associatedCompany = empresas.find(e => e.id === eq.empresaId);
-    setEditingFolha(prev => ({
-      ...prev,
-      equipamentoId: eq.id,
-      empresaId: eq.empresaId,
-      matricula: eq.matricula,
-      marca: eq.marca,
-      modelo: eq.modelo,
-      nSerie: eq.nSerie,
-      kmsAtuais: eq.kmsAtuais || 0,
-      horasAtuais: eq.horasAtuais || 0,
-      previsaoRevisaoKms: (eq.kmsAtuais || 0) + 15000,
-      previsaoRevisaoHoras: (eq.horasAtuais || 0) + 500,
-      dataEntrega: prev.dataEntrega || eq.dataEntrega || '',
-      entregaPor: prev.entregaPor || eq.entregaPor || '',
-      dataFormacao: prev.dataFormacao || eq.dataFormacao || '',
-      formacaoPor: prev.formacaoPor || eq.formacaoPor || '',
-      // Default to GRAUMP unless previously set
-      localizacao: prev.localizacao || GRAUMP_LOCATION,
-      distanciaKms: prev.localizacao === GRAUMP_LOCATION ? 0 : (prev.distanciaKms || 0)
-    }));
+    setEditingFolha(prev => {
+      let loc = prev.localizacao || GRAUMP_LOCATION;
+      let locTipo = prev.localizacaoTipo || 'oficina';
+      let kms = 0;
+
+      if (loc !== GRAUMP_LOCATION && associatedCompany) {
+        const oneWay = associatedCompany.distanciaKmGRAUMP || estimateDistanceKm(associatedCompany.moradaSede) || 0;
+        kms = Math.round(oneWay * 2 * 10) / 10;
+        loc = `Sede: ${associatedCompany.moradaSede || associatedCompany.nome}`;
+        locTipo = 'sede';
+      }
+
+      return {
+        ...prev,
+        equipamentoId: eq.id,
+        empresaId: eq.empresaId,
+        matricula: eq.matricula,
+        marca: eq.marca,
+        modelo: eq.modelo,
+        nSerie: eq.nSerie,
+        kmsAtuais: eq.kmsAtuais || 0,
+        horasAtuais: eq.horasAtuais || 0,
+        previsaoRevisaoKms: (eq.kmsAtuais || 0) + 15000,
+        previsaoRevisaoHoras: (eq.horasAtuais || 0) + 500,
+        dataEntrega: prev.dataEntrega || eq.dataEntrega || '',
+        entregaPor: prev.entregaPor || eq.entregaPor || '',
+        dataFormacao: prev.dataFormacao || eq.dataFormacao || '',
+        formacaoPor: prev.formacaoPor || eq.formacaoPor || '',
+        localizacao: loc,
+        localizacaoTipo: locTipo,
+        distanciaKms: kms
+      };
+    });
     setPlateQuery(eq.matricula);
     setIsPlateDropdownOpen(false);
   };
@@ -625,7 +643,7 @@ export const Oficina: React.FC<OficinaProps> = ({
         ...prev,
         localizacao: locValue,
         localizacaoTipo: found?.type || 'estaleiro',
-        distanciaKms: found?.defaultKm || 50
+        distanciaKms: found?.defaultKm ?? 0
       }));
     }
   };
@@ -1877,6 +1895,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                     <div className="relative">
                       <input
                         type="number"
+                        step="0.1"
                         disabled={editingFolha.localizacao === GRAUMP_LOCATION}
                         value={editingFolha.distanciaKms || 0}
                         onChange={e => setEditingFolha(prev => ({ ...prev, distanciaKms: Number(e.target.value) }))}

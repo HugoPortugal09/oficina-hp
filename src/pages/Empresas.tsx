@@ -39,31 +39,15 @@ interface EmpresasProps {
   onSelectFolha?: (folha: FolhaServico) => void;
 }
 
-const GRAUMP_ORIGIN = 'Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha';
+import {
+  estimateDistanceKm,
+  fetchRoadDistanceKm,
+  getGoogleMapsDirectionsUrl,
+  getWazeDirectionsUrl,
+  GRAUMP_ORIGIN
+} from '../services/distanceService';
 
-// Realistic Road Distance Heuristic from Albergaria-a-Velha (GRAUMP)
-export function estimateDistanceKm(address?: string): number {
-  if (!address) return 45;
-  const a = address.toLowerCase();
-
-  if (a.includes('albergaria')) return 5;
-  if (a.includes('estarreja') || a.includes('sever') || a.includes('águeda') || a.includes('agueda')) return 20;
-  if (a.includes('aveiro') || a.includes('íhavo') || a.includes('ilhavo') || a.includes('vagos')) return 28;
-  if (a.includes('ovar') || a.includes('oliveira de azeméis') || a.includes('azemeis') || a.includes('são joão')) return 32;
-  if (a.includes('feira') || a.includes('espinho') || a.includes('anadia') || a.includes('mealhada')) return 42;
-  if (a.includes('porto') || a.includes('gaia') || a.includes('maia') || a.includes('matosinhos') || a.includes('gondomar')) return 62;
-  if (a.includes('coimbra') || a.includes('cantanhede') || a.includes('figueira da foz')) return 58;
-  if (a.includes('viseu') || a.includes('são pedro do sul') || a.includes('tondela')) return 65;
-  if (a.includes('braga') || a.includes('guimarães') || a.includes('famalicão') || a.includes('famalicao')) return 98;
-  if (a.includes('viana do castelo') || a.includes('barcelos')) return 125;
-  if (a.includes('leiria') || a.includes('pombal') || a.includes('marinha grande') || a.includes('fátima') || a.includes('fatima')) return 95;
-  if (a.includes('santarém') || a.includes('santarem') || a.includes('torres novas') || a.includes('tomar')) return 145;
-  if (a.includes('lisboa') || a.includes('sintra') || a.includes('cascais') || a.includes('loures') || a.includes('amadora') || a.includes('oeiras')) return 245;
-  if (a.includes('setúbal') || a.includes('setubal') || a.includes('almada') || a.includes('seixal')) return 275;
-  if (a.includes('faro') || a.includes('albufeira') || a.includes('portimão') || a.includes('algarve')) return 510;
-
-  return 45;
-}
+export { estimateDistanceKm };
 
 export const Empresas: React.FC<EmpresasProps> = ({
   empresas,
@@ -102,14 +86,15 @@ export const Empresas: React.FC<EmpresasProps> = ({
     empresa: null
   });
 
+  const [isCalculatingGps, setIsCalculatingGps] = useState(false);
+  const [calculatingEstaleiroId, setCalculatingEstaleiroId] = useState<string | null>(null);
+
   const handleOpenNavigation = (address: string, app: 'google' | 'waze') => {
     if (!address) return;
     if (app === 'google') {
-      const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(GRAUMP_ORIGIN)}&destination=${encodeURIComponent(address)}`;
-      window.open(url, '_blank');
+      window.open(getGoogleMapsDirectionsUrl(address), '_blank');
     } else {
-      const url = `https://waze.com/ul?q=${encodeURIComponent(address)}&navigate=yes`;
-      window.open(url, '_blank');
+      window.open(getWazeDirectionsUrl(address), '_blank');
     }
   };
 
@@ -127,13 +112,73 @@ export const Empresas: React.FC<EmpresasProps> = ({
     setIsModalOpen(true);
   };
 
+  const handleOpenEdit = (emp: Empresa) => {
+    const sedeKm = emp.distanciaKmGRAUMP || estimateDistanceKm(emp.moradaSede);
+    setEditingEmpresa({
+      ...emp,
+      distanciaKmGRAUMP: sedeKm,
+      estaleiros: emp.estaleiros?.map(est => ({
+        ...est,
+        distanciaKmGRAUMP: est.distanciaKmGRAUMP || estimateDistanceKm(est.morada)
+      }))
+    });
+    setIsModalOpen(true);
+  };
+
   const handleMoradaSedeChange = (morada: string) => {
     const km = estimateDistanceKm(morada);
     setEditingEmpresa(prev => ({
       ...prev,
       moradaSede: morada,
-      distanciaKmGRAUMP: km
+      distanciaKmGRAUMP: prev.distanciaKmGRAUMP && prev.distanciaKmGRAUMP > 0 ? prev.distanciaKmGRAUMP : km
     }));
+  };
+
+  const handleCalculateSedeGps = async () => {
+    if (!editingEmpresa.moradaSede) {
+      alert('Por favor, insira primeiro a morada da sede.');
+      return;
+    }
+    setIsCalculatingGps(true);
+    try {
+      const roadKm = await fetchRoadDistanceKm(editingEmpresa.moradaSede);
+      if (roadKm !== null) {
+        setEditingEmpresa(prev => ({ ...prev, distanciaKmGRAUMP: roadKm }));
+      } else {
+        const fallback = estimateDistanceKm(editingEmpresa.moradaSede);
+        setEditingEmpresa(prev => ({ ...prev, distanciaKmGRAUMP: fallback }));
+        alert(`Não foi possível obter a rota exata por GPS. Foi aplicada a estimativa de ${fallback} KM.`);
+      }
+    } catch {
+      const fallback = estimateDistanceKm(editingEmpresa.moradaSede);
+      setEditingEmpresa(prev => ({ ...prev, distanciaKmGRAUMP: fallback }));
+    } finally {
+      setIsCalculatingGps(false);
+    }
+  };
+
+  const handleCalculateEstaleiroGps = async (estId: string, morada: string) => {
+    if (!morada) {
+      alert('Por favor, insira primeiro a morada do estaleiro.');
+      return;
+    }
+    setCalculatingEstaleiroId(estId);
+    try {
+      const roadKm = await fetchRoadDistanceKm(morada);
+      const finalKm = roadKm !== null ? roadKm : estimateDistanceKm(morada);
+      setEditingEmpresa(prev => ({
+        ...prev,
+        estaleiros: prev.estaleiros?.map(e => e.id === estId ? { ...e, distanciaKmGRAUMP: finalKm } : e)
+      }));
+    } catch {
+      const fallback = estimateDistanceKm(morada);
+      setEditingEmpresa(prev => ({
+        ...prev,
+        estaleiros: prev.estaleiros?.map(e => e.id === estId ? { ...e, distanciaKmGRAUMP: fallback } : e)
+      }));
+    } finally {
+      setCalculatingEstaleiroId(null);
+    }
   };
 
   const handleAddEstaleiro = () => {
@@ -157,7 +202,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
       estaleiros: prev.estaleiros?.map(e => {
         if (e.id === id) {
           const updated = { ...e, [field]: value };
-          if (field === 'morada') {
+          if (field === 'morada' && (!e.distanciaKmGRAUMP || e.distanciaKmGRAUMP === 0)) {
             updated.distanciaKmGRAUMP = estimateDistanceKm(value);
           }
           return updated;
@@ -269,10 +314,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
             return (
               <GlassCard
                 key={emp.id}
-                onClick={() => {
-                  setEditingEmpresa(emp);
-                  setIsModalOpen(true);
-                }}
+                onClick={() => handleOpenEdit(emp)}
                 className="flex flex-col justify-between space-y-4 hover:border-hp-500/50 cursor-pointer group"
               >
                 <div className="space-y-3">
@@ -292,10 +334,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
 
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                       <button
-                        onClick={() => {
-                          setEditingEmpresa(emp);
-                          setIsModalOpen(true);
-                        }}
+                        onClick={() => handleOpenEdit(emp)}
                         title="Editar Empresa"
                         className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
                       >
@@ -444,10 +483,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
                 return (
                   <tr
                     key={emp.id}
-                    onClick={() => {
-                      setEditingEmpresa(emp);
-                      setIsModalOpen(true);
-                    }}
+                    onClick={() => handleOpenEdit(emp)}
                     className="hover:bg-hp-600/10 cursor-pointer transition-colors"
                   >
                     <td className="py-3 px-4 font-bold text-white">{emp.nome}</td>
@@ -530,7 +566,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           title={`${editingEmpresa.id ? 'Editar' : 'Registar Nova'} Empresa`}
-          subtitle="Dados gerais, moradas multilinhas da sede e estaleiros com cálculo de distâncias"
+          subtitle="Dados gerais, moradas multilinhas da sede e estaleiros com cálculo exato de distâncias da GRAUMP"
           maxWidth="4xl"
         >
           <div className="space-y-6">
@@ -561,24 +597,38 @@ export const Empresas: React.FC<EmpresasProps> = ({
 
             {/* Multiline Sede Address & Distances */}
             <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <MapPin className="w-4 h-4 text-hp-400" />
                   Morada da Sede (Multilinha)
                 </label>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-bold text-amber-300">
-                    {editingEmpresa.distanciaKmGRAUMP || 0} KM da GRAUMP
+                  <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                    {editingEmpresa.distanciaKmGRAUMP || 0} KM (GRAUMP Albergaria)
                   </span>
+
                   {editingEmpresa.moradaSede && (
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => handleOpenNavigation(editingEmpresa.moradaSede!, 'google')}
-                        className="px-2 py-0.5 rounded bg-hp-600/30 text-hp-300 hover:text-white text-[10px] font-bold"
+                        disabled={isCalculatingGps}
+                        onClick={handleCalculateSedeGps}
+                        className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-white text-[11px] font-bold border border-amber-500/40 flex items-center gap-1 transition-all disabled:opacity-50"
+                        title="Calcular distância rodoviária exata por GPS a partir da GRAUMP"
                       >
-                        GPS
+                        <Compass className={`w-3.5 h-3.5 ${isCalculatingGps ? 'animate-spin' : ''}`} />
+                        {isCalculatingGps ? 'A calcular...' : '📍 Calcular GPS'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenNavigation(editingEmpresa.moradaSede!, 'google')}
+                        className="px-2 py-1 rounded bg-hp-600/30 hover:bg-hp-600 text-hp-300 hover:text-white text-[11px] font-bold border border-hp-500/30 flex items-center gap-1"
+                        title="Abrir rota no Google Maps"
+                      >
+                        <Navigation className="w-3 h-3" />
+                        Google Maps
                       </button>
                     </div>
                   )}
@@ -593,17 +643,18 @@ export const Empresas: React.FC<EmpresasProps> = ({
                 className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
               />
 
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                <span>Distância calculada a partir de Albergaria-a-Velha (GRAUMP)</span>
-                <div className="flex items-center gap-1">
-                  <span>Ajustar KM:</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+                <span>Distância só de IDA calculada a partir de Albergaria-a-Velha (GRAUMP). Na Folha de Serviço multiplica por 2 (Ida e Volta).</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-slate-300">Ajustar KM:</span>
                   <input
                     type="number"
+                    step="0.1"
                     value={editingEmpresa.distanciaKmGRAUMP || 0}
                     onChange={e => setEditingEmpresa(prev => ({ ...prev, distanciaKmGRAUMP: Number(e.target.value) }))}
-                    className="w-16 py-0.5 px-1.5 bg-slate-900 border border-slate-700 rounded text-center text-white font-mono font-bold"
+                    className="w-20 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-center text-white font-mono font-bold"
                   />
-                  <span>KM</span>
+                  <span className="font-mono">KM</span>
                 </div>
               </div>
             </div>
@@ -653,33 +704,56 @@ export const Empresas: React.FC<EmpresasProps> = ({
               <div className="space-y-3">
                 {editingEmpresa.estaleiros?.map(est => (
                   <div key={est.id} className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <input
                         type="text"
                         placeholder="Nome do Estaleiro (Ex: Estaleiro Maia Norte)"
                         value={est.nome}
                         onChange={e => handleUpdateEstaleiro(est.id, 'nome', e.target.value)}
-                        className="flex-1 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-bold"
+                        className="flex-1 min-w-[180px] py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-bold"
                       />
 
-                      <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                        <span className="font-mono text-amber-300 font-bold">{est.distanciaKmGRAUMP || 0} KM</span>
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                        <span className="font-mono text-amber-300 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">{est.distanciaKmGRAUMP || 0} KM</span>
                         <input
                           type="number"
+                          step="0.1"
                           placeholder="KM"
                           value={est.distanciaKmGRAUMP || 0}
                           onChange={e => handleUpdateEstaleiro(est.id, 'distanciaKmGRAUMP', Number(e.target.value))}
-                          className="w-14 py-1 px-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-white font-mono"
+                          className="w-16 py-1 px-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-white font-mono font-bold"
                         />
-                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveEstaleiro(est.id)}
-                        className="p-1 text-slate-400 hover:text-rose-400 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                        {est.morada && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={calculatingEstaleiroId === est.id}
+                              onClick={() => handleCalculateEstaleiroGps(est.id, est.morada)}
+                              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-bold border border-amber-500/40"
+                              title="Calcular rota exata GPS"
+                            >
+                              {calculatingEstaleiroId === est.id ? 'A calcular...' : '📍 GPS'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNavigation(est.morada, 'google')}
+                              className="px-2 py-1 rounded bg-hp-600/30 hover:bg-hp-600 text-hp-300 hover:text-white text-[10px] font-bold"
+                              title="Google Maps"
+                            >
+                              Maps
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEstaleiro(est.id)}
+                          className="p-1 text-slate-400 hover:text-rose-400 rounded-lg ml-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <textarea

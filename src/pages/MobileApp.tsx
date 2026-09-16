@@ -58,7 +58,7 @@ import {
   type AiFolhaGenerationResult
 } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
-import { estimateDistanceKm } from './Empresas';
+import { estimateDistanceKm, getGoogleMapsDirectionsUrl } from '../services/distanceService';
 import type {
   FolhaServico,
   Empresa,
@@ -1564,30 +1564,137 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 )}
               </div>
 
-              {/* Empresa & Localização */}
-              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
-                  Empresa & Localização
-                </span>
-                <div className="flex flex-col gap-1.5">
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-hp-400 shrink-0" />
-                    <span>{empresas.find(e => e.id === selectedFolha.empresaId)?.nome || 'Empresa Associada'}</span>
+              {/* Empresa & Localização e Deslocação KM */}
+              {(() => {
+                const folhaEmp = empresas.find(e => e.id === selectedFolha.empresaId);
+                const sedeOneWay = folhaEmp?.distanciaKmGRAUMP || estimateDistanceKm(folhaEmp?.moradaSede) || 0;
+                const sedeRoundTrip = Math.round(sedeOneWay * 2 * 10) / 10;
+                const GRAUMP_LOC = 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)';
+
+                const locOptions: { label: string; value: string; kms: number; tipo: 'oficina' | 'sede' | 'estaleiro' }[] = [
+                  {
+                    label: '🏢 GRAUMP (Oficina Principal - Albergaria-a-Velha) [0 KM]',
+                    value: GRAUMP_LOC,
+                    kms: 0,
+                    tipo: 'oficina'
+                  }
+                ];
+
+                if (folhaEmp) {
+                  locOptions.push({
+                    label: `📍 Sede: ${folhaEmp.nome} (${folhaEmp.moradaSede || 'Sede'}) [${sedeRoundTrip} KM Ida e Volta]`,
+                    value: `Sede: ${folhaEmp.moradaSede || folhaEmp.nome}`,
+                    kms: sedeRoundTrip,
+                    tipo: 'sede'
+                  });
+
+                  folhaEmp.estaleiros?.forEach(est => {
+                    const estOneWay = est.distanciaKmGRAUMP || estimateDistanceKm(est.morada) || sedeOneWay;
+                    const estRoundTrip = Math.round(estOneWay * 2 * 10) / 10;
+                    locOptions.push({
+                      label: `🏗️ Estaleiro: ${est.nome} (${est.morada || 'Estaleiro'}) [${estRoundTrip} KM Ida e Volta]`,
+                      value: `Estaleiro ${est.nome}: ${est.morada || est.nome}`,
+                      kms: estRoundTrip,
+                      tipo: 'estaleiro'
+                    });
+                  });
+                }
+
+                return (
+                  <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                        Empresa & Local de Intervenção
+                      </span>
+                      {selectedFolha.localizacao && selectedFolha.localizacao !== GRAUMP_LOC && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const addr = selectedFolha.localizacao.replace(/^Sede:\s*|^Estaleiro[^:]*:\s*/, '');
+                            window.open(getGoogleMapsDirectionsUrl(addr || folhaEmp?.moradaSede || ''), '_blank');
+                          }}
+                          className="px-2 py-0.5 rounded-lg bg-hp-600/30 text-hp-300 hover:text-white text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <Navigation className="w-3 h-3" />
+                          Google Maps
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-hp-400 shrink-0" />
+                        <span>{folhaEmp?.nome || 'Empresa Associada'}</span>
+                      </div>
+
+                      {/* Local de Intervenção Select */}
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">Local de Intervenção</label>
+                        <select
+                          value={selectedFolha.localizacao || GRAUMP_LOC}
+                          onChange={e => {
+                            const chosenVal = e.target.value;
+                            const matched = locOptions.find(o => o.value === chosenVal);
+                            const updated = {
+                              ...selectedFolha,
+                              localizacao: chosenVal,
+                              localizacaoTipo: matched?.tipo || 'oficina',
+                              distanciaKms: matched?.kms ?? 0
+                            };
+                            setSelectedFolha(updated);
+                            db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, updated);
+                          }}
+                          className="w-full py-2.5 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-semibold focus:outline-none focus:border-hp-500"
+                        >
+                          {locOptions.map((opt, idx) => (
+                            <option key={idx} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Deslocação KM (Ida e Volta) & Pessoa Presente */}
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">
+                            Deslocação KM (Ida e Volta)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={selectedFolha.distanciaKms || 0}
+                              onChange={e => {
+                                const val = Number(e.target.value);
+                                setSelectedFolha(prev => prev ? { ...prev, distanciaKms: val } : null);
+                                db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { distanciaKms: val });
+                              }}
+                              className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold text-center focus:outline-none focus:border-hp-500"
+                            />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-mono">KM</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase">
+                            Pessoa Presente
+                          </label>
+                          <input
+                            type="text"
+                            value={selectedFolha.pessoaPresente || ''}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setSelectedFolha(prev => prev ? { ...prev, pessoaPresente: val } : null);
+                              db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { pessoaPresente: val });
+                            }}
+                            placeholder="Contacto / Responsável..."
+                            className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-semibold focus:outline-none focus:border-hp-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  {selectedFolha.localizacao && (
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{selectedFolha.localizacao}</span>
-                    </div>
-                  )}
-                  {selectedFolha.pessoaPresente && (
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                      <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>Presente: <b className="text-slate-200">{selectedFolha.pessoaPresente}</b></span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                );
+              })()}
 
               {/* ENTREGA & FORMAÇÃO CARD (Apenas quando o tipo é Entrega e Formação) */}
               {selectedFolha.tipo === 'Entrega e Formação' && (
@@ -3142,41 +3249,119 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </select>
               </div>
 
-              {/* Pessoa Presente no Local / Responsável (Apenas pessoas da empresa) */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-400 block uppercase flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" /> Pessoa Presente no Local / Responsável
-                </label>
-                <select
-                  value={manualFolha.pessoaPresente || ''}
-                  onChange={e => {
-                    const val = e.target.value;
-                    const cliMatch = clientes.find(c => c.nome === val && c.empresaId === manualFolha.empresaId);
-                    setManualFolha(prev => ({
-                      ...prev,
-                      pessoaPresente: val,
-                      clienteId: cliMatch?.id || prev.clienteId
-                    }));
-                  }}
-                  disabled={!manualFolha.empresaId}
-                  className="w-full py-3 px-3.5 bg-slate-950 border border-slate-700 rounded-2xl text-xs font-bold text-white disabled:opacity-50"
-                >
-                  <option value="">
-                    {!manualFolha.empresaId
-                      ? '-- Selecione primeiro a Viatura / Empresa --'
-                      : clientes.filter(c => c.empresaId === manualFolha.empresaId).length === 0
-                      ? '-- Sem contactos registados nesta empresa --'
-                      : '-- Selecionar Pessoa da Empresa --'}
-                  </option>
-                  {clientes
-                    .filter(c => c.empresaId === manualFolha.empresaId)
-                    .map(cli => (
-                      <option key={cli.id} value={cli.nome}>
-                        {cli.nome} {cli.cargo ? `(${cli.cargo})` : ''}
-                      </option>
-                    ))}
-                </select>
-              </div>
+              {/* Local de Intervenção & Deslocação KM */}
+              {(() => {
+                const manualEmp = empresas.find(e => e.id === manualFolha.empresaId);
+                const sedeOneWay = manualEmp?.distanciaKmGRAUMP || estimateDistanceKm(manualEmp?.moradaSede) || 0;
+                const sedeRoundTrip = Math.round(sedeOneWay * 2 * 10) / 10;
+                const GRAUMP_LOC = 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)';
+
+                const locOptions: { label: string; value: string; kms: number; tipo: 'oficina' | 'sede' | 'estaleiro' }[] = [
+                  {
+                    label: '🏢 GRAUMP (Oficina Principal - Albergaria-a-Velha) [0 KM]',
+                    value: GRAUMP_LOC,
+                    kms: 0,
+                    tipo: 'oficina'
+                  }
+                ];
+
+                if (manualEmp) {
+                  locOptions.push({
+                    label: `📍 Sede: ${manualEmp.nome} (${manualEmp.moradaSede || 'Sede'}) [${sedeRoundTrip} KM Ida e Volta]`,
+                    value: `Sede: ${manualEmp.moradaSede || manualEmp.nome}`,
+                    kms: sedeRoundTrip,
+                    tipo: 'sede'
+                  });
+
+                  manualEmp.estaleiros?.forEach(est => {
+                    const estOneWay = est.distanciaKmGRAUMP || estimateDistanceKm(est.morada) || sedeOneWay;
+                    const estRoundTrip = Math.round(estOneWay * 2 * 10) / 10;
+                    locOptions.push({
+                      label: `🏗️ Estaleiro: ${est.nome} (${est.morada || 'Estaleiro'}) [${estRoundTrip} KM Ida e Volta]`,
+                      value: `Estaleiro ${est.nome}: ${est.morada || est.nome}`,
+                      kms: estRoundTrip,
+                      tipo: 'estaleiro'
+                    });
+                  });
+                }
+
+                return (
+                  <div className="space-y-2 pt-1 border-t border-slate-800">
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 block uppercase mb-1">Local de Intervenção</label>
+                      <select
+                        value={manualFolha.localizacao || GRAUMP_LOC}
+                        onChange={e => {
+                          const chosenVal = e.target.value;
+                          const matched = locOptions.find(o => o.value === chosenVal);
+                          setManualFolha(prev => ({
+                            ...prev,
+                            localizacao: chosenVal,
+                            localizacaoTipo: matched?.tipo || 'oficina',
+                            distanciaKms: matched?.kms ?? 0
+                          }));
+                        }}
+                        className="w-full py-3 px-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-hp-500"
+                      >
+                        {locOptions.map((opt, idx) => (
+                          <option key={idx} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 block uppercase mb-1">
+                          Deslocação KM (x2)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={manualFolha.distanciaKms || 0}
+                            onChange={e => setManualFolha(prev => ({ ...prev, distanciaKms: Number(e.target.value) }))}
+                            className="w-full py-3 px-3 bg-slate-950 border border-slate-700 rounded-2xl text-sm font-mono font-bold text-white text-center"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-mono">KM</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 block uppercase mb-1">
+                          Pessoa no Local
+                        </label>
+                        <select
+                          value={manualFolha.pessoaPresente || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const cliMatch = clientes.find(c => c.nome === val && c.empresaId === manualFolha.empresaId);
+                            setManualFolha(prev => ({
+                              ...prev,
+                              pessoaPresente: val,
+                              clienteId: cliMatch?.id || prev.clienteId
+                            }));
+                          }}
+                          disabled={!manualFolha.empresaId}
+                          className="w-full py-3 px-3.5 bg-slate-950 border border-slate-700 rounded-2xl text-xs font-bold text-white disabled:opacity-50"
+                        >
+                          <option value="">
+                            {!manualFolha.empresaId
+                              ? '-- Sel. Empresa --'
+                              : '-- Pessoa Presente --'}
+                          </option>
+                          {clientes
+                            .filter(c => c.empresaId === manualFolha.empresaId)
+                            .map(cli => (
+                              <option key={cli.id} value={cli.nome}>
+                                {cli.nome}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 3. Kms & Horas Atuais */}
               <div className="grid grid-cols-2 gap-3">

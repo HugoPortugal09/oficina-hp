@@ -38,6 +38,7 @@ import type {
   UserProfile
 } from '../types';
 import { getPermissionsForRole } from '../types';
+import { estimateDistanceKm } from '../services/distanceService';
 
 interface PropostasProps {
   propostas: Proposta[];
@@ -51,15 +52,10 @@ interface PropostasProps {
 
 const GRAUMP_BASE = 'Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha';
 
-function estimateRoundTripKms(address?: string): number {
-  if (!address) return 60; // 30km ida + 30km volta padrão
-  const lower = address.toLowerCase();
-  if (lower.includes('albergaria')) return 10;
-  if (lower.includes('aveiro') || lower.includes('estarreja') || lower.includes('íhavo') || lower.includes('ilhavo')) return 40; // 20km x 2
-  if (lower.includes('porto') || lower.includes('maia') || lower.includes('gaia') || lower.includes('matosinhos')) return 120; // 60km x 2
-  if (lower.includes('coimbra') || lower.includes('mealhada') || lower.includes('agueda') || lower.includes('águeda')) return 70; // 35km x 2
-  if (lower.includes('lisboa') || lower.includes('sintra') || lower.includes('cascais') || lower.includes('loures')) return 500; // 250km x 2
-  return 60; // padrão
+function estimateRoundTripKms(empresa?: Empresa): number {
+  if (!empresa) return 90;
+  const oneWay = empresa.distanciaKmGRAUMP || estimateDistanceKm(empresa.moradaSede) || 45;
+  return Math.round(oneWay * 2 * 10) / 10;
 }
 
 // Searchable Catalog Part Select Combobox for Proposal Lines
@@ -367,9 +363,9 @@ export const Propostas: React.FC<PropostasProps> = ({
   // Add Deslocação Line (0.75 € / Km, Ida e Volta x 2 from GRAUMP)
   const handleAddDeslocacao = () => {
     const selectedEmp = empresas.find(e => e.id === editingProp.empresaId);
-    const roundTripKms = estimateRoundTripKms(selectedEmp?.moradaSede);
+    const roundTripKms = estimateRoundTripKms(selectedEmp);
     const precoPorKm = 0.75;
-    const subtotal = roundTripKms * precoPorKm;
+    const subtotal = Math.round(roundTripKms * precoPorKm * 100) / 100;
 
     const newLine: PropostaLinha = {
       id: db.generateId('plin'),
