@@ -942,19 +942,12 @@ export const db = {
           if (existingFs && existingFs.length > 0) {
             let fsChanged = false;
             const updatedFs = existingFs.map(f => {
-              let updated = { ...f };
               if (f.empresaId && idRemap.has(f.empresaId)) {
                 const targetId = idRemap.get(f.empresaId)!;
-                const targetEmp = existingEmpresas.find(e => e.id === targetId);
-                updated.empresaId = targetId;
-                if (targetEmp) updated.empresa = targetEmp.nome;
                 fsChanged = true;
+                return { ...f, empresaId: targetId };
               }
-              if (f.empresa && oldToTarget.has(f.empresa.trim().toUpperCase())) {
-                updated.empresa = oldToTarget.get(f.empresa.trim().toUpperCase())!;
-                fsChanged = true;
-              }
-              return updated;
+              return f;
             });
             if (fsChanged) this.save(STORAGE_KEYS.FOLHAS_SERVICO, updatedFs);
           }

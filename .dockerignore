@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.gemini
+dados_supabase
+Folhas de Serviço Programa Antigo
+*.log
+*.pdf
+*.html
