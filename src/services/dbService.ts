@@ -766,6 +766,205 @@ export const db = {
       localStorage.setItem(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(DEFAULT_CONFIG));
     }
 
+    // Consolidation migration for duplicate / alias companies
+    try {
+      const COMPANY_CONSOLIDATION_MAP: Record<string, string> = {
+        "C.M. ALBERGARIA": "MUNICIPIO DE ALBERGARIA A VELHA",
+        "C.M. ALENQUER": "MUNICIPIO DE ALENQUER",
+        "C.M. ALFANDEGA DA FÉ": "MUNICIPIO DE ALFANDEGA DA FE",
+        "C.M. ALMADA": "MUNICIPIO DE ALMADA",
+        "C.M. ARCOS DE VALDEVEZ": "MUNICIPIO DE ARCOS DE VALDEVEZ",
+        "C.M. AROUCA": "MUNICIPIO DE AROUCA",
+        "C.M. ARRAIOLOS": "MUNICIPIO DE ARRAIOLOS",
+        "C.M. BAIÃO": "MUNICIPIO DE BAIÃO",
+        "C.M. BARCELOS": "MUNICIPIO DE BARCELOS",
+        "C.M. BEJA": "MUNICIPIO DE BEJA",
+        "C.M. BRAGA": "MUNICIPIO DE BRAGA",
+        "C.M. CALDAS DA RAINHA": "MUNICIPIO DE CALDAS DA RAINHA",
+        "C.M. CAMINHA": "MUNICIPIO DE CAMINHA",
+        "C.M. CARRAZEDA DE ANSIÃES": "MUNICIPIO DE CARRAZEDA ANSIAES",
+        "C.M. CHAVES": "MUNICIPIO DE CHAVES",
+        "C.M. CHEVES": "MUNICIPIO DE CHAVES",
+        "C.M. CINFÃES": "MUNICIPIO DE CINFÃES",
+        "C.M. Coimbra": "MUNICIPIO DE COIMBRA",
+        "C.M. CONDEIXA": "MUNICIPIO DE CONDEIXA A NOVA",
+        "C.M. CORVO": "MUNICIPIO DO CORVO",
+        "C.M. ÉVORA": "MUNICIPIO DE EVORA",
+        "C.M. FORNOS DE ALGODRES": "MUNICIPIO DE FORNOS DE ALGODRES",
+        "C.M. GOUVEIA": "MUNICIPIO DE GOUVEIA",
+        "C.M. Guimarães": "MUNICIPIO DE GUIMARÃES",
+        "C.M. LAGOS": "MUNICIPIO DE LAGOS",
+        "C.M. LOULÉ": "MUNICIPIO DE LOULE",
+        "C.M. LOUSADA": "MUNICIPIO DE LOUSADA",
+        "C.M. MACEDO DE CAVALEIROS": "MUNICIPIO DE MACEDO DE CAVALEIROS",
+        "C.M. MAFRA": "MUNICIPIO DE MAFRA",
+        "C.M. MARVÃO": "MUNICIPIO DE MARVAO",
+        "C.M. MATOSINHOS": "MUNICIPIO MATOSINHOS",
+        "C.M. MELGAÇO": "MUNICIPIO DE MELGAÇO",
+        "C.M. MIRA": "MUNICIPIO DE MIRA",
+        "C.M. MOGADOURO": "MUNICIPIO DE MOGADOURO",
+        "C.M. MONTEMOR-O-NOVO": "MUNICIPIO DE MONTEMOR O NOVO",
+        "C.M. NAZARÉ": "SERVICOS MUNICIPALIZADOS CAMARA MUNICIPAL CONCELHO NAZARE",
+        "C.M. ÓBIDOS": "MUNICIPIO DE OBIDOS",
+        "C.M. ODEMIRA": "MUNICIPIO DE ODEMIRA",
+        "C.M. Oeiras": "MUNICIPIO DE OEIRAS",
+        "C.M. OLIV. DO HOSPITAL": "MUNICIPIO DE OLIVEIRA DO BAIRRO",
+        "C.M. OLIVEIRA DO HOSPITAL": "MUNICIPIO DE OLIVEIRA DO HOSPITAL",
+        "C.M. OVAR": "MUNICIPIO OVAR",
+        "C.M. PAÇOS DE FERREIRA": "MUNICIPIO DE PAÇOS DE FERREIRA",
+        "C.M. PAREDES": "MUNICIPIO DE PAREDES",
+        "C.M. PINHEL": "MUNICIPIO DE PINHEL",
+        "C.M. POMBAL": "MUNICIPIO DE POMBAL",
+        "C.M. PONTE DE LIMA": "MUNICIPIO DE PONTE DE LIMA",
+        "C.M. PONTE DE SOR": "MUNICIPIO DE PONTE DE SOR",
+        "C.M. PORTEL": "MUNICIPIO DE PORTEL",
+        "C.M. PORTO": "MUNICIPIO PORTO",
+        "C.M. PORTTO": "MUNICIPIO PORTO",
+        "C.M. PÓVOA DE VARZIM": "MUNICIPIO DA POVOA DE VARZIM",
+        "C.M. REGUENGOS DE MONSAR": "MUNICIPIO DE REGUENGOS MONSARAZ",
+        "C.M. REGUENGOS DE MONSARAZ": "MUNICIPIO DE REGUENGOS MONSARAZ",
+        "C.M. S. J. MADEIRA": "MUNICIPIO DE SAO JOAO DA MADEIRA",
+        "C.M. S. PEDRO DO SUL": "MUNICIPIO DE S PEDRO SUL",
+        "C.M. S.BRÁS DE ALPORTEL": "MUNICIPIO DE S BRAS DE ALPORTEL",
+        "C.M. SANTARÉM": "MUNICIPIO DE SANTAREM",
+        "C.M. Santiago de Cacém": "MUNICIPIO SANTIAGO CACEM",
+        "C.M. SÃO BRÁS DE ALPORTEL": "MUNICIPIO DE S BRAS DE ALPORTEL",
+        "C.M. SERPA": "MUNICIPIO DE SERPA",
+        "C.M. SESIMBRA": "MUNICIPIO DE SESIMBRA",
+        "C.M. SOURE": "MUNICIPIO DE SOURE",
+        "C.M. Trancoso": "MUNICIPIO DE TRANCOSO",
+        "C.M. VALENÇA": "MUNICIPIO DE VALENÇA",
+        "C.M. VALPAÇOS": "MUNICIPIO DE VALPACOS",
+        "C.M. VESEU": "MUNICIPIO DE VISEU",
+        "C.M. VIANA DO ALENTEJO": "MUNICIPIO DE VIANA DO ALENTEJO",
+        "C.M. VILA FLOR": "MUNICIPIO DE VILA FLOR",
+        "C.M. VINHAIS": "MUNICIPIO DE VINHAIS",
+        "C.M. VISEU": "MUNICIPIO DE VISEU",
+        "PORTO AMBIENTE": "EMAP - EMPRESA MUNICIPAL DE AMBIENTE DO PORTO",
+        "J. F. ALFRAGIDE": "FREGUESIA DE ALFRAGIDE",
+        "J. F. MODIVAS": "Freguesia de Modivas",
+        "J.F VALBOM E JOVIM": "UF GONDOMAR (SAO COSME), VALBOM E JOVIM",
+        "J.F. ARCA E PONTE DE LIMA": "JF de Arca e Ponte de Lima",
+        "J.F. ARROIOS - VECORENT": "FREGUESIA DE ARROIOS",
+        "J.F. ARROIOS FOLHA - 01": "FREGUESIA DE ARROIOS",
+        "J.F. CAMPOLIDE": "FREGUESIA DE CAMPOLIDE",
+        "J.F. ENCOSTA DO SOL": "Freguesia de Encosta do Sol",
+        "J.F. ESTRELA": "Freguesia de Estrela",
+        "J.F. ODIVELAS": "Freguesia de Odivelas",
+        "MAIA AMBIENTE": "MAIAMBIENTE, EM",
+        "MARINA VILAMOURA": "MARINA DE VILAMOURA SA",
+        "PREZERO - ACE": "PREZERO PORTUGAL - ECOAMBIENTE",
+        "PRÉ-ZERO - ECOAMBIENTE": "PREZERO PORTUGAL - ECOAMBIENTE",
+        "SANTIAGO DO CACÉM": "MUNICIPIO SANTIAGO CACEM",
+        "VIMÁGUA": "VIMAGUA EMPRESA DE AGUA E SANEAMENTO DE GUIMARÃES E VIZ",
+        "VECORENT – J.F. ARROIOS": "FREGUESIA DE ARROIOS"
+      };
+
+      const existingEmpresas = this.get<Empresa>(STORAGE_KEYS.EMPRESAS);
+      if (existingEmpresas && existingEmpresas.length > 0) {
+        const idRemap = new Map<string, string>();
+        const empresaByName = new Map<string, Empresa>();
+        existingEmpresas.forEach(e => {
+          empresaByName.set(e.nome.trim().toUpperCase(), e);
+        });
+
+        const oldToTarget = new Map<string, string>();
+        for (const [oldName, targetName] of Object.entries(COMPANY_CONSOLIDATION_MAP)) {
+          if (oldName.trim().toUpperCase() !== targetName.trim().toUpperCase()) {
+            oldToTarget.set(oldName.trim().toUpperCase(), targetName.trim());
+          }
+        }
+
+        let hasChanges = false;
+        existingEmpresas.forEach(emp => {
+          const norm = emp.nome.trim().toUpperCase();
+          if (oldToTarget.has(norm)) {
+            const targetName = oldToTarget.get(norm)!;
+            let targetEmp = empresaByName.get(targetName.toUpperCase());
+            if (!targetEmp) {
+              targetEmp = existingEmpresas.find(e => e.nome.trim().toUpperCase() === targetName.toUpperCase());
+            }
+
+            if (targetEmp && targetEmp.id !== emp.id) {
+              idRemap.set(emp.id, targetEmp.id);
+              hasChanges = true;
+              if (Array.isArray(emp.estaleiros) && emp.estaleiros.length > 0) {
+                if (!Array.isArray(targetEmp.estaleiros)) targetEmp.estaleiros = [];
+                emp.estaleiros.forEach(est => {
+                  if (!targetEmp!.estaleiros.some(te => te.nome === est.nome || te.id === est.id)) {
+                    targetEmp!.estaleiros.push(est);
+                  }
+                });
+              }
+            } else {
+              emp.nome = targetName;
+              empresaByName.set(targetName.toUpperCase(), emp);
+              hasChanges = true;
+            }
+          }
+        });
+
+        if (hasChanges || idRemap.size > 0) {
+          // Reassign Clientes
+          const existingClientes = this.get<Cliente>(STORAGE_KEYS.CLIENTES);
+          if (existingClientes && existingClientes.length > 0) {
+            let clChanged = false;
+            const updatedClientes = existingClientes.map(c => {
+              if (c.empresaId && idRemap.has(c.empresaId)) {
+                clChanged = true;
+                return { ...c, empresaId: idRemap.get(c.empresaId)! };
+              }
+              return c;
+            });
+            if (clChanged) this.save(STORAGE_KEYS.CLIENTES, updatedClientes);
+          }
+
+          // Reassign Equipamentos (Veículos)
+          const existingEqs = this.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+          if (existingEqs && existingEqs.length > 0) {
+            let eqChanged = false;
+            const updatedEqs = existingEqs.map(eq => {
+              if (eq.empresaId && idRemap.has(eq.empresaId)) {
+                eqChanged = true;
+                return { ...eq, empresaId: idRemap.get(eq.empresaId)! };
+              }
+              return eq;
+            });
+            if (eqChanged) this.save(STORAGE_KEYS.EQUIPAMENTOS, updatedEqs);
+          }
+
+          // Reassign Folhas de Serviço
+          const existingFs = this.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
+          if (existingFs && existingFs.length > 0) {
+            let fsChanged = false;
+            const updatedFs = existingFs.map(f => {
+              let updated = { ...f };
+              if (f.empresaId && idRemap.has(f.empresaId)) {
+                const targetId = idRemap.get(f.empresaId)!;
+                const targetEmp = existingEmpresas.find(e => e.id === targetId);
+                updated.empresaId = targetId;
+                if (targetEmp) updated.empresa = targetEmp.nome;
+                fsChanged = true;
+              }
+              if (f.empresa && oldToTarget.has(f.empresa.trim().toUpperCase())) {
+                updated.empresa = oldToTarget.get(f.empresa.trim().toUpperCase())!;
+                fsChanged = true;
+              }
+              return updated;
+            });
+            if (fsChanged) this.save(STORAGE_KEYS.FOLHAS_SERVICO, updatedFs);
+          }
+
+          // Delete obsolete duplicate empresas
+          const idsToDelete = new Set(idRemap.keys());
+          const cleanedEmpresas = existingEmpresas.filter(e => !idsToDelete.has(e.id));
+          this.save(STORAGE_KEYS.EMPRESAS, cleanedEmpresas);
+        }
+      }
+    } catch (err) {
+      console.warn('Error during company consolidation:', err);
+    }
+
     // Synchronize and heal any existing Folhas in localStorage so tipo matches status
     try {
       const existingFolhas = this.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
