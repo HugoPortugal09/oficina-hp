@@ -1,14 +1,14 @@
 # Stage 1: Build the SPA
-FROM node:22-alpine AS build
+FROM node:22-slim AS build
 WORKDIR /app
 ENV NODE_ENV=development
 COPY package*.json ./
-RUN npm install --include=dev
+RUN npm install
 COPY . .
-RUN npm run build
+RUN npx vite build
 
-# Stage 2: Serve SPA and Email API with Node.js Alpine
-FROM node:22-alpine
+# Stage 2: Serve SPA and Email API with Node.js
+FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./

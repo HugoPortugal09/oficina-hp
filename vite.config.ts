@@ -1,7 +1,5 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// @ts-ignore
-import nodemailer from 'nodemailer';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -20,8 +18,9 @@ export default defineConfig({
           req.on('data', chunk => { body += chunk; });
           req.on('end', async () => {
             try {
+              const nodemailer = await import('nodemailer');
               const payload = JSON.parse(body);
-              const transporter = nodemailer.createTransport({
+              const transporter = nodemailer.default.createTransport({
                 service: 'gmail',
                 auth: {
                   user: process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com',
