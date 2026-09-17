@@ -58,107 +58,111 @@ const DEFAULT_CONFIG: ConfiguracaoOficina = {
 
 const INITIAL_EMPRESAS: Empresa[] = [
   {
-    id: 'emp_001',
-    nome: 'Construções & Pavimentos Silva, Lda',
+    id: 'E001',
+    nome: 'PREZERO PORTUGAL, S.A.',
     nif: '501234567',
-    moradaSede: 'Rua Principal do Parque, 102 - Porto',
-    telefone: '912 345 678',
-    email: 'obras@silva-construcoes.pt',
+    moradaSede: 'Rua da Lionesa, 446, Edifício G39 - 4465-671  Leça do Balio',
+    telefone: '229 000 000',
+    email: 'contacto@prezero.pt',
     estaleiros: [
-      { id: 'est_1', nome: 'Estaleiro Maia', morada: 'Via Norte Km 4, Maia', responsavel: 'Eng. Carlos', telefone: '912 345 679' },
-      { id: 'est_2', nome: 'Estaleiro Gaia', morada: 'Av. Vasco da Gama, Canidelo', responsavel: 'Mestre Pereira', telefone: '912 345 680' }
+      { id: 'est_braganca', nome: 'Ecocentro de Bragança', morada: 'Quinta do Lima, Vale D´Álvaro 5300-067 Bragança' },
+      { id: 'est_maia', nome: 'Prezero Maia', morada: 'ZI Maia - Armazém 36 Setor II, R. de Rafael Baptista Rodrigues, 4475-150 Gemunde (Maia)' }
     ]
   },
   {
-    id: 'emp_002',
-    nome: 'TransLogística Ibérica S.A.',
-    nif: '509876543',
-    moradaSede: 'Terminal de Cargas de Leixões, Armazém 4',
-    telefone: '934 567 890',
-    email: 'frotas@translogistica.pt',
+    id: 'E009',
+    nome: 'MUNICIPIO PORTO',
+    nif: '501306099',
+    moradaSede: 'PC GEN HUMBERTO DELGADO , 4049-001 PORTO',
+    telefone: '222 000 000',
+    email: 'geral@cm-porto.pt',
     estaleiros: [
-      { id: 'est_3', nome: 'Base Logística Vila do Conde', morada: 'Zona Industrial da Varziela', responsavel: 'Sérgio Santos', telefone: '934 567 891' }
+      { id: 'est_porto_oficinas', nome: 'OFICINAS', morada: 'R. Acácio Lino 69, Porto' },
+      { id: 'est_porto_prado', nome: 'Cemitério Prado Repouso', morada: 'Largo do Padre Baltasar Guedes, 4300-059 Porto' },
+      { id: 'est_porto_parque', nome: 'Parque da Cidade', morada: 'Parque da Cidade, 4100 Porto' }
     ]
   },
   {
-    id: 'emp_003',
-    nome: 'AgroTerra Soluções Agrícolas',
-    nif: '508765432',
-    moradaSede: 'Quinta dos Vales, Guimarães',
-    telefone: '965 432 100',
-    email: 'maquinas@agroterra.pt',
-    estaleiros: []
+    id: 'E005',
+    nome: 'MUNICIPIO DE COIMBRA',
+    nif: '506415082',
+    moradaSede: 'Praça 8 de Maio, 3000-300 Coimbra',
+    telefone: '239 857 500',
+    email: 'geral@cm-coimbra.pt',
+    estaleiros: [
+      { id: 'est_coimbra_oficinas', nome: 'Oficinas Mecânicas - CM COIMBRA', morada: 'Rua da Liberdade, Carvalhais de Baixo, 3040-658 Assafarge' }
+    ]
   }
 ];
 
 const INITIAL_CLIENTES: Cliente[] = [
   {
     id: 'cli_001',
-    nome: 'Eng. António Silva',
+    nome: 'Gestão de Frotas Porto',
     telemovel: '912 345 678',
-    email: 'a.silva@silva-construcoes.pt',
-    empresaId: 'emp_001',
+    email: 'frotas@cm-porto.pt',
+    empresaId: 'E009',
     cargo: 'Diretor de Frotas'
   },
   {
     id: 'cli_002',
-    nome: 'Sérgio Santos',
+    nome: 'Responsável Técnico Prezero',
     telemovel: '934 567 890',
-    email: 'ssantos@translogistica.pt',
-    empresaId: 'emp_002',
+    email: 'tecnico@prezero.pt',
+    empresaId: 'E001',
     cargo: 'Gestor de Manutenção'
   },
   {
     id: 'cli_003',
-    nome: 'Manuel Fernandes',
+    nome: 'Oficina Municipal Coimbra',
     telemovel: '965 432 100',
-    email: 'm.fernandes@agroterra.pt',
-    empresaId: 'emp_003',
-    cargo: 'Proprietário'
+    email: 'oficinas@cm-coimbra.pt',
+    empresaId: 'E005',
+    cargo: 'Chefe de Oficina'
   }
 ];
 
 const INITIAL_EQUIPAMENTOS: Equipamento[] = [
   {
     id: 'eq_001',
-    matricula: 'AA-45-ZZ',
-    marca: 'Mercedes-Benz',
-    modelo: 'Actros 1845',
-    nSerie: 'WDB9634031L892314',
+    matricula: 'CH-28-LN',
+    marca: 'Goupil',
+    modelo: 'G4',
+    nSerie: 'G4-2021-0081',
     ano: 2021,
-    tipo: 'Trator Pesado',
-    kmsAtuais: 185420,
-    horasAtuais: 4210,
-    empresaId: 'emp_002',
-    notas: 'Viatura afeta à rota internacional Porto-Madrid.'
+    tipo: 'Elétrico Urbano',
+    kmsAtuais: 32400,
+    horasAtuais: 1420,
+    empresaId: 'E009',
+    notas: 'Viatura 100% elétrica em operação municipal.'
   },
   {
     id: 'eq_002',
-    matricula: '12-XT-98',
-    marca: 'Caterpillar',
-    modelo: '320 GC',
-    nSerie: 'CAT0320GCK90123',
+    matricula: '93-TX-72',
+    marca: 'Goupil',
+    modelo: 'G4',
+    nSerie: 'G4-2022-0194',
     ano: 2022,
-    tipo: 'Escavadora Giratória',
-    kmsAtuais: 0,
-    horasAtuais: 3450,
-    empresaId: 'emp_001',
-    estaleiroId: 'est_1',
-    notas: 'Sistema hidráulico verificado aos 3000h.'
+    tipo: 'Elétrico Urbano',
+    kmsAtuais: 18500,
+    horasAtuais: 940,
+    empresaId: 'E001',
+    estaleiroId: 'est_maia',
+    notas: 'Equipamento afeto à recolha seletiva.'
   },
   {
     id: 'eq_003',
-    matricula: '98-BB-12',
-    marca: 'Iveco',
-    modelo: 'Daily 35S15',
-    nSerie: 'ZCFC35A2405819283',
+    matricula: '16-UA-69',
+    marca: 'Goupil',
+    modelo: 'G4',
+    nSerie: 'G4-2020-0044',
     ano: 2020,
-    tipo: 'Furgão Oficina',
-    kmsAtuais: 94300,
-    horasAtuais: 1800,
-    empresaId: 'emp_001',
-    estaleiroId: 'est_2',
-    notas: 'Furgão de apoio móvel da equipa de estaleiro.'
+    tipo: 'Elétrico Urbano',
+    kmsAtuais: 44300,
+    horasAtuais: 2100,
+    empresaId: 'E005',
+    estaleiroId: 'est_coimbra_oficinas',
+    notas: 'Revisão geral do sistema de tração elétrica efetuada.'
   },
   {
     id: 'eq_004',
@@ -963,6 +967,62 @@ export const db = {
       }
     } catch (err) {
       console.warn('Error during company consolidation:', err);
+    }
+
+    // Explicit purge of blacklisted / unwanted dummy client entities
+    try {
+      const PURGE_NAMES = [
+        "AGROTERRA SOLUÇÕES AGRÍCOLAS",
+        "BASE LOGÍSTICA VILA DO CONDE",
+        "CONSTRUÇÕES & PAVIMENTOS SILVA, LDA",
+        "ESTALEIRO GAIA",
+        "ESTALEIRO MAIA",
+        "IBERBATERIAS - SOCIEDADE DE REPRESENTAÇÕES LDA",
+        "MARGEMPRISMA, UNIPESSOAL LDA"
+      ];
+
+      const empresas = this.get<Empresa>(STORAGE_KEYS.EMPRESAS);
+      if (empresas && empresas.length > 0) {
+        const deletedIds = new Set<string>();
+        const filteredEmpresas = empresas.filter(e => {
+          const norm = (e.nome || '').trim().toUpperCase();
+          if (PURGE_NAMES.includes(norm) || norm.includes('CONSTRUÇÕES & PAVIMENTOS') || norm.includes('AGROTERRA')) {
+            deletedIds.add(e.id);
+            return false;
+          }
+          if (Array.isArray(e.estaleiros)) {
+            e.estaleiros = e.estaleiros.filter(est => {
+              const estNorm = (est.nome || '').trim().toUpperCase();
+              return !PURGE_NAMES.includes(estNorm);
+            });
+          }
+          return true;
+        });
+
+        if (deletedIds.size > 0 || filteredEmpresas.length !== empresas.length) {
+          this.save(STORAGE_KEYS.EMPRESAS, filteredEmpresas);
+
+          // Purge associated dummy clientes
+          const clientes = this.get<Cliente>(STORAGE_KEYS.CLIENTES);
+          if (clientes && clientes.length > 0) {
+            const filteredClientes = clientes.filter(c => !deletedIds.has(c.empresaId));
+            if (filteredClientes.length !== clientes.length) {
+              this.save(STORAGE_KEYS.CLIENTES, filteredClientes);
+            }
+          }
+
+          // Purge associated dummy equipamentos
+          const equipamentos = this.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+          if (equipamentos && equipamentos.length > 0) {
+            const filteredEquipamentos = equipamentos.filter(eq => !deletedIds.has(eq.empresaId));
+            if (filteredEquipamentos.length !== equipamentos.length) {
+              this.save(STORAGE_KEYS.EQUIPAMENTOS, filteredEquipamentos);
+            }
+          }
+        }
+      }
+    } catch (purgeErr) {
+      console.warn('Error purging blacklisted companies:', purgeErr);
     }
 
     // Synchronize and heal any existing Folhas in localStorage so tipo matches status
