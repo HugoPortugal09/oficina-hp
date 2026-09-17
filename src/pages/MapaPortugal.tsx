@@ -107,15 +107,17 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
         e => e.id === f.equipamentoId || e.matricula.toUpperCase() === f.matricula.toUpperCase()
       );
 
-      // Best address resolution: Estaleiro > Empresa Sede > Folha Localização > Nome da Empresa
-      let targetAddress = f.localizacao || '';
-      if (emp?.estaleiros && emp.estaleiros.length > 0 && eq?.estaleiroId) {
-        const est = emp.estaleiros.find(s => s.id === eq.estaleiroId);
-        if (est?.morada) targetAddress = `${est.morada}, ${est.nome}`;
-      } else if (emp?.moradaSede) {
-        targetAddress = emp.moradaSede;
-      } else if (!targetAddress && emp?.nome) {
-        targetAddress = emp.nome;
+      // Best address resolution: Folha Localização > Estaleiro > Empresa Sede > Nome da Empresa
+      let targetAddress = f.localizacao?.trim() || '';
+      if (!targetAddress) {
+        if (emp?.estaleiros && emp.estaleiros.length > 0 && eq?.estaleiroId) {
+          const est = emp.estaleiros.find(s => s.id === eq.estaleiroId);
+          if (est?.morada) targetAddress = `${est.morada}, ${est.nome}`;
+        } else if (emp?.moradaSede) {
+          targetAddress = emp.moradaSede;
+        } else if (emp?.nome) {
+          targetAddress = emp.nome;
+        }
       }
 
       const coords = resolvePortugalCoordinates(targetAddress, f.id);
@@ -207,13 +209,15 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       }
     });
 
-    let tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-    let attribution = '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap';
+    let tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    let attribution = '&copy; OpenStreetMap contributors';
 
     if (mapStyle === 'dark') {
-      tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png';
+      tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+      attribution = '&copy; Esri &copy; OpenStreetMap';
     } else if (mapStyle === 'light') {
-      tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png';
+      tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+      attribution = '&copy; Esri &copy; OpenStreetMap';
     } else if (mapStyle === 'streets') {
       tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
       attribution = '&copy; OpenStreetMap contributors';
@@ -221,8 +225,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
 
     L.tileLayer(tileUrl, {
       attribution,
-      maxZoom: 19,
-      subdomains: 'abcd'
+      maxZoom: 19
     }).addTo(map);
 
     return () => {
@@ -591,25 +594,6 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
             className="w-full h-[620px] z-10"
             style={{ background: '#090d16' }}
           />
-
-          {/* Quick Floating Map Overlay Legend */}
-          <div className="absolute top-4 left-4 z-20 p-3 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-slate-800 shadow-xl space-y-1.5 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-amber-400 animate-ping"></span>
-              <b className="text-white text-xs font-extrabold">Sede GRAUMP Albergaria</b>
-            </div>
-            <div className="flex items-center gap-3 pt-1 text-[11px] font-semibold text-slate-300">
-              <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Assistência (AT)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span> Contrato (CT)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span> Outros / Garantias
-              </span>
-            </div>
-          </div>
         </div>
 
         {/* Side Panel: Search, Region Filter & Interactive Open Orders List (4 Columns) */}
