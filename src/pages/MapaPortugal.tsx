@@ -233,235 +233,208 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     };
   }, [mapStyle]);
 
-  // 6. Draw Workshop Base HQ and Clustered Pins on the map
+  // 6. Dynamic Zoom-Aware Marker Clustering & Pin Rendering
   useEffect(() => {
     const map = mapInstanceRef.current;
     const group = markersGroupRef.current;
     if (!map || !group) return;
 
-    group.clearLayers();
+    const renderMarkers = () => {
+      group.clearLayers();
 
-    // A. Add Workshop Sede GRAUMP Marker (Golden Workshop Star Pin)
-    const baseIconHtml = `
-      <div class="relative flex items-center justify-center">
-        <div class="absolute w-12 h-12 rounded-full bg-amber-500/30 animate-ping"></div>
-        <div class="relative w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-300 border-2 border-white shadow-2xl flex items-center justify-center text-slate-950 font-black text-sm">
-          <svg class="w-5 h-5 text-slate-950 fill-current" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        </div>
-      </div>
-    `;
+      // Screen-pixel distance threshold for grouping overlapping pins (e.g. 36px)
+      // When pins overlap on screen at current zoom, group them into a cluster with the count.
+      // When zoomed in so pins are separated by > 36px, render each as an individual pin WITHOUT the number!
+      const PIXEL_RADIUS = 36;
 
-    const baseIcon = L.divIcon({
-      html: baseIconHtml,
-      className: 'custom-hq-pin',
-      iconSize: [40, 40],
-      iconAnchor: [20, 20]
-    });
-
-    const baseMarker = L.marker([OFICINA_HP_BASE.lat, OFICINA_HP_BASE.lng], { icon: baseIcon });
-    baseMarker.bindPopup(`
-      <div style="font-family: inherit; min-width: 220px; color: #0f172a; padding: 4px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-          <span style="background: #f59e0b; color: #000; font-weight: 900; font-size: 10px; padding: 2px 6px; border-radius: 6px; text-transform: uppercase;">SEDE CENTRAL</span>
-          <b style="font-size: 13px;">${OFICINA_HP_BASE.nome}</b>
-        </div>
-        <p style="font-size: 11px; color: #475569; margin: 0 0 6px 0;">${OFICINA_HP_BASE.morada}</p>
-        <div style="background: #f8fafc; padding: 6px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 11px; font-weight: 700; color: #0284c7;">
-          📍 Ponto Zero de Deslocações & Assistências
-        </div>
-      </div>
-    `);
-    group.addLayer(baseMarker);
-
-    // B. Group close/overlapping markers into location clusters
-    interface MapClusterGroup {
-      id: string;
-      lat: number;
-      lng: number;
-      items: MapMarkerItem[];
-      empresaNome: string;
-      moradaExibicao: string;
-      cidade: string;
-      distrito: string;
-      distanciaKm: number;
-      hasAT: boolean;
-      hasCT: boolean;
-    }
-
-    const clusters: MapClusterGroup[] = [];
-    const CLUSTER_THRESHOLD = 0.008; // ~800m threshold to group same yard/city
-
-    filteredMarkers.forEach(item => {
-      const existing = clusters.find(c => {
-        const dLat = Math.abs(c.lat - item.coords.lat);
-        const dLng = Math.abs(c.lng - item.coords.lng);
-        return dLat < CLUSTER_THRESHOLD && dLng < CLUSTER_THRESHOLD;
-      });
-
-      if (existing) {
-        existing.items.push(item);
-        if (item.isAT) existing.hasAT = true;
-        if (item.isCT) existing.hasCT = true;
-      } else {
-        clusters.push({
-          id: `cluster_${item.coords.lat.toFixed(4)}_${item.coords.lng.toFixed(4)}_${clusters.length}`,
-          lat: item.coords.lat,
-          lng: item.coords.lng,
-          items: [item],
-          empresaNome: item.empresa?.nome || 'Cliente Geral',
-          moradaExibicao: item.moradaExibicao,
-          cidade: item.coords.cidade,
-          distrito: item.coords.distrito,
-          distanciaKm: item.distanciaKm,
-          hasAT: item.isAT,
-          hasCT: item.isCT
-        });
+      interface DynamicCluster {
+        id: string;
+        centerLat: number;
+        centerLng: number;
+        items: MapMarkerItem[];
+        screenPoint: L.Point;
       }
-    });
 
-    // C. Add Pins for each Cluster / Location with Count Display
-    clusters.forEach(cluster => {
-      const count = cluster.items.length;
-      const isMulti = count > 1;
-      const isAT = cluster.hasAT;
-      const isCT = cluster.hasCT;
+      const clusters: DynamicCluster[] = [];
 
-      // Color scheme based on service type
-      const pinColor = isAT ? '#f97316' : isCT ? '#a855f7' : '#0284c7';
-      const pinBgGradient = isAT
-        ? 'from-orange-500 to-amber-600'
-        : isCT
-        ? 'from-purple-600 to-indigo-600'
-        : 'from-sky-500 to-blue-600';
+      filteredMarkers.forEach(item => {
+        const screenPt = map.latLngToLayerPoint([item.coords.lat, item.coords.lng]);
 
-      const pinIconHtml = isMulti
-        ? `
-        <div class="relative group cursor-pointer" id="cluster-${cluster.id}">
-          <div class="absolute -top-2 -left-2 w-12 h-12 rounded-full animate-ping opacity-35" style="background-color: ${pinColor};"></div>
-          <div class="relative w-9 h-9 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-2xl flex items-center justify-center text-white font-black text-sm transform hover:scale-125 transition-transform">
-            <span class="tracking-tight font-black">${count}</span>
-          </div>
-          <div class="absolute -top-2 -right-2 bg-emerald-500 text-white font-black text-[9px] px-1.5 py-0.2 rounded-full border border-white shadow-md flex items-center gap-0.5">
-            <span>${count} FS</span>
-          </div>
-          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full border border-white" style="background-color: ${pinColor};"></div>
-        </div>
-      `
-        : `
-        <div class="relative group cursor-pointer" id="pin-${cluster.items[0].folha.id}">
-          <div class="absolute -top-1 -left-1 w-10 h-10 rounded-full animate-pulse" style="background-color: ${pinColor}33;"></div>
-          <div class="relative w-8 h-8 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-xl flex items-center justify-center text-white font-extrabold text-[11px] transform hover:scale-125 transition-transform">
-            ${isAT ? '⚡' : isCT ? '📜' : '🛡️'}
-          </div>
-          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full border border-white" style="background-color: ${pinColor};"></div>
-        </div>
-      `;
+        // Find if there is an existing cluster within screen pixel radius
+        const existing = clusters.find(c => {
+          return screenPt.distanceTo(c.screenPoint) <= PIXEL_RADIUS;
+        });
 
-      const customPin = L.divIcon({
-        html: pinIconHtml,
-        className: 'custom-folha-pin',
-        iconSize: isMulti ? [38, 38] : [32, 32],
-        iconAnchor: isMulti ? [19, 19] : [16, 16],
-        popupAnchor: [0, -20]
-      });
-
-      const marker = L.marker([cluster.lat, cluster.lng], { icon: customPin });
-
-      // Create Custom Interactive Popup for Single or Multi Services
-      const popupContent = document.createElement('div');
-      popupContent.className = 'font-sans p-1 text-slate-900 min-w-[280px] max-w-[340px] space-y-2';
-
-      popupContent.innerHTML = `
-        <div class="border-b pb-2 border-slate-200">
-          <div class="flex items-center justify-between gap-1 mb-1">
-            <span style="background-color: ${pinColor}; color: white;" class="font-mono font-black text-xs px-2 py-0.5 rounded-lg shadow-sm">
-              ${isMulti ? `${count} SERVIÇOS NO LOCAL` : cluster.items[0].folha.numero}
-            </span>
-            <span class="text-[10px] font-bold text-sky-700 font-mono">
-              📍 ${cluster.distanciaKm} Km da Sede
-            </span>
-          </div>
-          <h4 class="text-sm font-black text-slate-900 leading-tight">${cluster.empresaNome}</h4>
-          <p class="text-[11px] text-slate-500 font-medium">📍 ${cluster.moradaExibicao}</p>
-        </div>
-
-        <div class="space-y-2 max-h-[300px] overflow-y-auto pt-1 pr-1 custom-scrollbar">
-          ${cluster.items
-            .map(
-              item => `
-            <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 shadow-sm hover:border-hp-500/50 transition-colors">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-1.5">
-                  <span class="font-mono font-black text-xs text-hp-600">${item.folha.numero}</span>
-                  <span class="font-mono font-bold text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-800 rounded">
-                    ${item.folha.matricula}
-                  </span>
-                </div>
-                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
-                  item.isAT ? 'bg-orange-100 text-orange-700' : item.isCT ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'
-                }">
-                  ${item.folha.tipo}
-                </span>
-              </div>
-
-              ${
-                item.folha.anomalias || item.folha.notasInternas
-                  ? `<div class="text-[11px] font-semibold text-slate-700 leading-snug line-clamp-2">
-                      ${item.folha.anomalias || item.folha.notasInternas}
-                    </div>`
-                  : ''
-              }
-
-              <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/80">
-                <span>Estado: <b class="text-slate-800">${item.folha.status}</b></span>
-                ${item.folha.data ? `<span class="font-mono">${formatDate(item.folha.data)}</span>` : ''}
-              </div>
-
-              ${
-                item.cliente?.telemovel
-                  ? `<div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
-                      <span>Contacto:</span>
-                      <a href="tel:${item.cliente.telemovel}" class="font-bold text-emerald-600 hover:underline">
-                        📞 ${item.cliente.telemovel}
-                      </a>
-                    </div>`
-                  : ''
-              }
-
-              <button id="btn-open-${item.folha.id}" class="w-full py-1.5 px-2.5 bg-gradient-to-r from-hp-600 to-indigo-600 hover:from-hp-500 hover:to-indigo-500 text-white font-extrabold text-[11px] rounded-lg shadow flex items-center justify-center gap-1 transition-all mt-1">
-                <span>Abrir Folha ${item.folha.numero}</span> ➔
-              </button>
-            </div>
-          `
-            )
-            .join('')}
-        </div>
-      `;
-
-      // Attach click listener on popup buttons to navigate to Folha
-      cluster.items.forEach(item => {
-        const btn = popupContent.querySelector(`#btn-open-${item.folha.id}`);
-        if (btn) {
-          btn.addEventListener('click', () => {
-            onSelectFolha(item.folha);
+        if (existing) {
+          existing.items.push(item);
+          // Centroid lat/lng
+          const n = existing.items.length;
+          existing.centerLat = (existing.centerLat * (n - 1) + item.coords.lat) / n;
+          existing.centerLng = (existing.centerLng * (n - 1) + item.coords.lng) / n;
+          existing.screenPoint = map.latLngToLayerPoint([existing.centerLat, existing.centerLng]);
+        } else {
+          clusters.push({
+            id: `cluster_${item.folha.id}`,
+            centerLat: item.coords.lat,
+            centerLng: item.coords.lng,
+            items: [item],
+            screenPoint: screenPt
           });
         }
       });
 
-      marker.bindPopup(popupContent);
-      marker.on('click', () => {
-        setSelectedMarkerId(cluster.items[0].folha.id);
+      clusters.forEach(cluster => {
+        const count = cluster.items.length;
+        const isMulti = count > 1;
+        const hasAT = cluster.items.some(m => m.isAT);
+        const hasCT = cluster.items.some(m => m.isCT);
+
+        const pinColor = hasAT ? '#f97316' : hasCT ? '#a855f7' : '#0284c7';
+        const pinBgGradient = hasAT
+          ? 'from-orange-500 to-amber-600'
+          : hasCT
+          ? 'from-purple-600 to-indigo-600'
+          : 'from-sky-500 to-blue-600';
+
+        // When overlapping (isMulti): Show the NUMBER of services on the pin
+        // When single (isMulti === false): DO NOT show the number, show the icon!
+        const pinIconHtml = isMulti
+          ? `
+          <div class="relative group cursor-pointer flex items-center justify-center" id="cluster-${cluster.id}" title="${count} serviços sobrepostos. Clique para ver ou faça zoom para separar.">
+            <div class="absolute -top-1 -left-1 w-11 h-11 rounded-2xl animate-ping opacity-25" style="background-color: ${pinColor};"></div>
+            <div class="relative w-9 h-9 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-2xl flex items-center justify-center text-white font-black text-sm transform hover:scale-125 transition-transform">
+              <span class="tracking-tight font-black">${count}</span>
+            </div>
+            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full border border-white" style="background-color: ${pinColor};"></div>
+          </div>
+        `
+          : `
+          <div class="relative group cursor-pointer flex items-center justify-center" id="pin-${cluster.items[0].folha.id}" title="Folha ${cluster.items[0].folha.numero} - ${cluster.items[0].empresa?.nome || ''}">
+            <div class="absolute -top-1 -left-1 w-9 h-9 rounded-full animate-pulse" style="background-color: ${pinColor}33;"></div>
+            <div class="relative w-8 h-8 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-xl flex items-center justify-center text-white font-extrabold text-[12px] transform hover:scale-125 transition-transform">
+              ${hasAT ? '⚡' : hasCT ? '📜' : '🛡️'}
+            </div>
+            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full border border-white" style="background-color: ${pinColor};"></div>
+          </div>
+        `;
+
+        const customPin = L.divIcon({
+          html: pinIconHtml,
+          className: 'custom-folha-pin',
+          iconSize: isMulti ? [38, 38] : [32, 32],
+          iconAnchor: isMulti ? [19, 19] : [16, 16],
+          popupAnchor: [0, -20]
+        });
+
+        const marker = L.marker([cluster.centerLat, cluster.centerLng], { icon: customPin });
+
+        // Popup Content
+        const popupContent = document.createElement('div');
+        popupContent.className = 'font-sans p-1 text-slate-900 min-w-[280px] max-w-[340px] space-y-2';
+
+        popupContent.innerHTML = `
+          <div class="border-b pb-2 border-slate-200">
+            <div class="flex items-center justify-between gap-1 mb-1">
+              <span style="background-color: ${pinColor}; color: white;" class="font-mono font-black text-xs px-2 py-0.5 rounded-lg shadow-sm">
+                ${isMulti ? `${count} SERVIÇOS NO LOCAL` : cluster.items[0].folha.numero}
+              </span>
+              <span class="text-[10px] font-bold text-sky-700 font-mono">
+                📍 ${cluster.items[0].distanciaKm} Km da Sede
+              </span>
+            </div>
+            <h4 class="text-sm font-black text-slate-900 leading-tight">${cluster.items[0].empresa?.nome || 'Cliente Geral'}</h4>
+            <p class="text-[11px] text-slate-500 font-medium">📍 ${cluster.items[0].moradaExibicao}</p>
+          </div>
+
+          <div class="space-y-2 max-h-[300px] overflow-y-auto pt-1 pr-1 custom-scrollbar">
+            ${cluster.items
+              .map(
+                item => `
+              <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 shadow-sm hover:border-hp-500/50 transition-colors">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-mono font-black text-xs text-hp-600">${item.folha.numero}</span>
+                    <span class="font-mono font-bold text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-800 rounded">
+                      ${item.folha.matricula}
+                    </span>
+                  </div>
+                  <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                    item.isAT ? 'bg-orange-100 text-orange-700' : item.isCT ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'
+                  }">
+                    ${item.folha.tipo}
+                  </span>
+                </div>
+
+                ${
+                  item.folha.anomalias || item.folha.notasInternas
+                    ? `<div class="text-[11px] font-semibold text-slate-700 leading-snug line-clamp-2">
+                        ${item.folha.anomalias || item.folha.notasInternas}
+                      </div>`
+                    : ''
+                }
+
+                <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/80">
+                  <span>Estado: <b class="text-slate-800">${item.folha.status}</b></span>
+                  ${item.folha.data ? `<span class="font-mono">${formatDate(item.folha.data)}</span>` : ''}
+                </div>
+
+                ${
+                  item.cliente?.telemovel
+                    ? `<div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                        <span>Contacto:</span>
+                        <a href="tel:${item.cliente.telemovel}" class="font-bold text-emerald-600 hover:underline">
+                          📞 ${item.cliente.telemovel}
+                        </a>
+                      </div>`
+                    : ''
+                }
+
+                <button id="btn-open-${item.folha.id}" class="w-full py-1.5 px-2.5 bg-gradient-to-r from-hp-600 to-indigo-600 hover:from-hp-500 hover:to-indigo-500 text-white font-extrabold text-[11px] rounded-lg shadow flex items-center justify-center gap-1 transition-all mt-1">
+                  <span>Abrir Folha ${item.folha.numero}</span> ➔
+                </button>
+              </div>
+            `
+              )
+              .join('')}
+          </div>
+        `;
+
+        // Attach click listener on popup buttons to navigate to Folha
+        cluster.items.forEach(item => {
+          const btn = popupContent.querySelector(`#btn-open-${item.folha.id}`);
+          if (btn) {
+            btn.addEventListener('click', () => {
+              onSelectFolha(item.folha);
+            });
+          }
+        });
+
+        marker.bindPopup(popupContent);
+        marker.on('click', () => {
+          setSelectedMarkerId(cluster.items[0].folha.id);
+        });
+
+        group.addLayer(marker);
       });
+    };
 
-      group.addLayer(marker);
-    });
+    // Initial render
+    renderMarkers();
 
-    // Auto-fit map bounds if we have markers
+    // Dynamically re-cluster markers when the user zooms or pans the map
+    map.on('zoomend', renderMarkers);
+    map.on('moveend', renderMarkers);
+
+    // Auto-fit bounds on first load or filter change
     if (filteredMarkers.length > 0) {
       const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
-      latLngs.push([OFICINA_HP_BASE.lat, OFICINA_HP_BASE.lng]);
       map.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40], maxZoom: 12 });
     }
+
+    return () => {
+      map.off('zoomend', renderMarkers);
+      map.off('moveend', renderMarkers);
+    };
   }, [filteredMarkers, onSelectFolha]);
 
   // Handle clicking a card in the side list to flyTo on the map
