@@ -880,29 +880,9 @@ export function generateEntregaFormacaoPDF(
   const regDateStr = ` • Registada a ${formatDate(folha.data) || getTodayFormatted()}`;
   doc.text(regDateStr, 18 + fsLabelW + fsNumW, 30.5);
 
-  // 2. FULL-BLEED GREEN CONFIRMATION BANNER (matching Image 1)
-  doc.setFillColor(236, 253, 245); // #ecfdf5
-  doc.rect(0, 36.2, 210, 10, 'F');
-  doc.setFillColor(16, 185, 129); // Green left accent
-  doc.rect(0, 36.2, 3.5, 10, 'F');
+  let curY = 42;
 
-  // Vector checkmark inside green circle
-  doc.setFillColor(16, 185, 129);
-  doc.circle(21, 41.2, 2.2, 'F');
-  doc.setDrawColor(255, 255, 255);
-  doc.setLineWidth(0.5);
-  doc.line(19.9, 41.2, 20.7, 42.1);
-  doc.line(20.7, 42.1, 22.1, 40.4);
-
-  // Banner text
-  doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(6, 95, 70); // #065f46
-  doc.text('A Ficha Técnica do Equipamento foi atualizada automaticamente no sistema com as novas datas de Entrega e Formação.', 25.5, 42.3);
-
-  let curY = 52;
-
-  // 3. DUAL CARDS: ENTREGA & FORMAÇÃO (Matching Image 1)
+  // 2. DUAL CARDS: ENTREGA & FORMAÇÃO (Matching Image 1)
   const cardW = 84;
   const cardH = 30;
 
