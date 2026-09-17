@@ -59,48 +59,30 @@ export function createFolhaServicoPDFDoc(
 
   // Grau Logo (Top Left)
   try {
-    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 14, 5, 26, 17, undefined, 'FAST');
+    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 18, 7, 28, 18.5, undefined, 'FAST');
   } catch (err) {
     doc.setFillColor(30, 41, 59);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text('GRAUMP', 14, 18);
+    doc.text('GRAUMP', 18, 18);
   }
 
-  // Subhead row: Left cyan text
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(56, 189, 248); // #38bdf8 (Cyan)
-  doc.text('OFICINA HP • GESTÃO OPERACIONAL DE FROTAS', 44, 13);
-
-  // Subhead row: Right emerald pill badge (matching Entrega & Formação)
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  const titleWidth = doc.getTextWidth(docTitle);
-  const badgeW = Math.max(54, titleWidth + 14);
-  const badgeX = 192 - badgeW;
-  doc.setFillColor(16, 185, 129); // #10b981
-  doc.roundedRect(badgeX, 8, badgeW, 6.5, 3.2, 3.2, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.text(docTitle, badgeX + (badgeW / 2), 12.4, { align: 'center' });
-
-  // Main vehicle / equipment title
-  doc.setFontSize(16);
+  // Main document title (e.g. ASSISTÊNCIA TÉCNICA) - prominent white bold title
+  doc.setFontSize(17);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(255, 255, 255);
-  const equipHeaderTitle = `${folha.matricula || 'SEM MATRÍCULA'} • ${folha.marca || ''} ${folha.modelo || ''}`.trim();
-  doc.text(equipHeaderTitle, 44, 23);
+  doc.text(docTitle, 54, 19);
 
-  // Subtitle line (FS number, date, optional Guia AT)
-  doc.setFontSize(8);
+  // Subtitle line directly below docTitle: FS number, date, optional Guia AT
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184); // Slate 400
-  doc.text('Folha de Serviço: ', 44, 31);
+  doc.text('Folha de Serviço: ', 54, 27);
   const fsLabelW = doc.getTextWidth('Folha de Serviço: ');
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(56, 189, 248); // Sky 400
   const fsNum = folha.numero || folha.id || '---';
-  doc.text(fsNum, 44 + fsLabelW, 31);
+  doc.text(fsNum, 54 + fsLabelW, 27);
   const fsNumW = doc.getTextWidth(fsNum);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184);
@@ -108,7 +90,7 @@ export function createFolhaServicoPDFDoc(
   if (folha.guiaAT) {
     regDateStr += ` • Guia: ${folha.guiaAT}`;
   }
-  doc.text(regDateStr, 44 + fsLabelW + fsNumW, 31);
+  doc.text(regDateStr, 54 + fsLabelW + fsNumW, 27);
 
   // 3. DUAL CARDS: CLIENTE (VERDE) & EQUIPAMENTO (AZUL)
   let curY = 44;
@@ -181,25 +163,33 @@ export function createFolhaServicoPDFDoc(
   doc.setTextColor(71, 85, 105);
   const nSerie = folha.nSerie || equipamento?.nSerie || '';
   const seriePart = (nSerie && nSerie !== 'undefined') ? ` • Nº Série: ${nSerie}` : '';
-  doc.text(`Matrícula: ${folha.matricula || equipamento?.matricula || '---'}${seriePart}`, card2X + 4, curY + 20.5);
+  doc.text(`Matrícula: ${folha.matricula || equipamento?.matricula || '---'}${seriePart}`, card2X + 4, curY + 21);
 
-  // Badges KMS & HORAS in Blue Card
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(186, 230, 253); // #bae6fd
-  doc.roundedRect(card2X + 4, curY + 23.5, 36, 6.5, 1.2, 1.2, 'FD');
-  doc.roundedRect(card2X + 44, curY + 23.5, 36, 6.5, 1.2, 1.2, 'FD');
-
-  doc.setFontSize(6.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('KMS:', card2X + 6, curY + 28);
-  doc.text('HORAS:', card2X + 46, curY + 28);
-
+  // Professional KMS & HORAS (Clean inline presentation without clunky boxes)
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(2, 132, 199); // Sky Blue #0284c7
-  doc.text(String(folha.kmsAtuais || 0), card2X + 16, curY + 28);
-  doc.text(String(folha.horasAtuais ? `${folha.horasAtuais}h` : '0h'), card2X + 59, curY + 28);
+  doc.setTextColor(3, 105, 161); // #0369a1
+  doc.text('Kms: ', card2X + 4, curY + 27.5);
+  const kmsLblW = doc.getTextWidth('Kms: ');
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  const kmsVal = folha.kmsAtuais ? `${folha.kmsAtuais.toLocaleString()}` : '0';
+  doc.text(kmsVal, card2X + 4 + kmsLblW, curY + 27.5);
+  const kmsValW = doc.getTextWidth(kmsVal);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text('   •   ', card2X + 4 + kmsLblW + kmsValW, curY + 27.5);
+  const sepW = doc.getTextWidth('   •   ');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(3, 105, 161);
+  doc.text('Horas: ', card2X + 4 + kmsLblW + kmsValW + sepW, curY + 27.5);
+  const hrsLblW = doc.getTextWidth('Horas: ');
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  const hrsVal = folha.horasAtuais ? `${folha.horasAtuais}h` : '0h';
+  doc.text(hrsVal, card2X + 4 + kmsLblW + kmsValW + sepW + hrsLblW, curY + 27.5);
 
   curY += cardH + 7;
 
@@ -532,14 +522,11 @@ export function createFolhaServicoPDFDoc(
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('GRAUMP', 18, 293.5);
+    doc.text('OFICINA HP • GESTÃO OPERACIONAL DE FROTAS', 18, 293.5);
 
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(203, 213, 225);
-    doc.text(' • Oficina HP Gestão & Frotas', 32, 293.5);
-
     doc.setTextColor(148, 163, 184);
-    doc.text('Documento Processado por Computador', 110, 293.5, { align: 'center' });
+    doc.text('Documento Processado por Computador', 115, 293.5, { align: 'center' });
 
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
@@ -1278,18 +1265,15 @@ export function generateEntregaFormacaoPDF(
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('GRAUMP', 14, 293.5);
+    doc.text('OFICINA HP • GESTÃO OPERACIONAL DE FROTAS', 18, 293.5);
 
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(203, 213, 225);
-    doc.text(' • Oficina HP Gestão & Frotas', 28, 293.5);
-
     doc.setTextColor(148, 163, 184);
-    doc.text('Documento Processado por Computador', 110, 293.5, { align: 'center' });
+    doc.text('Documento Processado por Computador', 115, 293.5, { align: 'center' });
 
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Página ${i} de ${pageCount}`, 196, 293.5, { align: 'right' });
+    doc.text(`Página ${i} de ${pageCount}`, 192, 293.5, { align: 'right' });
   }
 
   return doc;
