@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Plus,
   Search,
@@ -30,7 +30,18 @@ import { formatDate, formatDateToInput, parseDateToMs } from '../utils/dateUtils
 import type { Equipamento, Empresa, FolhaServico } from '../types';
 
 export function getEquipamentoLatestData(eq: Partial<Equipamento>, folhas: FolhaServico[]) {
-  const matchingFolhas = folhas
+  const safeFolhas = Array.isArray(folhas) ? folhas : [];
+  if (!eq) {
+    return {
+      latestKms: 0,
+      latestHoras: 0,
+      latestFolha: undefined,
+      latestFolhaWithKms: undefined,
+      latestFolhaWithHoras: undefined,
+      matchingFolhas: []
+    };
+  }
+  const matchingFolhas = safeFolhas
     .filter(f => (
       (eq.id && f.equipamentoId === eq.id) ||
       (eq.matricula && f.matricula && f.matricula.trim().toUpperCase() === eq.matricula.trim().toUpperCase())
@@ -74,6 +85,10 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   onOpenScanner,
   onSelectFolha
 }) => {
+  const safeEquipamentos = Array.isArray(equipamentos) ? equipamentos : [];
+  const safeEmpresas = Array.isArray(empresas) ? empresas : [];
+  const safeFolhas = Array.isArray(folhas) ? folhas : [];
+
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
     try {
@@ -100,8 +115,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter companies matching the search input
-  const matchingEmpresas = empresas.filter(emp =>
-    emp.nome.toLowerCase().includes(empresaQuery.toLowerCase()) ||
+  const matchingEmpresas = safeEmpresas.filter(emp =>
+    (emp.nome || '').toLowerCase().includes(empresaQuery.toLowerCase()) ||
     (emp.nif && emp.nif.toLowerCase().includes(empresaQuery.toLowerCase()))
   );
 
@@ -140,7 +155,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   };
 
   const handleEditEquip = (eq: Equipamento) => {
-    const latestData = getEquipamentoLatestData(eq, folhas);
+    const latestData = getEquipamentoLatestData(eq, safeFolhas);
 
     setEditingEquip({
       ...eq,
@@ -148,7 +163,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
       horasAtuais: latestData.latestHoras,
       fotos: eq.fotos || (eq.fotoUrl ? [eq.fotoUrl] : [])
     });
-    const associatedEmp = empresas.find(e => e.id === eq.empresaId);
+    const associatedEmp = safeEmpresas.find(e => e.id === eq.empresaId);
     setEmpresaQuery(associatedEmp?.nome || '');
     setIsModalOpen(true);
   };
@@ -156,8 +171,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   // Cached latest data for the currently edited equipment
   const editingLatestData = useMemo(() => {
     if (!editingEquip.id && !editingEquip.matricula) return null;
-    return getEquipamentoLatestData(editingEquip, folhas);
-  }, [editingEquip.id, editingEquip.matricula, folhas]);
+    return getEquipamentoLatestData(editingEquip, safeFolhas);
+  }, [editingEquip.id, editingEquip.matricula, safeFolhas]);
 
   const handleSelectEmpresaItem = (emp: Empresa) => {
     setEditingEquip(prev => ({
@@ -234,16 +249,17 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
     }
   };
 
-  const filteredEquipamentos = equipamentos.filter(eq => {
+  const filteredEquipamentos = safeEquipamentos.filter(eq => {
+    if (!eq) return false;
     const term = searchTerm.toLowerCase();
-    const emp = empresas.find(e => e.id === eq.empresaId);
-    const empNome = emp ? emp.nome.toLowerCase() : '';
+    const emp = safeEmpresas.find(e => e.id === eq.empresaId);
+    const empNome = emp ? (emp.nome || '').toLowerCase() : '';
     const empNif = emp?.nif ? emp.nif.toLowerCase() : '';
 
     return (
-      eq.matricula.toLowerCase().includes(term) ||
-      eq.marca.toLowerCase().includes(term) ||
-      eq.modelo.toLowerCase().includes(term) ||
+      (eq.matricula || '').toLowerCase().includes(term) ||
+      (eq.marca || '').toLowerCase().includes(term) ||
+      (eq.modelo || '').toLowerCase().includes(term) ||
       (eq.tipo && eq.tipo.toLowerCase().includes(term)) ||
       (eq.nSerie && eq.nSerie.toLowerCase().includes(term)) ||
       empNome.includes(term) ||

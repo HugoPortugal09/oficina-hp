@@ -726,6 +726,29 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
                 <option value="Açores">Açores</option>
               </select>
             </div>
+
+            {/* Quick Print A3 Button in Side Panel */}
+            <button
+              onClick={handlePrintA3PDF}
+              disabled={isGeneratingPdf}
+              className={`w-full py-2.5 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 border ${
+                isGeneratingPdf
+                  ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                  : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-emerald-400/40 shadow-emerald-950/40'
+              }`}
+            >
+              {isGeneratingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-300" />
+                  <span>A Gerar Relatório A3...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4 text-emerald-200" />
+                  <span>Imprimir em A3 (Mapa + Lista)</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* List of Open Orders on Map */}
