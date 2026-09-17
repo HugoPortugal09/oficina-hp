@@ -207,11 +207,13 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       }
     });
 
-    let tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+    let tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
     let attribution = '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap';
 
-    if (mapStyle === 'light') {
-      tileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    if (mapStyle === 'dark') {
+      tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png';
+    } else if (mapStyle === 'light') {
+      tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png';
     } else if (mapStyle === 'streets') {
       tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
       attribution = '&copy; OpenStreetMap contributors';
@@ -228,7 +230,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     };
   }, [mapStyle]);
 
-  // 6. Draw Workshop Base HQ and Pins on the map
+  // 6. Draw Workshop Base HQ and Clustered Pins on the map
   useEffect(() => {
     const map = mapInstanceRef.current;
     const group = markersGroupRef.current;
@@ -268,10 +270,58 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     `);
     group.addLayer(baseMarker);
 
-    // B. Add Pins for each Open External Folha in Portugal
+    // B. Group close/overlapping markers into location clusters
+    interface MapClusterGroup {
+      id: string;
+      lat: number;
+      lng: number;
+      items: MapMarkerItem[];
+      empresaNome: string;
+      moradaExibicao: string;
+      cidade: string;
+      distrito: string;
+      distanciaKm: number;
+      hasAT: boolean;
+      hasCT: boolean;
+    }
+
+    const clusters: MapClusterGroup[] = [];
+    const CLUSTER_THRESHOLD = 0.008; // ~800m threshold to group same yard/city
+
     filteredMarkers.forEach(item => {
-      const isAT = item.isAT;
-      const isCT = item.isCT;
+      const existing = clusters.find(c => {
+        const dLat = Math.abs(c.lat - item.coords.lat);
+        const dLng = Math.abs(c.lng - item.coords.lng);
+        return dLat < CLUSTER_THRESHOLD && dLng < CLUSTER_THRESHOLD;
+      });
+
+      if (existing) {
+        existing.items.push(item);
+        if (item.isAT) existing.hasAT = true;
+        if (item.isCT) existing.hasCT = true;
+      } else {
+        clusters.push({
+          id: `cluster_${item.coords.lat.toFixed(4)}_${item.coords.lng.toFixed(4)}_${clusters.length}`,
+          lat: item.coords.lat,
+          lng: item.coords.lng,
+          items: [item],
+          empresaNome: item.empresa?.nome || 'Cliente Geral',
+          moradaExibicao: item.moradaExibicao,
+          cidade: item.coords.cidade,
+          distrito: item.coords.distrito,
+          distanciaKm: item.distanciaKm,
+          hasAT: item.isAT,
+          hasCT: item.isCT
+        });
+      }
+    });
+
+    // C. Add Pins for each Cluster / Location with Count Display
+    clusters.forEach(cluster => {
+      const count = cluster.items.length;
+      const isMulti = count > 1;
+      const isAT = cluster.hasAT;
+      const isCT = cluster.hasCT;
 
       // Color scheme based on service type
       const pinColor = isAT ? '#f97316' : isCT ? '#a855f7' : '#0284c7';
@@ -281,8 +331,21 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
         ? 'from-purple-600 to-indigo-600'
         : 'from-sky-500 to-blue-600';
 
-      const pinIconHtml = `
-        <div class="relative group cursor-pointer" id="pin-${item.folha.id}">
+      const pinIconHtml = isMulti
+        ? `
+        <div class="relative group cursor-pointer" id="cluster-${cluster.id}">
+          <div class="absolute -top-2 -left-2 w-12 h-12 rounded-full animate-ping opacity-35" style="background-color: ${pinColor};"></div>
+          <div class="relative w-9 h-9 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-2xl flex items-center justify-center text-white font-black text-sm transform hover:scale-125 transition-transform">
+            <span class="tracking-tight font-black">${count}</span>
+          </div>
+          <div class="absolute -top-2 -right-2 bg-emerald-500 text-white font-black text-[9px] px-1.5 py-0.2 rounded-full border border-white shadow-md flex items-center gap-0.5">
+            <span>${count} FS</span>
+          </div>
+          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full border border-white" style="background-color: ${pinColor};"></div>
+        </div>
+      `
+        : `
+        <div class="relative group cursor-pointer" id="pin-${cluster.items[0].folha.id}">
           <div class="absolute -top-1 -left-1 w-10 h-10 rounded-full animate-pulse" style="background-color: ${pinColor}33;"></div>
           <div class="relative w-8 h-8 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-xl flex items-center justify-center text-white font-extrabold text-[11px] transform hover:scale-125 transition-transform">
             ${isAT ? '⚡' : isCT ? '📜' : '🛡️'}
@@ -294,77 +357,97 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       const customPin = L.divIcon({
         html: pinIconHtml,
         className: 'custom-folha-pin',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -18]
+        iconSize: isMulti ? [38, 38] : [32, 32],
+        iconAnchor: isMulti ? [19, 19] : [16, 16],
+        popupAnchor: [0, -20]
       });
 
-      const marker = L.marker([item.coords.lat, item.coords.lng], { icon: customPin });
+      const marker = L.marker([cluster.lat, cluster.lng], { icon: customPin });
 
-      // Create Custom Interactive Popup
+      // Create Custom Interactive Popup for Single or Multi Services
       const popupContent = document.createElement('div');
-      popupContent.className = 'font-sans p-1 text-slate-900 min-w-[260px] max-w-[300px] space-y-2';
+      popupContent.className = 'font-sans p-1 text-slate-900 min-w-[280px] max-w-[340px] space-y-2';
+
       popupContent.innerHTML = `
-        <div class="flex items-center justify-between border-b pb-1.5 border-slate-200">
-          <span style="background-color: ${pinColor}; color: white;" class="font-mono font-black text-xs px-2 py-0.5 rounded-lg shadow-sm">
-            ${item.folha.numero}
-          </span>
-          <span class="text-[10px] font-bold text-slate-500 uppercase">
-            ${item.folha.tipo || 'Serviço'}
-          </span>
-        </div>
-
-        <div>
-          <h4 class="text-sm font-black text-slate-900 leading-snug">${item.empresa?.nome || 'Cliente Geral'}</h4>
-          <p class="text-xs font-semibold text-slate-500 mt-0.5 flex items-center gap-1">
-            📍 ${item.moradaExibicao}
-          </p>
-        </div>
-
-        <div class="grid grid-cols-2 gap-1.5 p-2 bg-slate-100 rounded-xl text-[11px] font-mono">
-          <div>
-            <span class="text-[9px] text-slate-400 block font-sans uppercase">Viatura / Matrícula</span>
-            <b class="text-slate-900">${item.folha.matricula}</b>
+        <div class="border-b pb-2 border-slate-200">
+          <div class="flex items-center justify-between gap-1 mb-1">
+            <span style="background-color: ${pinColor}; color: white;" class="font-mono font-black text-xs px-2 py-0.5 rounded-lg shadow-sm">
+              ${isMulti ? `${count} SERVIÇOS NO LOCAL` : cluster.items[0].folha.numero}
+            </span>
+            <span class="text-[10px] font-bold text-sky-700 font-mono">
+              📍 ${cluster.distanciaKm} Km da Sede
+            </span>
           </div>
-          <div>
-            <span class="text-[9px] text-slate-400 block font-sans uppercase">Distância Sede</span>
-            <b class="text-sky-700 font-bold">${item.distanciaKm} Km</b>
-          </div>
+          <h4 class="text-sm font-black text-slate-900 leading-tight">${cluster.empresaNome}</h4>
+          <p class="text-[11px] text-slate-500 font-medium">📍 ${cluster.moradaExibicao}</p>
         </div>
 
-        <div class="p-2 bg-amber-50 border border-amber-200 rounded-xl text-xs">
-          <span class="text-[10px] font-bold uppercase text-amber-800 block mb-0.5">Estado do Pedido:</span>
-          <b class="text-amber-950 block">${item.folha.status}</b>
+        <div class="space-y-2 max-h-[300px] overflow-y-auto pt-1 pr-1 custom-scrollbar">
+          ${cluster.items
+            .map(
+              item => `
+            <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 shadow-sm hover:border-hp-500/50 transition-colors">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-mono font-black text-xs text-hp-600">${item.folha.numero}</span>
+                  <span class="font-mono font-bold text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-800 rounded">
+                    ${item.folha.matricula}
+                  </span>
+                </div>
+                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                  item.isAT ? 'bg-orange-100 text-orange-700' : item.isCT ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'
+                }">
+                  ${item.folha.tipo}
+                </span>
+              </div>
+
+              ${
+                item.folha.anomalias || item.folha.notasInternas
+                  ? `<div class="text-[11px] font-semibold text-slate-700 leading-snug line-clamp-2">
+                      ${item.folha.anomalias || item.folha.notasInternas}
+                    </div>`
+                  : ''
+              }
+
+              <div class="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/80">
+                <span>Estado: <b class="text-slate-800">${item.folha.status}</b></span>
+                ${item.folha.data ? `<span class="font-mono">${formatDate(item.folha.data)}</span>` : ''}
+              </div>
+
+              ${
+                item.cliente?.telemovel
+                  ? `<div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                      <span>Contacto:</span>
+                      <a href="tel:${item.cliente.telemovel}" class="font-bold text-emerald-600 hover:underline">
+                        📞 ${item.cliente.telemovel}
+                      </a>
+                    </div>`
+                  : ''
+              }
+
+              <button id="btn-open-${item.folha.id}" class="w-full py-1.5 px-2.5 bg-gradient-to-r from-hp-600 to-indigo-600 hover:from-hp-500 hover:to-indigo-500 text-white font-extrabold text-[11px] rounded-lg shadow flex items-center justify-center gap-1 transition-all mt-1">
+                <span>Abrir Folha ${item.folha.numero}</span> ➔
+              </button>
+            </div>
+          `
+            )
+            .join('')}
         </div>
-
-        ${
-          item.cliente?.telemovel
-            ? `
-          <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-200">
-            <span class="text-slate-500 font-medium">${item.cliente.nome}:</span>
-            <a href="tel:${item.cliente.telemovel}" class="font-bold text-emerald-600 hover:underline">
-              📞 ${item.cliente.telemovel}
-            </a>
-          </div>`
-            : ''
-        }
-
-        <button id="btn-open-${item.folha.id}" class="w-full py-2.5 px-3 bg-gradient-to-r from-hp-600 to-indigo-600 hover:from-hp-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all mt-2">
-          <span>Abrir Folha de Serviço</span> ➔
-        </button>
       `;
 
-      // Attach click listener on popup button to navigate to Folha
-      const btn = popupContent.querySelector(`#btn-open-${item.folha.id}`);
-      if (btn) {
-        btn.addEventListener('click', () => {
-          onSelectFolha(item.folha);
-        });
-      }
+      // Attach click listener on popup buttons to navigate to Folha
+      cluster.items.forEach(item => {
+        const btn = popupContent.querySelector(`#btn-open-${item.folha.id}`);
+        if (btn) {
+          btn.addEventListener('click', () => {
+            onSelectFolha(item.folha);
+          });
+        }
+      });
 
       marker.bindPopup(popupContent);
       marker.on('click', () => {
-        setSelectedMarkerId(item.folha.id);
+        setSelectedMarkerId(cluster.items[0].folha.id);
       });
 
       group.addLayer(marker);
