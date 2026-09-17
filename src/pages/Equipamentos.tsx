@@ -26,8 +26,38 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import { formatDate, formatDateToInput } from '../utils/dateUtils';
+import { formatDate, formatDateToInput, parseDateToMs } from '../utils/dateUtils';
 import type { Equipamento, Empresa, FolhaServico } from '../types';
+
+export function getEquipamentoLatestData(eq: Partial<Equipamento>, folhas: FolhaServico[]) {
+  const matchingFolhas = folhas
+    .filter(f => (
+      (eq.id && f.equipamentoId === eq.id) ||
+      (eq.matricula && f.matricula && f.matricula.trim().toUpperCase() === eq.matricula.trim().toUpperCase())
+    ))
+    .sort((a, b) => parseDateToMs(b.dataConclusao || b.data || b.criadoEm) - parseDateToMs(a.dataConclusao || a.data || a.criadoEm));
+
+  const latestFolhaWithKms = matchingFolhas.find(f => f.kmsAtuais !== undefined && Number(f.kmsAtuais) > 0);
+  const latestFolhaWithHoras = matchingFolhas.find(f => f.horasAtuais !== undefined && Number(f.horasAtuais) > 0);
+  const latestFolha = matchingFolhas[0];
+
+  const latestKms = (latestFolhaWithKms?.kmsAtuais !== undefined && Number(latestFolhaWithKms.kmsAtuais) > 0)
+    ? Number(latestFolhaWithKms.kmsAtuais)
+    : (eq.kmsAtuais || 0);
+
+  const latestHoras = (latestFolhaWithHoras?.horasAtuais !== undefined && Number(latestFolhaWithHoras.horasAtuais) > 0)
+    ? Number(latestFolhaWithHoras.horasAtuais)
+    : (eq.horasAtuais || 0);
+
+  return {
+    latestKms,
+    latestHoras,
+    latestFolha,
+    latestFolhaWithKms,
+    latestFolhaWithHoras,
+    matchingFolhas
+  };
+}
 
 interface EquipamentosProps {
   equipamentos: Equipamento[];
@@ -110,14 +140,24 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   };
 
   const handleEditEquip = (eq: Equipamento) => {
+    const latestData = getEquipamentoLatestData(eq, folhas);
+
     setEditingEquip({
       ...eq,
+      kmsAtuais: latestData.latestKms,
+      horasAtuais: latestData.latestHoras,
       fotos: eq.fotos || (eq.fotoUrl ? [eq.fotoUrl] : [])
     });
     const associatedEmp = empresas.find(e => e.id === eq.empresaId);
     setEmpresaQuery(associatedEmp?.nome || '');
     setIsModalOpen(true);
   };
+
+  // Cached latest data for the currently edited equipment
+  const editingLatestData = useMemo(() => {
+    if (!editingEquip.id && !editingEquip.matricula) return null;
+    return getEquipamentoLatestData(editingEquip, folhas);
+  }, [editingEquip.id, editingEquip.matricula, folhas]);
 
   const handleSelectEmpresaItem = (emp: Empresa) => {
     setEditingEquip(prev => ({
@@ -274,7 +314,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredEquipamentos.map(eq => {
             const empresa = empresas.find(e => e.id === eq.empresaId);
-            const historyFolhas = folhas.filter(f => f.equipamentoId === eq.id || f.matricula === eq.matricula);
+            const latestData = getEquipamentoLatestData(eq, folhas);
+            const historyFolhas = latestData.matchingFolhas;
             const coverPhoto = eq.fotos && eq.fotos.length > 0 ? eq.fotos[0] : eq.fotoUrl;
 
             return (
@@ -331,12 +372,12 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
 
                     <div className="flex items-center justify-between">
                       <span className="font-sans text-slate-400">Quilómetros:</span>
-                      <span className="font-bold text-emerald-400">{eq.kmsAtuais?.toLocaleString() || 0} Km</span>
+                      <span className="font-bold text-emerald-400">{latestData.latestKms.toLocaleString()} Km</span>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="font-sans text-slate-400">Horas Trabalho:</span>
-                      <span className="font-bold text-amber-400">{eq.horasAtuais || 0} h</span>
+                      <span className="font-bold text-amber-400">{latestData.latestHoras} h</span>
                     </div>
 
                     {/* Delivery and Training Dates */}
@@ -429,7 +470,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {filteredEquipamentos.map(eq => {
                 const empresa = empresas.find(e => e.id === eq.empresaId);
-                const historyFolhas = folhas.filter(f => f.equipamentoId === eq.id || f.matricula === eq.matricula);
+                const latestData = getEquipamentoLatestData(eq, folhas);
+                const historyFolhas = latestData.matchingFolhas;
 
                 return (
                   <tr
@@ -446,10 +488,10 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                     <td className="py-3 px-4 text-slate-400">{eq.tipo || 'Geral'}</td>
                     <td className="py-3 px-4 font-semibold text-slate-200">{empresa?.nome || 'Geral'}</td>
                     <td className="py-3 px-4 font-mono font-bold text-emerald-400 text-right">
-                      {eq.kmsAtuais?.toLocaleString() || 0} Km
+                      {latestData.latestKms.toLocaleString()} Km
                     </td>
                     <td className="py-3 px-4 font-mono text-amber-400 text-right">
-                      {eq.horasAtuais || 0} h
+                      {latestData.latestHoras} h
                     </td>
                     <td className="py-3 px-4 font-mono text-slate-400">{eq.dataEntrega || '-'}</td>
                     <td className="py-3 px-4 font-mono text-slate-400">{eq.dataFormacao || '-'}</td>
@@ -607,7 +649,14 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">Quilómetros Atuais</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-400">Quilómetros Atuais</label>
+                  {editingLatestData?.latestFolhaWithKms && (
+                    <span className="text-[10px] text-emerald-400 font-mono font-medium truncate max-w-[170px]" title={`Última Folha: ${editingLatestData.latestFolhaWithKms.numero} (${editingLatestData.latestFolhaWithKms.kmsAtuais?.toLocaleString()} km)`}>
+                      Última FS: {editingLatestData.latestFolhaWithKms.numero} ({editingLatestData.latestFolhaWithKms.kmsAtuais?.toLocaleString()} km)
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={editingEquip.kmsAtuais || 0}
@@ -617,7 +666,14 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">Horas de Trabalho</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-400">Horas de Trabalho</label>
+                  {editingLatestData?.latestFolhaWithHoras && (
+                    <span className="text-[10px] text-amber-400 font-mono font-medium truncate max-w-[170px]" title={`Última Folha: ${editingLatestData.latestFolhaWithHoras.numero} (${editingLatestData.latestFolhaWithHoras.horasAtuais} h)`}>
+                      Última FS: {editingLatestData.latestFolhaWithHoras.numero} ({editingLatestData.latestFolhaWithHoras.horasAtuais} h)
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={editingEquip.horasAtuais || 0}

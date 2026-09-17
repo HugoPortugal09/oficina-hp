@@ -1042,6 +1042,62 @@ export const db = {
     } catch (err) {
       console.warn('Error closing all historical folhas:', err);
     }
+
+    // Synchronize latest recorded kms and hours from Folhas de Serviço to Equipamentos
+    try {
+      const equipamentos = this.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+      const folhas = this.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
+
+      if (equipamentos && equipamentos.length > 0 && folhas && folhas.length > 0) {
+        let eqChanged = false;
+        const updatedEqs = equipamentos.map(eq => {
+          const matchFolhas = folhas
+            .filter(f => (
+              (f.equipamentoId && f.equipamentoId === eq.id) ||
+              (f.matricula && eq.matricula && f.matricula.trim().toUpperCase() === eq.matricula.trim().toUpperCase())
+            ))
+            .sort((a, b) => {
+              const da = new Date(a.dataConclusao || a.data || a.criadoEm || 0).getTime();
+              const dbTime = new Date(b.dataConclusao || b.data || b.criadoEm || 0).getTime();
+              return dbTime - da;
+            });
+
+          const latestKmsFolha = matchFolhas.find(f => f.kmsAtuais !== undefined && Number(f.kmsAtuais) > 0);
+          const latestHorasFolha = matchFolhas.find(f => f.horasAtuais !== undefined && Number(f.horasAtuais) > 0);
+
+          let newKms = eq.kmsAtuais;
+          let newHoras = eq.horasAtuais;
+
+          if (latestKmsFolha && Number(latestKmsFolha.kmsAtuais) > (eq.kmsAtuais || 0)) {
+            newKms = Number(latestKmsFolha.kmsAtuais);
+            eqChanged = true;
+          } else if ((eq.kmsAtuais === undefined || eq.kmsAtuais === 0) && latestKmsFolha?.kmsAtuais) {
+            newKms = Number(latestKmsFolha.kmsAtuais);
+            eqChanged = true;
+          }
+
+          if (latestHorasFolha && Number(latestHorasFolha.horasAtuais) > (eq.horasAtuais || 0)) {
+            newHoras = Number(latestHorasFolha.horasAtuais);
+            eqChanged = true;
+          } else if ((eq.horasAtuais === undefined || eq.horasAtuais === 0) && latestHorasFolha?.horasAtuais) {
+            newHoras = Number(latestHorasFolha.horasAtuais);
+            eqChanged = true;
+          }
+
+          return {
+            ...eq,
+            kmsAtuais: newKms,
+            horasAtuais: newHoras
+          };
+        });
+
+        if (eqChanged) {
+          this.save(STORAGE_KEYS.EQUIPAMENTOS, updatedEqs);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Error syncing equip kms/horas:', syncErr);
+    }
   },
 
   exportDatabase(): string {
