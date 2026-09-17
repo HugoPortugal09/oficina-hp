@@ -294,28 +294,69 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         }
       }
 
-      // 5. Registo Geral da Folha (Oficina, Assistência Técnica, Contratos, etc.)
-      if (!addedSpecificEvent || (f.tipo !== 'Entrega e Formação' && f.tipo !== 'Validação e Preparação')) {
-        const folhaDate = formatDateToInput(f.dataConclusao || f.dataPlaneada || f.dataEntradaOficina || f.data) || formatDateISO(new Date());
+      // 5. Registo de Intervenções Técnicas (Apenas quando existem Serviços ou Peças com pisco / concluídos, ou Folha Concluída)
+      const completedServicos = [
+        ...(f.servicos?.filter(s => s.concluido) || []),
+        ...(f.servicosAdicionais?.filter(s => s.concluido) || [])
+      ];
+      const completedPecas = [
+        ...(f.pecas?.filter(p => p.concluido) || []),
+        ...(f.pecasAdicionais?.filter(p => p.concluido) || [])
+      ];
 
-        list.push({
-          id: `folha_${f.id}`,
-          tipo: 'folha',
-          dateStr: folhaDate,
-          titulo: `Folha de Serviço ${f.numero}`,
-          descricao: defaultDesc,
-          concluido: isConcluido,
-          tecnico: tecnicosUnicos,
-          horas: totalHoras,
-          qtdServicos: countServicos,
-          qtdPecas: countPecas,
-          folhaNumero: f.numero,
-          folhaId: f.id,
-          matricula: f.matricula,
-          marcaModelo: `${f.marca} ${f.modelo}`,
-          empresaNome: emp?.nome || 'Cliente',
-          status: f.status,
-          rawFolha: f
+      const hasCheckedIntervention = completedServicos.length > 0 || completedPecas.length > 0 || isConcluido;
+
+      // Só deve aparecer intervencionada se tiver pisco nas peças ou serviços, ou folha concluída
+      if (hasCheckedIntervention) {
+        const datesMap = new Map<string, { servicos: typeof completedServicos; pecas: typeof completedPecas }>();
+
+        if (completedServicos.length > 0 || completedPecas.length > 0) {
+          completedServicos.forEach(s => {
+            const d = formatDateToInput(s.dataConclusao) || formatDateToInput(f.dataConclusao || f.data) || formatDateISO(new Date());
+            if (!datesMap.has(d)) datesMap.set(d, { servicos: [], pecas: [] });
+            datesMap.get(d)!.servicos.push(s);
+          });
+          completedPecas.forEach(p => {
+            const d = formatDateToInput(p.dataConclusao) || formatDateToInput(f.dataConclusao || f.data) || formatDateISO(new Date());
+            if (!datesMap.has(d)) datesMap.set(d, { servicos: [], pecas: [] });
+            datesMap.get(d)!.pecas.push(p);
+          });
+        } else if (isConcluido) {
+          const d = formatDateToInput(f.dataConclusao || f.dataPlaneada || f.dataEntradaOficina || f.data) || formatDateISO(new Date());
+          datesMap.set(d, { servicos: [], pecas: [] });
+        }
+
+        datesMap.forEach((group, dateKey) => {
+          const groupHoras = group.servicos.reduce((acc, s) => acc + (s.horas || 0), 0) || (isConcluido ? totalHoras : 0);
+          const groupCountServicos = group.servicos.length || (isConcluido ? countServicos : 0);
+          const groupCountPecas = group.pecas.reduce((acc, p) => acc + (p.qtd || 1), 0) || (isConcluido ? countPecas : 0);
+
+          const groupTecnicos = Array.from(new Set([
+            ...group.servicos.map(s => cleanPersonName(s.tecnico)),
+            cleanPersonName(f.tecnicoPlaneado)
+          ])).filter(Boolean).join(', ') || tecnicosUnicos;
+
+          const desc = group.servicos.map(s => s.descricao).filter(Boolean).join(', ') || defaultDesc;
+
+          list.push({
+            id: `folha_${f.id}_${dateKey}`,
+            tipo: 'folha',
+            dateStr: dateKey,
+            titulo: `${f.numero} • Intervenção`,
+            descricao: desc,
+            concluido: isConcluido || (groupCountServicos > 0 || groupCountPecas > 0),
+            tecnico: groupTecnicos,
+            horas: groupHoras,
+            qtdServicos: groupCountServicos,
+            qtdPecas: groupCountPecas,
+            folhaNumero: f.numero,
+            folhaId: f.id,
+            matricula: f.matricula,
+            marcaModelo: `${f.marca} ${f.modelo}`,
+            empresaNome: emp?.nome || 'Cliente',
+            status: f.status,
+            rawFolha: f
+          });
         });
       }
     });
