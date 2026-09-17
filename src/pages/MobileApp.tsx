@@ -572,8 +572,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     }
 
-    // Se for Entrega e Formação, enviar email para quem fez e para o administrador
-    if (folhaToSave.tipo === 'Entrega e Formação') {
+    // Se for Entrega e Formação e tiver dados de Entrega ou Formação preenchidos, enviar email para quem fez e para o administrador
+    const hasEntregaOuFormacao = Boolean(
+      (folhaToSave.dataEntrega && folhaToSave.dataEntrega.trim() !== '') ||
+      (folhaToSave.dataFormacao && folhaToSave.dataFormacao.trim() !== '') ||
+      (folhaToSave.entregaPor && folhaToSave.entregaPor.trim() !== '') ||
+      (folhaToSave.formacaoPor && folhaToSave.formacaoPor.trim() !== '')
+    );
+
+    if (folhaToSave.tipo === 'Entrega e Formação' && hasEntregaOuFormacao) {
       const matchedEmpresa = empresas.find(e => e.id === folhaToSave.empresaId);
       sendEntregaFormacaoEmail({
         folha: folhaToSave,

@@ -924,8 +924,15 @@ export const Oficina: React.FC<OficinaProps> = ({
       db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, targetEquip.id, equipUpdate);
     }
 
-    // Se for Entrega e Formação, enviar email automático para quem fez e para o administrador
-    if (folhaToSave.tipo === 'Entrega e Formação') {
+    // Se for Entrega e Formação e tiver dados de Entrega ou Formação preenchidos, enviar email automático
+    const hasEntregaOuFormacao = Boolean(
+      (folhaToSave.dataEntrega && folhaToSave.dataEntrega.trim() !== '') ||
+      (folhaToSave.dataFormacao && folhaToSave.dataFormacao.trim() !== '') ||
+      (folhaToSave.entregaPor && folhaToSave.entregaPor.trim() !== '') ||
+      (folhaToSave.formacaoPor && folhaToSave.formacaoPor.trim() !== '')
+    );
+
+    if (folhaToSave.tipo === 'Entrega e Formação' && hasEntregaOuFormacao) {
       const targetEmpresa = empresas.find(e => e.id === folhaToSave.empresaId);
       sendEntregaFormacaoEmail({
         folha: folhaToSave,
