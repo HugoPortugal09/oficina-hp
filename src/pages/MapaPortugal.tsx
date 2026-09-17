@@ -14,10 +14,14 @@ import {
   Sparkles,
   Layers,
   Compass,
-  AlertCircle
+  AlertCircle,
+  Printer,
+  Download,
+  Loader2
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import html2canvas from 'html2canvas';
 import { Badge } from '../components/Badge';
 import {
   resolvePortugalCoordinates,
@@ -25,7 +29,8 @@ import {
   OFICINA_HP_BASE,
   LocationCoordinates
 } from '../services/portugalGeoService';
-import { sortByDateDesc, formatDate } from '../utils/dateUtils';
+import { sortByDateDesc, formatDate, getTodayFormatted } from '../utils/dateUtils';
+import { generateMapaServicosA3PDF } from '../services/pdfService';
 import type { FolhaServico, Empresa, Cliente, Equipamento } from '../types';
 
 interface MapaPortugalProps {
@@ -437,6 +442,9 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     };
   }, [filteredMarkers, onSelectFolha]);
 
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfToast, setPdfToast] = useState<string | null>(null);
+
   // Handle clicking a card in the side list to flyTo on the map
   const handleFlyToMarker = (item: MapMarkerItem) => {
     setSelectedMarkerId(item.folha.id);
@@ -452,6 +460,76 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     const map = mapInstanceRef.current;
     if (map) {
       map.flyTo([39.6, -8.1], 7.4, { duration: 1 });
+    }
+  };
+
+  // Generate Executive A3 PDF with Visual Map Snapshot + Full Summary Table
+  const handlePrintA3PDF = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    setPdfToast('A capturar mapa e a preparar documento A3...');
+
+    try {
+      let mapImageBase64: string | undefined;
+      const mapEl = mapContainerRef.current;
+
+      if (mapEl) {
+        try {
+          // Brief pause to ensure all tiles and pins are rendered
+          await new Promise(res => setTimeout(res, 250));
+
+          const canvas = await html2canvas(mapEl, {
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            scale: 1.8,
+            backgroundColor: mapStyle === 'dark' ? '#090d16' : '#ffffff'
+          });
+          mapImageBase64 = canvas.toDataURL('image/jpeg', 0.88);
+        } catch (captureErr) {
+          console.warn('[MapaPortugal] Aviso na captura de imagem do mapa:', captureErr);
+        }
+      }
+
+      let filterDesc = '';
+      if (filterType !== 'all') {
+        filterDesc += filterType === 'AT' ? 'Apenas Assistência Técnica' : filterType === 'CT' ? 'Apenas Contratos' : 'Outros';
+      }
+      if (selectedRegion !== 'all') {
+        filterDesc += (filterDesc ? ' • ' : '') + `Região: ${selectedRegion}`;
+      }
+      if (searchQuery) {
+        filterDesc += (filterDesc ? ' • ' : '') + `Pesquisa: "${searchQuery}"`;
+      }
+
+      const doc = generateMapaServicosA3PDF({
+        mapImageBase64,
+        items: filteredMarkers,
+        stats,
+        filterDescription: filterDesc || 'Todos os serviços no terreno'
+      });
+
+      const fileName = `Mapa_Servicos_Portugal_A3_${getTodayFormatted().replace(/\//g, '-')}.pdf`;
+      doc.save(fileName);
+
+      // Also create an object URL to allow instant browser preview/print tab
+      try {
+        const blob = doc.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const printWindow = window.open(blobUrl, '_blank');
+        if (printWindow) {
+          printWindow.focus();
+        }
+      } catch (e) {}
+
+      setPdfToast(`✅ PDF A3 gerado com sucesso! (${fileName})`);
+      setTimeout(() => setPdfToast(null), 4000);
+    } catch (err: any) {
+      console.error('[MapaPortugal] Erro ao gerar PDF A3:', err);
+      setPdfToast(`❌ Erro ao gerar PDF: ${err?.message || err}`);
+      setTimeout(() => setPdfToast(null), 5000);
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -477,7 +555,31 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Print A3 Button */}
+          <button
+            onClick={handlePrintA3PDF}
+            disabled={isGeneratingPdf}
+            className={`px-4 py-2 rounded-2xl font-black text-xs flex items-center gap-2 shadow-lg transition-all active:scale-95 border ${
+              isGeneratingPdf
+                ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-emerald-400/40 shadow-emerald-950/40'
+            }`}
+            title="Imprimir Mapa em A3 com mapa visual e lista resumida de todas as folhas em aberto"
+          >
+            {isGeneratingPdf ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-300" />
+                <span>A Preparar PDF A3...</span>
+              </>
+            ) : (
+              <>
+                <Printer className="w-4 h-4 text-emerald-200" />
+                <span>Imprimir em A3 (Mapa + Lista)</span>
+              </>
+            )}
+          </button>
+
           {/* Map Tile Style Switcher */}
           <div className="flex items-center bg-slate-950/80 p-1 rounded-2xl border border-slate-800 text-xs font-bold">
             <button
@@ -711,6 +813,14 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {pdfToast && (
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 bg-slate-900/95 text-white text-xs font-bold rounded-2xl border border-emerald-500/40 shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3">
+          <Sparkles className="w-4 h-4 text-emerald-400" />
+          <span>{pdfToast}</span>
+        </div>
+      )}
     </div>
   );
 };
