@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
+import { formatDateToInput, cleanPersonName } from '../utils/dateUtils';
 import type {
   FolhaServico,
   Tarefa,
@@ -145,28 +146,27 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
   const tecnicosList = useMemo(() => {
     const set = new Set<string>();
     folhas.forEach(f => {
-      if (f.tecnicoPlaneado) set.add(f.tecnicoPlaneado);
-      f.servicos?.forEach(s => s.tecnico && set.add(s.tecnico));
-      f.servicosAdicionais?.forEach(s => s.tecnico && set.add(s.tecnico));
+      if (f.tecnicoPlaneado) set.add(cleanPersonName(f.tecnicoPlaneado));
+      if (f.formacaoPor) set.add(cleanPersonName(f.formacaoPor));
+      if (f.entregaPor) set.add(cleanPersonName(f.entregaPor));
+      if (f.validacaoPor) set.add(cleanPersonName(f.validacaoPor));
+      if (f.preparacaoPor) set.add(cleanPersonName(f.preparacaoPor));
+      f.servicos?.forEach(s => s.tecnico && set.add(cleanPersonName(s.tecnico)));
+      f.servicosAdicionais?.forEach(s => s.tecnico && set.add(cleanPersonName(s.tecnico)));
     });
     tarefas.forEach(t => {
-      if (t.responsavel) set.add(t.responsavel);
-      if (t.concluidoPorNome) set.add(t.concluidoPorNome);
+      if (t.responsavel) set.add(cleanPersonName(t.responsavel));
+      if (t.concluidoPorNome) set.add(cleanPersonName(t.concluidoPorNome));
     });
     return Array.from(set).filter(Boolean).sort();
   }, [folhas, tarefas]);
 
-  // Build all Activity Items (Each Folha de Serviço appears ONCE)
+  // Build all Activity Items (supporting Formação, Entrega, Validação, Preparação and general repairs)
   const allActivities = useMemo(() => {
     const list: ActivityItem[] = [];
 
-    // 1. Folhas de Serviço (1 Folha = 1 Registo)
     folhas.forEach(f => {
       const emp = empresas.find(e => e.id === f.empresaId);
-      const folhaDate = f.dataConclusao
-        ? f.dataConclusao.split('T')[0]
-        : (f.dataPlaneada || f.dataEntradaOficina || f.data || formatDateISO(new Date()));
-
       const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
       
       const totalHoras = (f.servicos?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0) +
@@ -176,51 +176,165 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
                          (f.pecasAdicionais?.reduce((acc, p) => acc + (p.qtd || 1), 0) || 0);
 
       const tecnicosUnicos = Array.from(new Set([
-        ...(f.servicos?.map(s => s.tecnico) || []),
-        ...(f.servicosAdicionais?.map(s => s.tecnico) || []),
-        f.tecnicoPlaneado
+        ...(f.servicos?.map(s => cleanPersonName(s.tecnico)) || []),
+        ...(f.servicosAdicionais?.map(s => cleanPersonName(s.tecnico)) || []),
+        cleanPersonName(f.tecnicoPlaneado)
       ])).filter(Boolean).join(', ') || 'Oficina HP';
 
       const firstServiceDesc = f.servicos?.[0]?.descricao || f.servicosAdicionais?.[0]?.descricao;
-      const desc = f.anomalias || firstServiceDesc || f.notasInternas || `${f.tipo} • ${f.status}`;
+      const defaultDesc = f.anomalias || firstServiceDesc || f.notasInternas || `${f.tipo} • ${f.status}`;
 
-      list.push({
-        id: `folha_${f.id}`,
-        tipo: 'folha',
-        dateStr: folhaDate,
-        titulo: `Folha de Serviço ${f.numero}`,
-        descricao: desc,
-        concluido: isConcluido,
-        tecnico: tecnicosUnicos,
-        horas: totalHoras,
-        qtdServicos: countServicos,
-        qtdPecas: countPecas,
-        folhaNumero: f.numero,
-        folhaId: f.id,
-        matricula: f.matricula,
-        marcaModelo: `${f.marca} ${f.modelo}`,
-        empresaNome: emp?.nome || 'Cliente',
-        status: f.status,
-        rawFolha: f
-      });
+      let addedSpecificEvent = false;
+
+      // 1. Registo de Formação (ex: FS26882 em 14/09)
+      if (f.dataFormacao && f.dataFormacao.trim() !== '' && f.dataFormacao !== '-') {
+        const formacaoDate = formatDateToInput(f.dataFormacao);
+        if (formacaoDate) {
+          list.push({
+            id: `folha_${f.id}_formacao`,
+            tipo: 'folha',
+            dateStr: formacaoDate,
+            titulo: `${f.numero} • Formação`,
+            descricao: f.formacaoPor ? `Formação ministrada por ${cleanPersonName(f.formacaoPor)}` : 'Formação técnica registada',
+            concluido: true,
+            tecnico: cleanPersonName(f.formacaoPor) || 'Hugo Portugal',
+            horas: f.tipo === 'Entrega e Formação' ? totalHoras : 0,
+            qtdServicos: countServicos,
+            qtdPecas: countPecas,
+            folhaNumero: f.numero,
+            folhaId: f.id,
+            matricula: f.matricula,
+            marcaModelo: `${f.marca} ${f.modelo}`,
+            empresaNome: emp?.nome || 'Cliente',
+            status: f.status,
+            rawFolha: f
+          });
+          addedSpecificEvent = true;
+        }
+      }
+
+      // 2. Registo de Entrega
+      if (f.dataEntrega && f.dataEntrega.trim() !== '' && f.dataEntrega !== '-') {
+        const entregaDate = formatDateToInput(f.dataEntrega);
+        if (entregaDate) {
+          list.push({
+            id: `folha_${f.id}_entrega`,
+            tipo: 'folha',
+            dateStr: entregaDate,
+            titulo: `${f.numero} • Entrega`,
+            descricao: f.entregaPor ? `Entrega efetuada por ${cleanPersonName(f.entregaPor)}` : 'Entrega de viatura registada',
+            concluido: true,
+            tecnico: cleanPersonName(f.entregaPor) || 'Oficina HP',
+            horas: 0,
+            qtdServicos: 0,
+            qtdPecas: 0,
+            folhaNumero: f.numero,
+            folhaId: f.id,
+            matricula: f.matricula,
+            marcaModelo: `${f.marca} ${f.modelo}`,
+            empresaNome: emp?.nome || 'Cliente',
+            status: f.status,
+            rawFolha: f
+          });
+          addedSpecificEvent = true;
+        }
+      }
+
+      // 3. Registo de Validação
+      if (f.validacaoData && f.validacaoData.trim() !== '' && f.validacaoData !== '-') {
+        const validacaoDate = formatDateToInput(f.validacaoData);
+        if (validacaoDate) {
+          list.push({
+            id: `folha_${f.id}_validacao`,
+            tipo: 'folha',
+            dateStr: validacaoDate,
+            titulo: `${f.numero} • Validação`,
+            descricao: f.validacaoPor ? `Validação técnica por ${cleanPersonName(f.validacaoPor)}` : 'Validação de viatura efetuada',
+            concluido: true,
+            tecnico: cleanPersonName(f.validacaoPor) || 'Oficina HP',
+            horas: 0,
+            qtdServicos: 0,
+            qtdPecas: 0,
+            folhaNumero: f.numero,
+            folhaId: f.id,
+            matricula: f.matricula,
+            marcaModelo: `${f.marca} ${f.modelo}`,
+            empresaNome: emp?.nome || 'Cliente',
+            status: f.status,
+            rawFolha: f
+          });
+          addedSpecificEvent = true;
+        }
+      }
+
+      // 4. Registo de Preparação
+      if (f.preparacaoData && f.preparacaoData.trim() !== '' && f.preparacaoData !== '-') {
+        const prepDate = formatDateToInput(f.preparacaoData);
+        if (prepDate) {
+          list.push({
+            id: `folha_${f.id}_preparacao`,
+            tipo: 'folha',
+            dateStr: prepDate,
+            titulo: `${f.numero} • Preparação`,
+            descricao: f.preparacaoPor ? `Preparação efetuada por ${cleanPersonName(f.preparacaoPor)}` : 'Preparação de viatura efetuada',
+            concluido: true,
+            tecnico: cleanPersonName(f.preparacaoPor) || 'Oficina HP',
+            horas: 0,
+            qtdServicos: 0,
+            qtdPecas: 0,
+            folhaNumero: f.numero,
+            folhaId: f.id,
+            matricula: f.matricula,
+            marcaModelo: `${f.marca} ${f.modelo}`,
+            empresaNome: emp?.nome || 'Cliente',
+            status: f.status,
+            rawFolha: f
+          });
+          addedSpecificEvent = true;
+        }
+      }
+
+      // 5. Registo Geral da Folha (Oficina, Assistência Técnica, Contratos, etc.)
+      if (!addedSpecificEvent || (f.tipo !== 'Entrega e Formação' && f.tipo !== 'Validação e Preparação')) {
+        const folhaDate = formatDateToInput(f.dataConclusao || f.dataPlaneada || f.dataEntradaOficina || f.data) || formatDateISO(new Date());
+
+        list.push({
+          id: `folha_${f.id}`,
+          tipo: 'folha',
+          dateStr: folhaDate,
+          titulo: `Folha de Serviço ${f.numero}`,
+          descricao: defaultDesc,
+          concluido: isConcluido,
+          tecnico: tecnicosUnicos,
+          horas: totalHoras,
+          qtdServicos: countServicos,
+          qtdPecas: countPecas,
+          folhaNumero: f.numero,
+          folhaId: f.id,
+          matricula: f.matricula,
+          marcaModelo: `${f.marca} ${f.modelo}`,
+          empresaNome: emp?.nome || 'Cliente',
+          status: f.status,
+          rawFolha: f
+        });
+      }
     });
 
-    // 2. Tarefas Concluídas
+    // Tarefas Concluídas
     tarefas.forEach(t => {
       if (t.status === 'Concluída') {
-        const taskDate = t.dataConclusao
-          ? t.dataConclusao.split(' ')[0]
-          : t.dataCriacao || formatDateISO(new Date());
+        const taskDate = formatDateToInput(t.dataConclusao || t.dataCriacao) || formatDateISO(new Date());
+        const timePart = t.dataConclusao && t.dataConclusao.includes(' ') ? t.dataConclusao.split(' ')[1] : '';
 
         list.push({
           id: `tar_${t.id}`,
           tipo: 'tarefa',
           dateStr: taskDate,
-          timeStr: t.dataConclusao?.split(' ')[1] || '',
+          timeStr: timePart,
           titulo: `Tarefa Concluída • ${t.numero}`,
           descricao: t.descricao,
           concluido: true,
-          tecnico: t.concluidoPorNome || t.responsavel || 'Hugo Portugal',
+          tecnico: cleanPersonName(t.concluidoPorNome || t.responsavel) || 'Hugo Portugal',
           prioridade: t.prioridade,
           rawTarefa: t
         });
