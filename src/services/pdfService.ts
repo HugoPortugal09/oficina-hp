@@ -36,30 +36,24 @@ export function createFolhaServicoPDFDoc(
   };
 
   // 1. DOCUMENT TYPE & HERO BADGE CONFIGURATION
-  let docTitle = 'GUIA DE TRABALHO';
-  let badgeBg = [13, 148, 136]; // Teal #0d9488
-  if (folha.tipo === 'Validação e Preparação') {
+  let docTitle = (folha.tipo || 'FOLHA DE SERVIÇO').toUpperCase();
+  if (folha.tipo === 'Assistência Técnica') {
+    docTitle = 'ASSISTÊNCIA TÉCNICA';
+  } else if (folha.tipo === 'Validação e Preparação') {
     docTitle = 'VALIDAÇÃO & PREPARAÇÃO';
-    badgeBg = [16, 185, 129]; // Emerald #10b981
   } else if (folha.tipo === 'Oficina') {
     docTitle = 'FOLHA DE OFICINA';
-    badgeBg = [59, 130, 246]; // Blue #3b82f6
   } else if (folha.tipo === 'Garantia') {
-    docTitle = 'FOLHA DE GARANTIA';
-    badgeBg = [234, 88, 12]; // Orange #ea580c
+    docTitle = 'GARANTIA';
   } else if (folha.tipo === 'Contrato') {
     docTitle = 'MANUTENÇÃO CONTRATO';
-    badgeBg = [99, 102, 241]; // Indigo #6366f1
-  } else if (folha.tipo === 'Assistência Técnica') {
-    docTitle = 'GUIA DE TRABALHO';
-    badgeBg = [13, 148, 136]; // Teal #0d9488
   }
 
   // 2. FULL-BLEED HERO HEADER BANNER (Navy #0b1528)
   doc.setFillColor(11, 21, 40); // Dark Navy Slate
   doc.rect(0, 0, 210, 38, 'F');
 
-  // Emerald / Teal bottom accent border
+  // Emerald bottom accent border
   doc.setFillColor(16, 185, 129); // #10b981
   doc.rect(0, 37, 210, 1.2, 'F');
 
@@ -79,16 +73,16 @@ export function createFolhaServicoPDFDoc(
   doc.setTextColor(56, 189, 248); // #38bdf8 (Cyan)
   doc.text('OFICINA HP • GESTÃO OPERACIONAL DE FROTAS', 44, 13);
 
-  // Subhead row: Right badge with document title
-  doc.setFontSize(7.5);
+  // Subhead row: Right emerald pill badge (matching Entrega & Formação)
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   const titleWidth = doc.getTextWidth(docTitle);
-  const badgeW = Math.max(50, titleWidth + 14);
-  const badgeX = 196 - badgeW;
-  doc.setFillColor(badgeBg[0], badgeBg[1], badgeBg[2]);
+  const badgeW = Math.max(54, titleWidth + 14);
+  const badgeX = 192 - badgeW;
+  doc.setFillColor(16, 185, 129); // #10b981
   doc.roundedRect(badgeX, 8, badgeW, 6.5, 3.2, 3.2, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.text(docTitle, badgeX + (badgeW / 2), 12.5, { align: 'center' });
+  doc.text(docTitle, badgeX + (badgeW / 2), 12.4, { align: 'center' });
 
   // Main vehicle / equipment title
   doc.setFontSize(16);
@@ -116,123 +110,142 @@ export function createFolhaServicoPDFDoc(
   }
   doc.text(regDateStr, 44 + fsLabelW + fsNumW, 31);
 
-  // 3. DUAL CARDS: CLIENTE & EQUIPAMENTO
-  const cardStartY = 44;
-  const cardW = 88;
-  const cardH = 38;
-  const cBg = [248, 250, 252]; // Slate 50
-  const cBorder = [226, 232, 240]; // Slate 200
-  const lblC = [100, 116, 139]; // Slate 500
-  const txtC = [15, 23, 42]; // Slate 900
+  // 3. DUAL CARDS: CLIENTE (VERDE) & EQUIPAMENTO (AZUL)
+  let curY = 44;
+  const cardW = 84;
+  const cardH = 32;
 
-  // --- CARD 1: CLIENTE ---
-  doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
-  doc.setFillColor(cBg[0], cBg[1], cBg[2]);
-  doc.roundedRect(14, cardStartY, cardW, cardH, 2.5, 2.5, 'FD');
+  // --- CARD 1: CLIENTE / ENTIDADE (Verde - Idêntico a Dados de Entrega) ---
+  doc.setFillColor(240, 253, 244); // #f0fdf4
+  doc.setDrawColor(134, 239, 172); // #86efac
+  doc.setLineWidth(0.4);
+  doc.roundedRect(18, curY, cardW, cardH, 2.5, 2.5, 'FD');
 
-  doc.setFontSize(7.5);
+  // Title with green icon square
+  doc.setFillColor(22, 101, 52);
+  doc.roundedRect(22, curY + 4, 4, 3.5, 0.4, 0.4, 'F');
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(lblC[0], lblC[1], lblC[2]);
-  doc.text('CLIENTE / ENTIDADE', 20, cardStartY + 7);
+  doc.setTextColor(22, 101, 52); // #166534
+  doc.text('CLIENTE / ENTIDADE', 28, curY + 7);
 
-  doc.setFontSize(9.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(txtC[0], txtC[1], txtC[2]);
   const clienteNome = empresa?.nome || (folha as any).empresaNome || (folha as any).cliente || 'Cliente Particular / Não Especificado';
-  const cLines = doc.splitTextToSize(clienteNome, 76);
-  doc.text(cLines, 20, cardStartY + 14);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  const cLines = doc.splitTextToSize(clienteNome, 74);
+  doc.text(cLines.slice(0, 2), 22, curY + 14.5);
 
-  const cShift = (cLines.length - 1) * 4;
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  const morada = empresa?.moradaSede || folha.localizacao || 'Morada não disponível';
-  const moradaLines = doc.splitTextToSize(morada, 76);
-  doc.text(moradaLines.slice(0, 2), 20, cardStartY + 20 + cShift);
+  const morada = empresa?.moradaSede || folha.localizacao || '';
+  if (morada) {
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    const moradaLines = doc.splitTextToSize(morada, 74);
+    doc.text(moradaLines.slice(0, 1), 22, curY + 22.5);
+  }
 
   if (folha.pessoaPresente) {
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(lblC[0], lblC[1], lblC[2]);
-    doc.text('Presente: ', 20, cardStartY + 33);
+    doc.setTextColor(22, 101, 52);
+    doc.text('Presente: ', 22, curY + 28.5);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(txtC[0], txtC[1], txtC[2]);
-    doc.text(folha.pessoaPresente, 34, cardStartY + 33);
+    doc.setTextColor(15, 23, 42);
+    doc.text(folha.pessoaPresente, 35, curY + 28.5);
   }
 
-  // --- CARD 2: EQUIPAMENTO ---
-  doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
-  doc.setFillColor(cBg[0], cBg[1], cBg[2]);
-  doc.roundedRect(108, cardStartY, cardW, cardH, 2.5, 2.5, 'FD');
+  // --- CARD 2: EQUIPAMENTO / VIATURA (Azul - Idêntico a Dados de Formação) ---
+  const card2X = 108;
+  doc.setFillColor(240, 249, 255); // #f0f9ff
+  doc.setDrawColor(125, 211, 252); // #7dd3fc
+  doc.setLineWidth(0.4);
+  doc.roundedRect(card2X, curY, cardW, cardH, 2.5, 2.5, 'FD');
+
+  // Title with blue icon square
+  doc.setFillColor(3, 105, 161);
+  doc.roundedRect(card2X + 4, curY + 4, 4, 3.5, 0.4, 0.4, 'F');
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(3, 105, 161); // #0369a1
+  doc.text('EQUIPAMENTO / VIATURA', card2X + 10, curY + 7);
+
+  const equipNome = `${folha.marca || equipamento?.marca || ''} ${folha.modelo || equipamento?.modelo || ''}`.trim() || 'Equipamento Geral';
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(equipNome, card2X + 4, curY + 14.5);
 
   doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(lblC[0], lblC[1], lblC[2]);
-  doc.text('EQUIPAMENTO / VIATURA', 114, cardStartY + 7);
-
-  doc.setFontSize(9.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(txtC[0], txtC[1], txtC[2]);
-  const equipNome = `${folha.marca || equipamento?.marca || ''} ${folha.modelo || equipamento?.modelo || ''}`.trim() || 'Equipamento Geral';
-  doc.text(equipNome, 114, cardStartY + 14);
-
-  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
-  doc.text(`Matrícula: ${folha.matricula || equipamento?.matricula || '---'}`, 114, cardStartY + 20);
-
   const nSerie = folha.nSerie || equipamento?.nSerie || '';
-  if (nSerie && nSerie !== 'undefined') {
-    doc.text(`Nº Série: ${nSerie}`, 114, cardStartY + 25);
-  }
+  const seriePart = (nSerie && nSerie !== 'undefined') ? ` • Nº Série: ${nSerie}` : '';
+  doc.text(`Matrícula: ${folha.matricula || equipamento?.matricula || '---'}${seriePart}`, card2X + 4, curY + 20.5);
 
-  // Badges Kms & Horas
+  // Badges KMS & HORAS in Blue Card
   doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(cBorder[0], cBorder[1], cBorder[2]);
-  doc.roundedRect(114, cardStartY + 28, 38, 7, 1.5, 1.5, 'FD');
-  doc.roundedRect(156, cardStartY + 28, 38, 7, 1.5, 1.5, 'FD');
+  doc.setDrawColor(186, 230, 253); // #bae6fd
+  doc.roundedRect(card2X + 4, curY + 23.5, 36, 6.5, 1.2, 1.2, 'FD');
+  doc.roundedRect(card2X + 44, curY + 23.5, 36, 6.5, 1.2, 1.2, 'FD');
 
   doc.setFontSize(6.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(lblC[0], lblC[1], lblC[2]);
-  doc.text('KMS:', 116, cardStartY + 33);
-  doc.text('HORAS:', 158, cardStartY + 33);
+  doc.setTextColor(71, 85, 105);
+  doc.text('KMS:', card2X + 6, curY + 28);
+  doc.text('HORAS:', card2X + 46, curY + 28);
 
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(txtC[0], txtC[1], txtC[2]);
-  doc.text(String(folha.kmsAtuais || 0), 126, cardStartY + 33);
-  doc.text(String(folha.horasAtuais ? `${folha.horasAtuais}h` : '0h'), 171, cardStartY + 33);
+  doc.setTextColor(2, 132, 199); // Sky Blue #0284c7
+  doc.text(String(folha.kmsAtuais || 0), card2X + 16, curY + 28);
+  doc.text(String(folha.horasAtuais ? `${folha.horasAtuais}h` : '0h'), card2X + 59, curY + 28);
 
-  let currentY = cardStartY + cardH + 6;
+  curY += cardH + 7;
 
-  // 4. ANOMALIAS / OBSERVAÇÕES TÉCNICAS
+  // 4. ANOMALIAS / OBSERVAÇÕES TÉCNICAS (Clean card layout like Entrega & Formação)
   const anomaliaTexto = (folha.anomalias || '').trim();
   if (anomaliaTexto && folha.tipo !== 'Validação e Preparação') {
-    runAutoTable({
-      startY: currentY,
-      head: [['ANOMALIAS REPORTADAS / OBSERVAÇÕES TÉCNICAS']],
-      body: [[anomaliaTexto]],
-      theme: 'grid',
-      headStyles: {
-        fillColor: [11, 21, 40], // Dark Navy Slate
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 8.5
-      },
-      styles: {
-        fontSize: 8.5,
-        cellPadding: 3.5,
-        textColor: [30, 41, 59],
-        lineColor: [226, 232, 240]
-      },
-      margin: { left: 14, right: 14 }
-    });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
+    if (curY > 240) { doc.addPage(); curY = 20; }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('ANOMALIAS REPORTADAS / OBSERVAÇÕES TÉCNICAS', 18, curY + 4);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(18, curY + 6.5, 192, curY + 6.5);
+    curY += 9;
+
+    const anomaliaSplit = doc.splitTextToSize(anomaliaTexto, 166);
+    const boxH = Math.max(12, anomaliaSplit.length * 4.2 + 8);
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(18, curY, 174, boxH, 2, 2, 'FD');
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.text(anomaliaSplit, 22, curY + 6.5);
+
+    curY += boxH + 7;
   }
 
   // 4.1 CONTROLO DE VALIDAÇÃO & PREPARAÇÃO (Se aplicável)
   if (folha.tipo === 'Validação e Preparação') {
+    if (curY > 240) { doc.addPage(); curY = 20; }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('CONTROLO DE VALIDAÇÃO & PREPARAÇÃO', 18, curY + 4);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(18, curY + 6.5, 192, curY + 6.5);
+    curY += 9;
+
     const valText = folha.validacaoFeita
       ? `[X] Realizada em ${folha.validacaoData || '---'} por: ${folha.validacaoPor || 'HP'}`
       : `[ ] Pendente`;
@@ -241,7 +254,7 @@ export function createFolhaServicoPDFDoc(
       : `[ ] Pendente`;
 
     runAutoTable({
-      startY: currentY,
+      startY: curY,
       head: [['ETAPA DE CONTROLO', 'ESTADO / REGISTO']],
       body: [
         ['VALIDAÇÃO', valText],
@@ -262,32 +275,43 @@ export function createFolhaServicoPDFDoc(
       },
       columnStyles: {
         0: { cellWidth: 50, fontStyle: 'bold' },
-        1: { cellWidth: 132 }
+        1: { cellWidth: 124 }
       },
-      margin: { left: 14, right: 14 }
+      margin: { left: 18, right: 18 }
     });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
+    curY = (doc as any).lastAutoTable.finalY + 7;
   }
 
-  // 5. SERVIÇOS EFETUADOS (Mão-de-Obra)
+  // 5. SERVIÇOS EFETUADOS (Mão-de-Obra) - Styled in Formação Blue Palette
   const allServices = [
     ...(folha.servicos || []).map(s => ({ ...s, isAdicional: false })),
     ...(folha.servicosAdicionais || []).map(s => ({ ...s, isAdicional: true }))
   ];
 
   if (allServices.length > 0) {
+    if (curY > 240) { doc.addPage(); curY = 20; }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('SERVIÇOS REALIZADOS', 18, curY + 4);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(18, curY + 6.5, 192, curY + 6.5);
+    curY += 9;
+
     const serviceRows = allServices.map((s) => [
       `[${s.concluido !== false ? 'x' : ' '}]  ${s.isAdicional ? '[ADICIONAL] ' : ''}${s.descricao || ''}`,
       s.horas ? `${s.horas}h` : ''
     ]);
 
     runAutoTable({
-      startY: currentY,
-      head: [['SERVIÇOS REALIZADOS', 'TEMPO']],
+      startY: curY,
+      head: [['DESCRIÇÃO DO SERVIÇO / TRABALHO', 'TEMPO']],
       body: serviceRows,
       theme: 'grid',
       headStyles: {
-        fillColor: [11, 21, 40], // Dark Navy Slate
+        fillColor: [3, 105, 161], // Sky Blue #0369a1 (matching the blue palette)
         textColor: [255, 255, 255],
         fontStyle: 'bold',
         fontSize: 8.5
@@ -299,21 +323,32 @@ export function createFolhaServicoPDFDoc(
         lineColor: [226, 232, 240]
       },
       columnStyles: {
-        0: { cellWidth: 160 },
+        0: { cellWidth: 152 },
         1: { cellWidth: 22, halign: 'right' }
       },
-      margin: { left: 14, right: 14 }
+      margin: { left: 18, right: 18 }
     });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
+    curY = (doc as any).lastAutoTable.finalY + 7;
   }
 
-  // 6. PEÇAS E MATERIAIS
+  // 6. PEÇAS E MATERIAIS - Styled in Entrega Emerald Green Palette
   const allParts = [
     ...(folha.pecas || []).map(p => ({ ...p, isAdicional: false })),
     ...(folha.pecasAdicionais || []).map(p => ({ ...p, isAdicional: true }))
   ];
 
   if (allParts.length > 0) {
+    if (curY > 240) { doc.addPage(); curY = 20; }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('PEÇAS E MATERIAIS APLICADOS', 18, curY + 4);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(18, curY + 6.5, 192, curY + 6.5);
+    curY += 9;
+
     const pecasRows = allParts.map((p) => {
       const refPart = p.referencia ? `[${p.referencia}] ` : '';
       return [
@@ -322,12 +357,12 @@ export function createFolhaServicoPDFDoc(
     });
 
     runAutoTable({
-      startY: currentY,
-      head: [['PEÇAS E MATERIAIS APLICADOS']],
+      startY: curY,
+      head: [['REFERÊNCIA / DESIGNAÇÃO DO ARTIGO']],
       body: pecasRows,
       theme: 'grid',
       headStyles: {
-        fillColor: [79, 70, 229], // Indigo professional
+        fillColor: [22, 101, 52], // Emerald Green #166534 (matching the green palette)
         textColor: [255, 255, 255],
         fontStyle: 'bold',
         fontSize: 8.5
@@ -338,43 +373,44 @@ export function createFolhaServicoPDFDoc(
         textColor: [30, 41, 59],
         lineColor: [226, 232, 240]
       },
-      margin: { left: 14, right: 14 }
+      margin: { left: 18, right: 18 }
     });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
+    curY = (doc as any).lastAutoTable.finalY + 7;
   }
 
   // 7. NOTAS PARA O CLIENTE (se existirem)
   if (folha.notasCliente && folha.notasCliente.trim()) {
-    if (currentY > 230) {
-      doc.addPage();
-      currentY = 20;
-    }
-    runAutoTable({
-      startY: currentY,
-      head: [['NOTAS / OBSERVAÇÕES PARA O CLIENTE']],
-      body: [[folha.notasCliente.trim()]],
-      theme: 'grid',
-      headStyles: {
-        fillColor: [71, 85, 105], // Slate 600
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 8.5
-      },
-      styles: {
-        fontSize: 8,
-        cellPadding: 3,
-        textColor: [30, 41, 59],
-        lineColor: [226, 232, 240]
-      },
-      margin: { left: 14, right: 14 }
-    });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
+    if (curY > 240) { doc.addPage(); curY = 20; }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(71, 85, 105);
+    doc.text('NOTAS / OBSERVAÇÕES PARA O CLIENTE', 18, curY + 4);
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(18, curY + 6.5, 192, curY + 6.5);
+    curY += 9;
+
+    const notasSplit = doc.splitTextToSize(folha.notasCliente.trim(), 166);
+    const boxH = Math.max(12, notasSplit.length * 4.2 + 8);
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(18, curY, 174, boxH, 2, 2, 'FD');
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.text(notasSplit, 22, curY + 6.5);
+
+    curY += boxH + 7;
   }
 
   // 8. PRÓXIMA REVISÃO & REGISTO EFETUADO POR
-  if (currentY > 255) {
+  if (curY > 255) {
     doc.addPage();
-    currentY = 20;
+    curY = 20;
   }
 
   // Check tech initials / name
@@ -389,35 +425,35 @@ export function createFolhaServicoPDFDoc(
     ? Array.from(initialsSet).join(', ') 
     : cleanPersonName(folha.criadoPor || 'Hugo Portugal');
 
-  // Dotted separator line
+  // Dotted separator line matching Entrega & Formação
   doc.setDrawColor(203, 213, 225);
   doc.setLineDashPattern([1.5, 1.5], 0);
-  doc.line(14, currentY, 196, currentY);
+  doc.line(18, curY, 192, curY);
   doc.setLineDashPattern([], 0);
-  currentY += 5;
+  curY += 5;
 
   if (folha.tipo !== 'Validação e Preparação' && (folha.previsaoRevisaoKms > 0 || folha.previsaoRevisaoHoras > 0)) {
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(13, 148, 136); // Teal
+    doc.setTextColor(22, 101, 52); // Green #166534
     const revStr = `Próxima Revisão: ${folha.previsaoRevisaoKms > 0 ? `${folha.previsaoRevisaoKms.toLocaleString()} Kms` : ''} ${folha.previsaoRevisaoHoras > 0 ? `| ${folha.previsaoRevisaoHoras} Horas` : ''}`;
-    doc.text(revStr.trim(), 14, currentY);
-    currentY += 5;
+    doc.text(revStr.trim(), 18, curY);
+    curY += 5;
   }
 
   const dataRegisto = formatDate(folha.data) || getTodayFormatted();
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text('Serviço realizado / registado por: ', 14, currentY);
-  const regLblW = doc.getTextWidth('Serviço realizado / registado por: ');
+  doc.text('Registo efetuado por: ', 18, curY);
+  const regLblW = doc.getTextWidth('Registo efetuado por: ');
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(techName, 14 + regLblW, currentY);
+  doc.text(techName, 18 + regLblW, curY);
   const regNameW = doc.getTextWidth(techName);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text(` • ${dataRegisto}`, 14 + regLblW + regNameW, currentY);
+  doc.text(` • ${dataRegisto}`, 18 + regLblW + regNameW, curY);
 
   // 9. PHOTO GALLERY (IF PHOTOS EXIST)
   const rawFotos = folha.fotos || [];
@@ -433,16 +469,16 @@ export function createFolhaServicoPDFDoc(
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('REGISTO FOTOGRÁFICO DA INTERVENÇÃO', 14, 15);
+    doc.text('REGISTO FOTOGRÁFICO DA INTERVENÇÃO', 18, 15);
 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    doc.text(`${folha.matricula || ''} • FS ${folha.numero || ''} • (${rawFotos.length} fotografia${rawFotos.length > 1 ? 's' : ''})`, 196, 15, { align: 'right' });
+    doc.text(`${folha.matricula || ''} • FS ${folha.numero || ''} • (${rawFotos.length} fotografia${rawFotos.length > 1 ? 's' : ''})`, 192, 15, { align: 'right' });
 
     let photoStartY = 32;
-    const colW = 88;
-    const colH = 64;
+    const colW = 84;
+    const colH = 62;
     const gapX = 6;
     const gapY = 8;
 
@@ -454,7 +490,7 @@ export function createFolhaServicoPDFDoc(
       }
       const col = indexInPage % 2;
       const row = Math.floor(indexInPage / 2);
-      const px = 14 + col * (colW + gapX);
+      const px = 18 + col * (colW + gapX);
       const py = photoStartY + row * (colH + gapY);
 
       doc.setFillColor(248, 250, 252);
@@ -496,18 +532,18 @@ export function createFolhaServicoPDFDoc(
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('GRAUMP', 14, 293.5);
+    doc.text('GRAUMP', 18, 293.5);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(203, 213, 225);
-    doc.text(' • Oficina HP Gestão & Frotas', 28, 293.5);
+    doc.text(' • Oficina HP Gestão & Frotas', 32, 293.5);
 
     doc.setTextColor(148, 163, 184);
     doc.text('Documento Processado por Computador', 110, 293.5, { align: 'center' });
 
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Página ${i} de ${pageCount}`, 196, 293.5, { align: 'right' });
+    doc.text(`Página ${i} de ${pageCount}`, 192, 293.5, { align: 'right' });
   }
 
   return doc;
