@@ -272,7 +272,7 @@ export function createFolhaServicoPDFDoc(
     curY = (doc as any).lastAutoTable.finalY + 7;
   }
 
-  // 5. SERVIÇOS EFETUADOS (Mão-de-Obra) - Styled in Formação Blue Palette
+  // 5. SERVIÇOS EFETUADOS (Mão-de-Obra)
   const allServices = [
     ...(folha.servicos || []).map(s => ({ ...s, isAdicional: false })),
     ...(folha.servicosAdicionais || []).map(s => ({ ...s, isAdicional: true }))
@@ -280,31 +280,23 @@ export function createFolhaServicoPDFDoc(
 
   if (allServices.length > 0) {
     if (curY > 240) { doc.addPage(); curY = 20; }
-    doc.setFontSize(8.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(71, 85, 105);
-    doc.text('SERVIÇOS REALIZADOS', 18, curY + 4);
 
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.4);
-    doc.line(18, curY + 6.5, 192, curY + 6.5);
-    curY += 9;
-
-    const serviceRows = allServices.map((s) => [
-      `[${s.concluido !== false ? 'x' : ' '}]  ${s.isAdicional ? '[ADICIONAL] ' : ''}${s.descricao || ''}`,
+    const serviceRows = allServices.map((s, idx) => [
+      String(idx + 1),
+      `${s.isAdicional ? '[ADICIONAL] ' : ''}${s.descricao || ''}`,
       s.horas ? `${s.horas}h` : ''
     ]);
 
     runAutoTable({
       startY: curY,
-      head: [['DESCRIÇÃO DO SERVIÇO / TRABALHO', 'TEMPO']],
+      head: [['#', 'Serviço Efetuado / Mão-de-Obra', 'Horas']],
       body: serviceRows,
       theme: 'grid',
       headStyles: {
-        fillColor: [3, 105, 161], // Sky Blue #0369a1 (matching the blue palette)
+        fillColor: [3, 105, 161], // Sky Blue #0369a1
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        fontSize: 8.5
+        fontSize: 8
       },
       styles: {
         fontSize: 8,
@@ -313,15 +305,16 @@ export function createFolhaServicoPDFDoc(
         lineColor: [226, 232, 240]
       },
       columnStyles: {
-        0: { cellWidth: 152 },
-        1: { cellWidth: 22, halign: 'right' }
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 144 },
+        2: { cellWidth: 20, halign: 'center' }
       },
       margin: { left: 18, right: 18 }
     });
     curY = (doc as any).lastAutoTable.finalY + 7;
   }
 
-  // 6. PEÇAS E MATERIAIS - Styled in Entrega Emerald Green Palette
+  // 6. PEÇAS E MATERIAIS - NUNCA mostrar códigos/referências das peças
   const allParts = [
     ...(folha.pecas || []).map(p => ({ ...p, isAdicional: false })),
     ...(folha.pecasAdicionais || []).map(p => ({ ...p, isAdicional: true }))
@@ -329,39 +322,42 @@ export function createFolhaServicoPDFDoc(
 
   if (allParts.length > 0) {
     if (curY > 240) { doc.addPage(); curY = 20; }
-    doc.setFontSize(8.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(71, 85, 105);
-    doc.text('PEÇAS E MATERIAIS APLICADOS', 18, curY + 4);
 
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.4);
-    doc.line(18, curY + 6.5, 192, curY + 6.5);
-    curY += 9;
+    const pecasRows = allParts.map((p, idx) => {
+      let cleanDesc = (p.designacao || '').trim();
+      // Remover códigos entre parênteses retos [GO-...] ou curvos (GO-...) que possam ter vindo no texto
+      cleanDesc = cleanDesc.replace(/^\[[^\]]+\]\s*/, '').replace(/^\([^)]+\)\s*/, '');
+      if (!cleanDesc) cleanDesc = 'Material de Intervenção';
+      if (p.isAdicional) cleanDesc = `[ADICIONAL] ${cleanDesc}`;
 
-    const pecasRows = allParts.map((p) => {
-      const refPart = p.referencia ? `[${p.referencia}] ` : '';
       return [
-        `[${p.concluido !== false ? 'x' : ' '}]  ${p.qtd || 1} | ${refPart}${p.designacao || ''}`
+        String(idx + 1),
+        cleanDesc,
+        String(p.qtd || 1)
       ];
     });
 
     runAutoTable({
       startY: curY,
-      head: [['REFERÊNCIA / DESIGNAÇÃO DO ARTIGO']],
+      head: [['#', 'Peça / Material Aplicado', 'Qtd']],
       body: pecasRows,
       theme: 'grid',
       headStyles: {
-        fillColor: [22, 101, 52], // Emerald Green #166534 (matching the green palette)
+        fillColor: [11, 21, 40], // Dark Navy Slate #0b1528
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        fontSize: 8.5
+        fontSize: 8
       },
       styles: {
         fontSize: 8,
         cellPadding: 3,
         textColor: [30, 41, 59],
         lineColor: [226, 232, 240]
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 144 },
+        2: { cellWidth: 20, halign: 'center' }
       },
       margin: { left: 18, right: 18 }
     });
@@ -403,18 +399,6 @@ export function createFolhaServicoPDFDoc(
     curY = 20;
   }
 
-  // Check tech initials / name
-  const initialsSet = new Set<string>();
-  allServices.forEach(s => {
-    if (s.tecnico) {
-      const cleanT = cleanPersonName(s.tecnico);
-      if (cleanT) initialsSet.add(cleanT);
-    }
-  });
-  const techName = initialsSet.size > 0 
-    ? Array.from(initialsSet).join(', ') 
-    : cleanPersonName(folha.criadoPor || 'Hugo Portugal');
-
   // Dotted separator line matching Entrega & Formação
   doc.setDrawColor(203, 213, 225);
   doc.setLineDashPattern([1.5, 1.5], 0);
@@ -422,12 +406,28 @@ export function createFolhaServicoPDFDoc(
   doc.setLineDashPattern([], 0);
   curY += 5;
 
-  if (folha.tipo !== 'Validação e Preparação' && (folha.previsaoRevisaoKms > 0 || folha.previsaoRevisaoHoras > 0)) {
+  const rawRevKms = folha.previsaoRevisaoKms;
+  const rawRevHoras = folha.previsaoRevisaoHoras;
+  const hasRevKms = rawRevKms !== undefined && rawRevKms !== null && rawRevKms !== '' && !isNaN(Number(rawRevKms)) && Number(rawRevKms) !== 0;
+  const hasRevHoras = rawRevHoras !== undefined && rawRevHoras !== null && rawRevHoras !== '' && !isNaN(Number(rawRevHoras)) && Number(rawRevHoras) !== 0;
+
+  if (folha.tipo !== 'Validação e Preparação' && (hasRevKms || hasRevHoras)) {
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(22, 101, 52); // Green #166534
-    const revStr = `Próxima Revisão: ${folha.previsaoRevisaoKms > 0 ? `${folha.previsaoRevisaoKms.toLocaleString()} Kms` : ''} ${folha.previsaoRevisaoHoras > 0 ? `| ${folha.previsaoRevisaoHoras} Horas` : ''}`;
-    doc.text(revStr.trim(), 18, curY);
+
+    const revParts: string[] = [];
+    if (hasRevKms) {
+      const numKms = Number(rawRevKms);
+      revParts.push(`${numKms.toLocaleString()} Kms`);
+    }
+    if (hasRevHoras) {
+      const numHoras = Number(rawRevHoras);
+      revParts.push(`${numHoras.toLocaleString()} Horas`);
+    }
+
+    const revStr = `Próxima Revisão: ${revParts.join(' | ')}`;
+    doc.text(revStr, 18, curY);
     curY += 5;
   }
 
@@ -489,19 +489,12 @@ export function createFolhaServicoPDFDoc(
 
       try {
         const format = (foto && foto.startsWith('data:image/png')) ? 'PNG' : 'JPEG';
-        doc.addImage(foto, format, px + 2, py + 2, colW - 4, colH - 11, undefined, 'FAST');
+        doc.addImage(foto, format, px + 2, py + 2, colW - 4, colH - 4, undefined, 'FAST');
       } catch (errImg) {
         doc.setFontSize(7.5);
         doc.setTextColor(100, 116, 139);
-        doc.text(`[Fotografia ${idx + 1}]`, px + colW / 2, py + (colH / 2) - 3, { align: 'center' });
+        doc.text(`[Fotografia ${idx + 1}]`, px + colW / 2, py + colH / 2, { align: 'center' });
       }
-
-      doc.setFillColor(241, 245, 249);
-      doc.rect(px + 2, py + colH - 8, colW - 4, 6, 'F');
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(71, 85, 105);
-      doc.text(`Fotografia ${idx + 1}`, px + 6, py + colH - 3.8);
     });
   }
 
