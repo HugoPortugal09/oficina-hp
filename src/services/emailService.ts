@@ -2,8 +2,8 @@ import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa } from '../types';
 import { USERS } from '../types';
-import { generateEntregaFormacaoPDF } from './pdfService';
-import { formatDate, cleanPersonName } from '../utils/dateUtils';
+import { generateEntregaFormacaoPDF, generateTemposRespostaPDF } from './pdfService';
+import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
 
 /**
  * Compresses and resizes an image Data URI or base64 string to a compact JPEG
@@ -766,16 +766,428 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
       console.warn('[EmailService] PocketBase queue notice:', err?.message || err);
     });
 
-  } catch (e: any) {
-    console.warn('[EmailService] Notice:', e?.message || e);
+    return {
+      success: true,
+      recipients,
+      message: apiDeliverySuccess 
+        ? `Email enviado com sucesso para: ${recipients.join(', ')}`
+        : `Notificação registada para envio para: ${recipients.join(', ')}`
+    };
+  } catch (err: any) {
+    console.error('[EmailService] Erro fatal em sendEntregaFormacaoEmail:', err);
+    return {
+      success: false,
+      recipients: [],
+      message: `Erro ao enviar email: ${err?.message || err}`
+    };
   }
-
-  return {
-    success: true,
-    recipients,
-    message: apiDeliverySuccess 
-      ? `Email enviado com sucesso para: ${recipients.join(', ')}`
-      : `Notificação registada para envio para: ${recipients.join(', ')}`
-  };
 }
 
+export interface TemposRespostaEmailPayload {
+  folhas?: FolhaServico[];
+  empresas?: Empresa[];
+  equipamentos?: Equipamento[];
+  destinatarios?: string[];
+}
+
+/**
+ * Builds executive HTML template for the daily Tempos de Resposta email
+ * Features summary stats cards (averages & KPIs) and preview of critical vehicles
+ */
+export function buildTemposRespostaDailyHtml(
+  stats: {
+    avgImobilizacaoOficina: number;
+    avgDiasReq: number;
+    criticalCount: number;
+    totalAbertas: number;
+    totalOficinaAbertas: number;
+    totalAssistenciaAbertas: number;
+    totalContratoAbertas: number;
+  },
+  criticalRows: any[],
+  dataHoje: string
+): string {
+  const criticalTableRows = criticalRows.length === 0
+    ? '<tr><td colspan="5" style="text-align: center; padding: 14px; color: #16a34a; font-weight: 600;">✅ Excelente! Não existem viaturas em estado crítico (≥ 10 dias) de momento.</td></tr>'
+    : criticalRows.map(r => {
+        const imobText = r.imobilizacao ? r.imobilizacao.text : '-';
+        const reqText = r.diasRequisicao ? r.diasRequisicao.text : '-';
+        return `
+          <tr style="border-bottom: 1px solid #fee2e2;">
+            <td style="padding: 10px 8px; font-weight: bold; font-family: monospace; color: #0f172a;">${r.folha.numero}</td>
+            <td style="padding: 10px 8px; font-family: monospace; font-weight: bold; color: #dc2626;">${r.folha.matricula || '-'}</td>
+            <td style="padding: 10px 8px; color: #334155;">${r.empresaNome}</td>
+            <td style="padding: 10px 8px; font-weight: bold; color: #dc2626;">${imobText} (Oficina) / ${reqText} (Req.)</td>
+            <td style="padding: 10px 8px; color: #64748b; font-size: 12px;">${r.folha.status}</td>
+          </tr>
+        `;
+      }).join('');
+
+  return `
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Tempos de Resposta &amp; Imobilização - Relatório Diário</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
+  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+    
+    <!-- Top Header -->
+    <div style="background: linear-gradient(135deg, #0b1528 0%, #1e293b 100%); color: #ffffff; padding: 26px 30px; border-bottom: 3px solid #0d9488;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #2dd4bf;">GRAUMP &bull; OFICINA HP &bull; FROTAS</span>
+        <span style="background-color: #0d9488; color: #ffffff; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 14px; text-transform: uppercase;">
+          DISPARO DIÁRIO DAS 06H00
+        </span>
+      </div>
+      <h1 style="margin: 4px 0 2px 0; font-size: 20px; font-weight: 800; color: #ffffff;">
+        Quadro Diário de Tempos de Resposta &amp; Imobilização
+      </h1>
+      <p style="margin: 0; color: #94a3b8; font-size: 13px;">
+        Relatório de controlo operacional emitido a <strong>${dataHoje}</strong>.
+      </p>
+    </div>
+
+    <!-- Main Content Body -->
+    <div style="padding: 24px 30px;">
+      
+      <!-- Section Title -->
+      <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-top: 0; margin-bottom: 14px; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">
+        📊 Resumo Executivo &amp; Médias Operacionais
+      </h2>
+
+      <!-- 4 KPI Cards Grid (Universal Table Layout) -->
+      <table style="width: 100%; border-collapse: separate; border-spacing: 8px; margin-bottom: 20px;">
+        <tr>
+          <!-- Card 1: Imobilização Média -->
+          <td style="width: 50%; background-color: #fff7ed; border: 1px solid #ffedd5; border-left: 4px solid #ea580c; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
+            <div style="font-size: 11px; font-weight: 700; color: #9a3412; text-transform: uppercase; margin-bottom: 4px;">
+              ⏱️ Imobilização Média (Oficina)
+            </div>
+            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #c2410c;">
+              ${stats.avgImobilizacaoOficina.toFixed(1)} <span style="font-size: 13px; font-weight: 500; color: #7c2d12;">dias</span>
+            </div>
+            <div style="font-size: 11px; color: #9a3412; margin-top: 2px;">
+              Média desde a entrada na oficina
+            </div>
+          </td>
+
+          <!-- Card 2: Média Requisição -->
+          <td style="width: 50%; background-color: #f0f9ff; border: 1px solid #e0f2fe; border-left: 4px solid #0284c7; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
+            <div style="font-size: 11px; font-weight: 700; color: #075985; text-transform: uppercase; margin-bottom: 4px;">
+              📅 Média desde Requisição
+            </div>
+            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0284c7;">
+              ${stats.avgDiasReq.toFixed(1)} <span style="font-size: 13px; font-weight: 500; color: #0369a1;">dias</span>
+            </div>
+            <div style="font-size: 11px; color: #075985; margin-top: 2px;">
+              Para serviços com requisição
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <!-- Card 3: Viaturas Críticas -->
+          <td style="width: 50%; background-color: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #e11d48; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
+            <div style="font-size: 11px; font-weight: 700; color: #9f1239; text-transform: uppercase; margin-bottom: 4px;">
+              🚨 Viaturas Críticas (&ge; 10 dias)
+            </div>
+            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #be123c;">
+              ${stats.criticalCount} <span style="font-size: 13px; font-weight: 500; color: #9f1239;">viaturas</span>
+            </div>
+            <div style="font-size: 11px; color: #9f1239; margin-top: 2px;">
+              Imobilização ou requisição &ge; 10 dias
+            </div>
+          </td>
+
+          <!-- Card 4: Serviços em Aberto -->
+          <td style="width: 50%; background-color: #f0fdfa; border: 1px solid #ccfbf1; border-left: 4px solid #0d9488; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
+            <div style="font-size: 11px; font-weight: 700; color: #115e59; text-transform: uppercase; margin-bottom: 4px;">
+              🔧 Serviços em Aberto
+            </div>
+            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0f766e;">
+              ${stats.totalAbertas} <span style="font-size: 13px; font-weight: 500; color: #134e4a;">em curso</span>
+            </div>
+            <div style="font-size: 11px; color: #115e59; margin-top: 2px;">
+              Oficina (${stats.totalOficinaAbertas}) &bull; AT (${stats.totalAssistenciaAbertas}) &bull; Contratos (${stats.totalContratoAbertas})
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Attachments Notice Banner -->
+      <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+        <div style="font-size: 13px; font-weight: bold; color: #0f172a; margin-bottom: 6px;">
+          📎 3 Documentos Oficiais em PDF Formato A3 Anexados a este Email:
+        </div>
+        <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #334155;">
+          <li style="margin-bottom: 4px;"><strong>1. Tempos_Resposta_Oficina.pdf</strong> — Quadro de acompanhamento detalhado apenas da Oficina.</li>
+          <li style="margin-bottom: 4px;"><strong>2. Tempos_Resposta_Assistencia_Contratos.pdf</strong> — Quadro com Assistência Técnica no terreno e Contratos.</li>
+          <li style="margin-bottom: 0;"><strong>3. Tempos_Resposta_Geral_Completo.pdf</strong> — Quadro Geral completo com toda a informação operacional.</li>
+        </ul>
+        <div style="margin-top: 8px; font-size: 11px; color: #64748b; font-style: italic;">
+          * Nota: Em cumprimento das diretrizes de apresentação, os ficheiros PDF anexos contêm apenas as tabelas detalhadas em formato A3 horizontal para fácil impressão ou consulta em grande ecrã, sem o cabeçalho de médias.
+        </div>
+      </div>
+
+      <!-- Critical Vehicles Mini Table (If any) -->
+      ${stats.criticalCount > 0 ? `
+      <div style="margin-top: 20px;">
+        <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #be123c; margin-top: 0; margin-bottom: 10px; font-weight: 800;">
+          ⚠️ Viaturas e Serviços Críticos em Atenção Imediata (${stats.criticalCount})
+        </h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; background-color: #ffffff; border: 1px solid #fecdd3; border-radius: 6px; overflow: hidden;">
+          <thead>
+            <tr style="background-color: #fff1f2; text-align: left; color: #9f1239; font-size: 11px; text-transform: uppercase; border-bottom: 2px solid #fecdd3;">
+              <th style="padding: 8px; font-weight: 700;">Folha</th>
+              <th style="padding: 8px; font-weight: 700;">Matrícula</th>
+              <th style="padding: 8px; font-weight: 700;">Cliente</th>
+              <th style="padding: 8px; font-weight: 700;">Dias</th>
+              <th style="padding: 8px; font-weight: 700;">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${criticalTableRows}
+          </tbody>
+        </table>
+      </div>
+      ` : ''}
+
+    </div>
+
+    <!-- Footer -->
+    <div style="background-color: #f8fafc; padding: 18px 30px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11.5px; color: #94a3b8;">
+      <p style="margin: 0 0 3px 0;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+      <p style="margin: 0;">Disparo automático diário às 06:00 (Dias de semana) &bull; hugo@grau-maquinaria.com</p>
+    </div>
+
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
+ * Sends the daily automated email with 3 A3 PDF attachments and HTML summary averages
+ */
+export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  try {
+    const rawFolhas = payload?.folhas || db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || [];
+    const empresas = payload?.empresas || db.get<Empresa>(STORAGE_KEYS.EMPRESAS) || [];
+    const equipamentos = payload?.equipamentos || db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS) || [];
+
+    // Process rows
+    const processedRows = rawFolhas.map(f => {
+      const emp = empresas.find(e => e.id === f.empresaId);
+      const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
+      const isOficina = f.tipo === 'Oficina';
+
+      const startDateImobilizacao = f.dataEntradaOficina || (isOficina ? f.data : undefined);
+      const imobilizacao = calculateDiffDays(startDateImobilizacao, f.dataConclusao);
+      const diasRequisicao = calculateDiffDays(f.dataRequisicao, f.dataConclusao);
+      const isCritico = !isConcluido && (((imobilizacao?.days || 0) >= 10) || ((diasRequisicao?.days || 0) >= 10));
+
+      return {
+        folha: f,
+        empresaNome: emp?.nome || 'Cliente',
+        isConcluido,
+        isOficina,
+        imobilizacao,
+        diasRequisicao,
+        isCritico
+      };
+    });
+
+    // Compute averages & KPIs for email body
+    const openOficinaRows = processedRows.filter(r => r.isOficina && !r.isConcluido && r.imobilizacao);
+    const avgImobilizacaoOficina = openOficinaRows.length > 0
+      ? openOficinaRows.reduce((acc, r) => acc + (r.imobilizacao?.days || 0), 0) / openOficinaRows.length
+      : 0;
+
+    const rowsWithReq = processedRows.filter(r => !r.isConcluido && r.diasRequisicao);
+    const avgDiasReq = rowsWithReq.length > 0
+      ? rowsWithReq.reduce((acc, r) => acc + (r.diasRequisicao?.days || 0), 0) / rowsWithReq.length
+      : 0;
+
+    const criticalRows = processedRows.filter(r => r.isCritico);
+    const criticalCount = criticalRows.length;
+    const totalAbertas = processedRows.filter(r => !r.isConcluido).length;
+
+    const totalOficinaAbertas = processedRows.filter(r => !r.isConcluido && r.isOficina).length;
+    const totalAssistenciaAbertas = processedRows.filter(r => !r.isConcluido && r.folha.tipo === 'Assistência Técnica').length;
+    const totalContratoAbertas = processedRows.filter(r => !r.isConcluido && r.folha.tipo === 'Contrato').length;
+
+    const dataHoje = getTodayFormatted();
+
+    // 1. Generate the 3 A3 Landscape PDFs
+    const attachments: any[] = [];
+
+    // PDF 1: Oficina
+    try {
+      const docOficina = generateTemposRespostaPDF(rawFolhas, empresas, 'OFICINA');
+      const dataUriOficina = docOficina.output('datauristring');
+      const base64Oficina = dataUriOficina.split(',')[1];
+      if (base64Oficina) {
+        attachments.push({
+          filename: `Tempos_Resposta_Oficina.pdf`,
+          content: base64Oficina,
+          encoding: 'base64',
+          contentType: 'application/pdf'
+        });
+      }
+    } catch (errOf) {
+      console.error('[EmailService] Erro ao gerar PDF da Oficina:', errOf);
+    }
+
+    // PDF 2: Assistência Técnica & Contratos
+    try {
+      const docAT = generateTemposRespostaPDF(rawFolhas, empresas, 'ASSISTENCIA_CONTRATOS');
+      const dataUriAT = docAT.output('datauristring');
+      const base64AT = dataUriAT.split(',')[1];
+      if (base64AT) {
+        attachments.push({
+          filename: `Tempos_Resposta_Assistencia_Contratos.pdf`,
+          content: base64AT,
+          encoding: 'base64',
+          contentType: 'application/pdf'
+        });
+      }
+    } catch (errAT) {
+      console.error('[EmailService] Erro ao gerar PDF de Assistência/Contratos:', errAT);
+    }
+
+    // PDF 3: Geral Completo
+    try {
+      const docGeral = generateTemposRespostaPDF(rawFolhas, empresas, 'TODOS');
+      const dataUriGeral = docGeral.output('datauristring');
+      const base64Geral = dataUriGeral.split(',')[1];
+      if (base64Geral) {
+        attachments.push({
+          filename: `Tempos_Resposta_Geral_Completo.pdf`,
+          content: base64Geral,
+          encoding: 'base64',
+          contentType: 'application/pdf'
+        });
+      }
+    } catch (errGeral) {
+      console.error('[EmailService] Erro ao gerar PDF Geral:', errGeral);
+    }
+
+    // 2. Build HTML content with averages
+    const htmlContent = buildTemposRespostaDailyHtml(
+      {
+        avgImobilizacaoOficina,
+        avgDiasReq,
+        criticalCount,
+        totalAbertas,
+        totalOficinaAbertas,
+        totalAssistenciaAbertas,
+        totalContratoAbertas
+      },
+      criticalRows,
+      dataHoje
+    );
+
+    // 3. Resolve recipients
+    let recipients = payload?.destinatarios && payload.destinatarios.length > 0
+      ? payload.destinatarios
+      : ['hugo@grau-maquinaria.com'];
+
+    // Check config if other recipients exist in automations
+    try {
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES);
+      const autoItem = autos?.find((a: any) => a.tipo === 'email_tempos_resposta');
+      if (autoItem && Array.isArray(autoItem.destinatarios) && autoItem.destinatarios.length > 0) {
+        recipients = Array.from(new Set([...recipients, ...autoItem.destinatarios]));
+      }
+    } catch {}
+
+    const subject = `[Oficina HP] Relatório Diário de Tempos de Resposta & Imobilização (${dataHoje})`;
+
+    console.log(`[EmailService] A enviar relatório diário de tempos de resposta para: ${recipients.join(', ')} com ${attachments.length} PDFs.`);
+
+    // 4. Send email via internal API
+    let apiDeliverySuccess = false;
+    try {
+      const resp = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipients,
+          subject,
+          html: htmlContent,
+          attachments
+        })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.success) {
+        apiDeliverySuccess = true;
+        console.log(`[EmailService] ✅ Email diário de tempos de resposta enviado com sucesso via SMTP (ID: ${data.messageId})`);
+      } else {
+        console.warn('[EmailService] ⚠️ Resposta da API:', data);
+      }
+    } catch (apiErr) {
+      console.warn('[EmailService] ⚠️ Não foi possível contactar /api/send-email:', apiErr);
+    }
+
+    // 5. Store in local email logs and PocketBase
+    try {
+      const emailLogEntry = {
+        id: db.generateId('eml'),
+        tipo: 'email_tempos_resposta_diario',
+        destinatarios: recipients,
+        assunto: subject,
+        dataEnvio: new Date().toISOString(),
+        anexosCount: attachments.length,
+        sucesso: apiDeliverySuccess
+      };
+      const logs = db.get<any>('oficina_hp_email_logs') || [];
+      db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+
+      // Update automacao item last run
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES) || [];
+      const updatedAutos = autos.map((a: any) => a.tipo === 'email_tempos_resposta' ? {
+        ...a,
+        ultimoDisparo: `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      } : a);
+      db.save(STORAGE_KEYS.AUTOMACOES, updatedAutos);
+
+      // PocketBase queue
+      const pb = getPocketBase();
+      pb.collection('app_data').create({
+        key: `email_tempos_resposta_${Date.now()}`,
+        data: {
+          recipients,
+          subject,
+          tipo: 'tempos_resposta_diario',
+          anexosCount: attachments.length,
+          avgImobilizacao: avgImobilizacaoOficina,
+          avgDiasReq,
+          criticalCount,
+          sent: apiDeliverySuccess
+        },
+        timestamp: new Date().toISOString()
+      }).catch(() => {});
+    } catch (e) {}
+
+    return {
+      success: true,
+      recipients,
+      message: apiDeliverySuccess
+        ? `Relatório diário enviado com sucesso para: ${recipients.join(', ')} (${attachments.length} PDFs anexados)`
+        : `Relatório diário registado para envio para: ${recipients.join(', ')}`
+    };
+  } catch (err: any) {
+    console.error('[EmailService] Erro ao enviar relatório diário de tempos de resposta:', err);
+    return {
+      success: false,
+      recipients: [],
+      message: `Erro ao enviar relatório diário: ${err?.message || err}`
+    };
+  }
+}

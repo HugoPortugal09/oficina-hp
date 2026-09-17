@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, ConfiguracaoOficina } from '../types';
 import { db, STORAGE_KEYS } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
-import { formatDate, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
+import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
 
 export function generateFolhaServicoPDF(
   folha: FolhaServico,
@@ -1133,6 +1133,255 @@ export function generateEntregaFormacaoPDF(
       doc.setTextColor(71, 85, 105);
       doc.text(`Fotografia ${idx + 1}`, px + 6, py + colH - 3.8);
     });
+  }
+
+  return doc;
+}
+
+export type TemposRespostaScope = 'OFICINA' | 'ASSISTENCIA_CONTRATOS' | 'TODOS';
+
+/**
+ * Generates official A3 Landscape PDF table for Tempos de Resposta & Imobilização
+ * Strictly without averages banner in the PDF file as requested by the user.
+ */
+export function generateTemposRespostaPDF(
+  folhas: FolhaServico[],
+  empresas: Empresa[],
+  scope: TemposRespostaScope = 'TODOS'
+): jsPDF {
+  // A3 Landscape: 420mm width x 297mm height
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a3',
+    compress: true
+  });
+
+  const runAutoTable = (options: any) => {
+    const fn = (autoTable as any)?.default?.default || (autoTable as any)?.default || autoTable;
+    if (typeof fn === 'function') {
+      fn(doc, options);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(options);
+    }
+  };
+
+  // 1. Filter rows by scope
+  let filteredFolhas = folhas;
+  let docTitle = 'QUADRO GERAL DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO';
+  let scopeSubtitle = 'Relatório global diário com toda a informação operacional (Oficina, Assistência e Contratos)';
+  let scopeBadge = 'ÂMBITO: GERAL (COMPLETO)';
+  let accentColor = [13, 148, 136]; // Teal
+
+  if (scope === 'OFICINA') {
+    filteredFolhas = folhas.filter(f => f.tipo === 'Oficina');
+    docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — OFICINA';
+    scopeSubtitle = 'Acompanhamento diário de viaturas na oficina, tempos de imobilização e intervenção';
+    scopeBadge = 'ÂMBITO: OFICINA';
+    accentColor = [234, 88, 12]; // Orange
+  } else if (scope === 'ASSISTENCIA_CONTRATOS') {
+    filteredFolhas = folhas.filter(f => f.tipo === 'Assistência Técnica' || f.tipo === 'Contrato');
+    docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — ASSISTÊNCIA TÉCNICA E CONTRATOS';
+    scopeSubtitle = 'Acompanhamento diário de intervenções no terreno, contratos de manutenção e pedidos de assistência';
+    scopeBadge = 'ÂMBITO: ASSISTÊNCIA & CONTRATOS';
+    accentColor = [2, 132, 199]; // Sky blue
+  }
+
+  // 2. Augment and sort rows
+  const processedRows = filteredFolhas.map(f => {
+    const emp = empresas.find(e => e.id === f.empresaId);
+    const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
+
+    const startDateImobilizacao = f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined);
+    const imobilizacao = calculateDiffDays(startDateImobilizacao, f.dataConclusao);
+    const diasRequisicao = calculateDiffDays(f.dataRequisicao, f.dataConclusao);
+    const isCritico = !isConcluido && (((imobilizacao?.days || 0) >= 10) || ((diasRequisicao?.days || 0) >= 10));
+
+    return {
+      folha: f,
+      empresaNome: emp?.nome || 'Cliente / Não especificado',
+      isConcluido,
+      imobilizacao,
+      diasRequisicao,
+      isCritico
+    };
+  }).sort((a, b) => {
+    // Open/in progress first, then critical status, then imobilizacao days desc, then date desc
+    if (a.isConcluido !== b.isConcluido) return a.isConcluido ? 1 : -1;
+    if (a.isCritico !== b.isCritico) return a.isCritico ? -1 : 1;
+    const imobA = a.imobilizacao?.days || 0;
+    const imobB = b.imobilizacao?.days || 0;
+    if (imobB !== imobA) return imobB - imobA;
+    return new Date(b.folha.data).getTime() - new Date(a.folha.data).getTime();
+  });
+
+  // 3. TOP ACCENT BAR (Width 420mm)
+  doc.setFillColor(30, 41, 59); // Slate 800
+  doc.rect(0, 0, 420, 6, 'F');
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(290, 0, 130, 6, 'F');
+
+  // 4. GRAUMP LOGO
+  try {
+    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 14, 10, 32, 21, undefined, 'FAST');
+  } catch (err) {
+    doc.setFillColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('GRAUMP', 14, 23);
+  }
+
+  // 5. HEADER TITLES (Right-aligned on 420mm page)
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text(docTitle, 406, 18, { align: 'right' });
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(scopeSubtitle, 406, 24, { align: 'right' });
+
+  // Metadata Row
+  const dataEmissao = getTodayFormatted();
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.text(`${scopeBadge}  •  DATA DE EMISSÃO: ${dataEmissao}  •  TOTAL DE REGISTOS: ${processedRows.length}`, 406, 30, { align: 'right' });
+
+  // 6. TABLE GENERATION (A3 Width ~ 392mm table)
+  const tableRows = processedRows.map(r => {
+    const f = r.folha;
+    const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim() || '-';
+    const dataCriacao = formatDate(f.data);
+    const dataReq = f.dataRequisicao ? formatDate(f.dataRequisicao) : '-';
+    const diasReqText = r.diasRequisicao ? r.diasRequisicao.text : '-';
+    const dataEntradaOf = formatDate(f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined));
+    const dataConc = f.dataConclusao ? formatDate(f.dataConclusao) : 'Em Aberto';
+    const imobText = r.imobilizacao ? r.imobilizacao.text : '-';
+    const obs = (f.anomalias || f.notasInternas || f.notasCliente || '-').replace(/\n/g, ' ');
+
+    return [
+      f.numero || f.id,
+      f.tipo,
+      f.matricula || '---',
+      marcaModelo,
+      r.empresaNome,
+      dataCriacao,
+      dataReq,
+      diasReqText,
+      dataEntradaOf,
+      dataConc,
+      imobText,
+      f.status,
+      obs
+    ];
+  });
+
+  runAutoTable({
+    startY: 36,
+    head: [[
+      'Folha',
+      'Tipo',
+      'Matrícula',
+      'Marca / Modelo',
+      'Cliente / Entidade',
+      'Criação',
+      'Data Req.',
+      'Dias Req.',
+      'Entrada Of.',
+      'Conclusão',
+      'Imobilização',
+      'Estado Atual',
+      'Observações Técnicas / Anomalias'
+    ]],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59], // Dark slate
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      cellPadding: 3.2
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2.6,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2,
+      overflow: 'linebreak'
+    },
+    columnStyles: {
+      0: { cellWidth: 20, fontStyle: 'bold', textColor: [2, 132, 199] }, // Folha
+      1: { cellWidth: 28, fontStyle: 'bold' }, // Tipo
+      2: { cellWidth: 22, fontStyle: 'bold' }, // Matrícula
+      3: { cellWidth: 32 }, // Marca / Modelo
+      4: { cellWidth: 54 }, // Cliente
+      5: { cellWidth: 18, halign: 'center' }, // Criação
+      6: { cellWidth: 18, halign: 'center' }, // Data Req
+      7: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }, // Dias Req
+      8: { cellWidth: 18, halign: 'center' }, // Entrada Oficina
+      9: { cellWidth: 20, halign: 'center' }, // Conclusão
+      10: { cellWidth: 22, halign: 'center', fontStyle: 'bold' }, // Imobilização
+      11: { cellWidth: 46 }, // Estado Atual
+      12: { cellWidth: 76 }  // Observações
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
+    margin: { left: 14, right: 14 },
+    didParseCell: (data: any) => {
+      // Highlight critical items (>= 10 days) or specific statuses
+      if (data.section === 'body') {
+        const rowIdx = data.row.index;
+        const rowData = processedRows[rowIdx];
+        if (rowData && rowData.isCritico) {
+          if (data.column.index === 10 || data.column.index === 7) {
+            data.cell.styles.textColor = [225, 29, 72]; // Rose 600 bold
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [255, 241, 242]; // Rose 50
+          }
+        }
+        if (data.column.index === 9 && data.cell.raw === 'Em Aberto') {
+          data.cell.styles.textColor = [217, 119, 6]; // Amber 600
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
+    }
+  });
+
+  // 7. MULTI-PAGE PROFESSIONAL FOOTER (A3 Landscape: width 420, height 297)
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+
+    // Footer Base Bar
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(0, 287, 420, 10, 'F');
+
+    // Accent triangle & line (GRAUMP Teal / Theme accent)
+    doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+    try {
+      doc.triangle(0, 297, 45, 297, 0, 278, 'F');
+    } catch (e) {}
+    doc.rect(0, 290, 32, 7, 'F');
+
+    // Footer Text
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRAUMP', 15, 293.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(203, 213, 225);
+    doc.text(' • Oficina HP Gestão & Frotas', 29, 293.5);
+
+    doc.setTextColor(148, 163, 184);
+    doc.text('Quadro de Tempos de Resposta & Imobilização (Formato A3) • Documento Processado por Computador', 210, 293.5, { align: 'center' });
+
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Página ${i} de ${pageCount}`, 406, 293.5, { align: 'right' });
   }
 
   return doc;

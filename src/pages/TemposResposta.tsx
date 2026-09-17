@@ -15,11 +15,17 @@ import {
   FileSpreadsheet,
   Download,
   AlertCircle,
-  Timer
+  Timer,
+  Mail,
+  FileText,
+  Send,
+  Sparkles
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, calculateDiffDays } from '../utils/dateUtils';
+import { generateTemposRespostaPDF } from '../services/pdfService';
+import { sendDailyTemposRespostaEmail } from '../services/emailService';
 import type { FolhaServico, Empresa, Equipamento } from '../types';
 
 interface TemposRespostaProps {
@@ -27,30 +33,6 @@ interface TemposRespostaProps {
   empresas: Empresa[];
   equipamentos: Equipamento[];
   onSelectFolha?: (folha: FolhaServico) => void;
-}
-
-// Helpers for date calculations
-function parseDate(dateStr?: string): Date | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function calculateDiffDays(startDateStr?: string, endDateStr?: string): { days: number; text: string } | null {
-  const start = parseDate(startDateStr);
-  if (!start) return null;
-
-  const end = endDateStr ? parseDate(endDateStr) || new Date() : new Date();
-  const diffMs = end.getTime() - start.getTime();
-  const diffDays = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays < 1) {
-    const hours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
-    return { days: Number(diffDays.toFixed(1)), text: `${hours}h` };
-  } else {
-    const roundedDays = Math.round(diffDays * 10) / 10;
-    return { days: roundedDays, text: `${roundedDays} ${roundedDays === 1 ? 'dia' : 'dias'}` };
-  }
 }
 
 export const TemposResposta: React.FC<TemposRespostaProps> = ({
@@ -64,6 +46,8 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [sortBy, setSortBy] = useState<'imobilizacao' | 'requisicao' | 'numero' | 'data'>('imobilizacao');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailFeedback, setEmailFeedback] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Process and augment rows
   const processedRows = useMemo(() => {
@@ -163,6 +147,45 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
     };
   }, [processedRows]);
 
+  // Trigger Send Daily Email with 3 A3 PDFs
+  const handleTriggerEmail = async () => {
+    setIsSendingEmail(true);
+    setEmailFeedback(null);
+    try {
+      const res = await sendDailyTemposRespostaEmail({
+        folhas,
+        empresas,
+        equipamentos
+      });
+      setEmailFeedback({
+        success: res.success,
+        msg: res.message
+      });
+    } catch (err: any) {
+      setEmailFeedback({
+        success: false,
+        msg: `Erro ao enviar email: ${err?.message || err}`
+      });
+    } finally {
+      setIsSendingEmail(false);
+      setTimeout(() => setEmailFeedback(null), 8000);
+    }
+  };
+
+  // Download Individual A3 PDF
+  const handleDownloadPDF = (scope: 'OFICINA' | 'ASSISTENCIA_CONTRATOS' | 'TODOS') => {
+    try {
+      const doc = generateTemposRespostaPDF(folhas, empresas, scope);
+      const dateStr = new Date().toISOString().split('T')[0];
+      let fname = `Tempos_Resposta_Geral_A3_${dateStr}.pdf`;
+      if (scope === 'OFICINA') fname = `Tempos_Resposta_Oficina_A3_${dateStr}.pdf`;
+      else if (scope === 'ASSISTENCIA_CONTRATOS') fname = `Tempos_Resposta_Assistencia_Contratos_A3_${dateStr}.pdf`;
+      doc.save(fname);
+    } catch (err) {
+      alert('Erro ao gerar o documento PDF em formato A3.');
+    }
+  };
+
   // Export to CSV
   const handleExportCSV = () => {
     const headers = [
@@ -221,16 +244,67 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Email Dispatch Button */}
+          <button
+            onClick={handleTriggerEmail}
+            disabled={isSendingEmail}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-hp-600 hover:from-teal-500 hover:to-hp-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-hp-600/20 active:scale-95 disabled:opacity-50"
+            title="Enviar relatório por email com 3 PDFs A3 para hugo@grau-maquinaria.com"
+          >
+            <Mail className={`w-3.5 h-3.5 ${isSendingEmail ? 'animate-spin' : ''}`} />
+            {isSendingEmail ? 'A Gerar e Enviar 3 PDFs...' : 'Enviar Diário (3 PDFs A3)'}
+          </button>
+
+          {/* Download PDF Menu */}
+          <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-xl p-0.5">
+            <button
+              onClick={() => handleDownloadPDF('OFICINA')}
+              className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
+              title="Descarregar PDF A3 da Oficina"
+            >
+              <Download className="w-3 h-3 text-orange-400" />
+              PDF Oficina (A3)
+            </button>
+            <button
+              onClick={() => handleDownloadPDF('ASSISTENCIA_CONTRATOS')}
+              className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
+              title="Descarregar PDF A3 de Assistência & Contratos"
+            >
+              <Download className="w-3 h-3 text-sky-400" />
+              PDF AT/Contratos (A3)
+            </button>
+            <button
+              onClick={() => handleDownloadPDF('TODOS')}
+              className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
+              title="Descarregar PDF A3 Geral Completo"
+            >
+              <Download className="w-3 h-3 text-emerald-400" />
+              PDF Geral (A3)
+            </button>
+          </div>
+
           <button
             onClick={handleExportCSV}
             className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
           >
-            <Download className="w-3.5 h-3.5 text-hp-400" />
-            Exportar CSV
+            <FileSpreadsheet className="w-3.5 h-3.5 text-hp-400" />
+            CSV
           </button>
         </div>
       </div>
+
+      {/* Feedback Banner if email sent */}
+      {emailFeedback && (
+        <div className={`p-3 rounded-2xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+          emailFeedback.success
+            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+            : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+        }`}>
+          {emailFeedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
+          <span>{emailFeedback.msg}</span>
+        </div>
+      )}
 
       {/* KPI Cards Banner */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

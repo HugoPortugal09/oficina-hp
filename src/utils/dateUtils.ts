@@ -154,3 +154,33 @@ export const cleanPersonName = (name?: string | null): string => {
   return cleaned.trim();
 };
 
+/**
+ * Safely parses any date string into a Date object or null
+ */
+export function parseDate(dateStr?: string | null): Date | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Calculates the difference in days or hours between two date strings.
+ * Used across Tempos de Resposta, PDF generation and automated reports.
+ */
+export function calculateDiffDays(startDateStr?: string | null, endDateStr?: string | null): { days: number; text: string } | null {
+  const start = parseDate(startDateStr);
+  if (!start) return null;
+
+  const end = endDateStr ? parseDate(endDateStr) || new Date() : new Date();
+  const diffMs = end.getTime() - start.getTime();
+  const diffDays = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 1) {
+    const hours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+    return { days: Number(diffDays.toFixed(1)), text: `${hours}h` };
+  } else {
+    const roundedDays = Math.round(diffDays * 10) / 10;
+    return { days: roundedDays, text: `${roundedDays} ${roundedDays === 1 ? 'dia' : 'dias'}` };
+  }
+}
+

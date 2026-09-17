@@ -504,6 +504,20 @@ const INITIAL_AUTOMACOES: AutomacaoItem[] = [
     proximoDisparo: 'Domingo às 09:00'
   },
   {
+    id: 'auto_001_c',
+    nome: 'Quadro Diário de Tempos de Resposta & Imobilização em PDF (A3)',
+    descricao: 'Envia diariamente às 06h00 (dias de semana) 3 relatórios em PDF A3 (Oficina, Assistência & Contratos, Geral) com o resumo executivo das médias no corpo do email.',
+    tipo: 'email_tempos_resposta',
+    frequencia: 'Todos os dias da semana às 06:00',
+    cronExpr: '0 6 * * 1-5',
+    ativo: true,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email'],
+    anexoTipo: 'pdf',
+    icone: 'Timer',
+    proximoDisparo: 'Dias de semana às 06:00'
+  },
+  {
     id: 'auto_002',
     nome: 'Alerta de Ruptura / Stock Mínimo de Peças',
     descricao: 'Dispara um aviso por email quando qualquer artigo do catálogo atinge ou fica abaixo do stock mínimo de segurança.',
@@ -744,6 +758,19 @@ export const db = {
     }
     if (!localStorage.getItem(STORAGE_KEYS.AUTOMACOES)) {
       this.save(STORAGE_KEYS.AUTOMACOES, INITIAL_AUTOMACOES);
+    } else {
+      // Ensure new default automations like auto_001_c are merged into existing list
+      const existingAutos = this.get<AutomacaoItem>(STORAGE_KEYS.AUTOMACOES);
+      let changedAutos = false;
+      INITIAL_AUTOMACOES.forEach(initAuto => {
+        if (!existingAutos.some(a => a.id === initAuto.id || a.tipo === initAuto.tipo)) {
+          existingAutos.push(initAuto);
+          changedAutos = true;
+        }
+      });
+      if (changedAutos) {
+        this.save(STORAGE_KEYS.AUTOMACOES, existingAutos);
+      }
     }
     if (!localStorage.getItem(STORAGE_KEYS.CONFIGURACAO)) {
       localStorage.setItem(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(DEFAULT_CONFIG));

@@ -18,12 +18,14 @@ import {
   X,
   PlusCircle,
   BellRing,
-  Bot
+  Bot,
+  Timer
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sendDailyTemposRespostaEmail } from '../services/emailService';
 import type { AutomacaoItem, TipoAutomacao } from '../types';
 
 export const Automacoes: React.FC = () => {
@@ -96,7 +98,21 @@ export const Automacoes: React.FC = () => {
     setStatusFeedback(null);
 
     try {
-      if (auto.tipo === 'email_planeamento') {
+      if (auto.tipo === 'email_tempos_resposta') {
+        const result = await sendDailyTemposRespostaEmail({
+          destinatarios: auto.destinatarios
+        });
+        
+        const nowStr = `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const updated = automacoes.map(a => a.id === auto.id ? { ...a, ultimoDisparo: nowStr } : a);
+        saveList(updated);
+
+        setStatusFeedback({
+          id: auto.id,
+          success: result.success,
+          msg: result.message
+        });
+      } else if (auto.tipo === 'email_planeamento') {
         // Disparar envio de planeamento semanal
         await new Promise(r => setTimeout(r, 1200));
         
@@ -142,9 +158,9 @@ export const Automacoes: React.FC = () => {
       id: db.generateId('auto'),
       nome: '',
       descricao: '',
-      tipo: 'email_planeamento',
-      frequencia: 'Todas as Segundas-feiras às 07:30',
-      cronExpr: '30 7 * * 1',
+      tipo: 'email_tempos_resposta',
+      frequencia: 'Todos os dias da semana às 06:00',
+      cronExpr: '0 6 * * 1-5',
       ativo: true,
       destinatarios: ['hugo@grau-maquinaria.com'],
       canaisEnvio: ['email'],
@@ -176,6 +192,8 @@ export const Automacoes: React.FC = () => {
 
   const getIcon = (tipo: TipoAutomacao) => {
     switch (tipo) {
+      case 'email_tempos_resposta':
+        return <Timer className="w-5 h-5 text-orange-400" />;
       case 'email_planeamento':
         return <Calendar className="w-5 h-5 text-sky-400" />;
       case 'email_atividade_semanal':
@@ -450,11 +468,13 @@ export const Automacoes: React.FC = () => {
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Tipo de Evento</label>
                 <select
-                  value={editingItem.tipo || 'email_planeamento'}
+                  value={editingItem.tipo || 'email_tempos_resposta'}
                   onChange={e => setEditingItem(prev => prev ? { ...prev, tipo: e.target.value as TipoAutomacao } : null)}
                   className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                 >
+                  <option value="email_tempos_resposta">⏱️ Tempos de Resposta & Imobilização (3 PDFs A3)</option>
                   <option value="email_planeamento">📅 Planeamento Semanal</option>
+                  <option value="email_atividade_semanal">📈 Quadro de Atividade Semanal</option>
                   <option value="alerta_stock">📦 Alerta de Stock Mínimo</option>
                   <option value="alerta_revisao">🚗 Lembrete de Revisão Frota</option>
                   <option value="notificacao_cliente">🔔 Conclusão de Obra</option>
