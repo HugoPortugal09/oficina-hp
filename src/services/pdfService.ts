@@ -5,11 +5,11 @@ import { db, STORAGE_KEYS } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
 
-export function generateFolhaServicoPDF(
+export function createFolhaServicoPDFDoc(
   folha: FolhaServico,
   empresa?: Empresa,
   equipamento?: Equipamento
-) {
+): jsPDF {
   // Se for folha de Entrega e Formação, gerar o documento oficial especializado
   if (folha.tipo === 'Entrega e Formação') {
     if (!equipamento && folha.equipamentoId) {
@@ -21,11 +21,7 @@ export function generateFolhaServicoPDF(
         empresa = db.get<Empresa>(STORAGE_KEYS.EMPRESAS)?.find(e => e.id === targetEmpresaId);
       }
     }
-    const docEF = generateEntregaFormacaoPDF(folha, empresa, equipamento);
-    const cleanMatricula = (folha.matricula || 'Equipamento').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const cleanNumero = (folha.numero || folha.id || 'FS').replace(/[^a-zA-Z0-9_-]/g, '_');
-    docEF.save(`Auto_Entrega_Formacao_${cleanMatricula}_${cleanNumero}.pdf`);
-    return;
+    return generateEntregaFormacaoPDF(folha, empresa, equipamento);
   }
 
   const doc = new jsPDF({ compress: true });
@@ -424,8 +420,23 @@ export function generateFolhaServicoPDF(
     doc.text(`Página ${i} de ${pageCount}`, 196, 293.5, { align: 'right' });
   }
 
-  // Save / Trigger Download
-  doc.save(`${folha.numero || folha.id}_Folha_Servico_${folha.matricula || 'viatura'}.pdf`);
+  return doc;
+}
+
+export function generateFolhaServicoPDF(
+  folha: FolhaServico,
+  empresa?: Empresa,
+  equipamento?: Equipamento
+) {
+  const doc = createFolhaServicoPDFDoc(folha, empresa, equipamento);
+  const cleanMatricula = (folha.matricula || 'Equipamento').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanNumero = (folha.numero || folha.id || 'FS').replace(/[^a-zA-Z0-9_-]/g, '_');
+  
+  if (folha.tipo === 'Entrega e Formação') {
+    doc.save(`Auto_Entrega_Formacao_${cleanMatricula}_${cleanNumero}.pdf`);
+  } else {
+    doc.save(`${cleanNumero}_Folha_Servico_${cleanMatricula}.pdf`);
+  }
 }
 
 export function generatePropostaPDF(

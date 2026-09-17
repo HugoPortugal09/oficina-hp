@@ -2,7 +2,7 @@ import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa } from '../types';
 import { USERS } from '../types';
-import { generateEntregaFormacaoPDF, generateTemposRespostaPDF } from './pdfService';
+import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc } from './pdfService';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
 
 /**
@@ -1191,3 +1191,322 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
     };
   }
 }
+
+export interface FolhaServicoEmailPayload {
+  folha: FolhaServico;
+  empresa?: Empresa;
+  equipamento?: Equipamento;
+  currentUser?: UserProfile;
+}
+
+/**
+ * Sends Folha de Serviço by email to the requesting user and hugo@grau-maquinaria.com
+ */
+export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  const { folha, currentUser } = payload;
+  let targetEquip = payload.equipamento;
+  if (!targetEquip && folha.equipamentoId) {
+    targetEquip = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS)?.find(e => e.id === folha.equipamentoId);
+  }
+  let targetEmpresa = payload.empresa;
+  if (!targetEmpresa) {
+    const targetEmpresaId = folha.empresaId || (targetEquip ? targetEquip.empresaId : undefined);
+    if (targetEmpresaId) {
+      targetEmpresa = db.get<Empresa>(STORAGE_KEYS.EMPRESAS)?.find(e => e.id === targetEmpresaId);
+    }
+  }
+
+  // Resolve recipients: requesting user + hugo@grau-maquinaria.com + config.emailDestinatarioPlaneamento
+  const emailsSet = new Set<string>();
+  
+  if (currentUser?.email && currentUser.email.includes('@')) {
+    emailsSet.add(currentUser.email.trim().toLowerCase());
+  }
+
+  let adminEmail = 'hugo@grau-maquinaria.com';
+  try {
+    const config = db.getConfig();
+    if (config.emailDestinatarioPlaneamento && config.emailDestinatarioPlaneamento.includes('@')) {
+      adminEmail = config.emailDestinatarioPlaneamento.trim().toLowerCase();
+    }
+  } catch {}
+
+  emailsSet.add(adminEmail);
+  emailsSet.add('hugo@grau-maquinaria.com');
+
+  const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
+
+  const cleanMatricula = (folha.matricula || 'Equipamento').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanNumero = (folha.numero || folha.id || 'FS').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const clienteNome = targetEmpresa?.nome || (folha as any).empresaNome || (folha as any).cliente || 'Cliente';
+  const subject = `[Oficina HP] Folha de Serviço: ${folha.numero} - ${folha.matricula} (${clienteNome})`;
+
+  // Generate PDF attachment
+  const attachments: any[] = [];
+  try {
+    const doc = createFolhaServicoPDFDoc(folha, targetEmpresa, targetEquip);
+    const pdfDataUri = doc.output('datauristring');
+    const base64Content = pdfDataUri.split(',')[1];
+    if (base64Content) {
+      const filename = folha.tipo === 'Entrega e Formação'
+        ? `Auto_Entrega_Formacao_${cleanMatricula}_${cleanNumero}.pdf`
+        : `Folha_Servico_${cleanMatricula}_${cleanNumero}.pdf`;
+      attachments.push({
+        filename,
+        content: base64Content,
+        encoding: 'base64',
+        contentType: 'application/pdf'
+      });
+      console.log(`[EmailService] 📎 PDF da folha ${folha.numero} gerado com sucesso.`);
+    }
+  } catch (pdfErr) {
+    console.error('[EmailService] Erro ao gerar PDF da folha para anexo:', pdfErr);
+  }
+
+  // Se existirem fotos na folha, comprimir e anexar
+  const rawFotos = folha.fotos || [];
+  if (Array.isArray(rawFotos) && rawFotos.length > 0) {
+    for (let i = 0; i < rawFotos.length; i++) {
+      const foto = rawFotos[i];
+      if (!foto) continue;
+      try {
+        const compressedBase64 = await resizeImageForEmail(foto, 1024, 0.7);
+        if (compressedBase64) {
+          attachments.push({
+            filename: `Foto_${cleanMatricula}_${i + 1}.jpg`,
+            content: compressedBase64,
+            encoding: 'base64',
+            contentType: 'image/jpeg'
+          });
+        }
+      } catch {}
+    }
+  }
+
+  // Build HTML Content
+  const allServices = [...(folha.servicos || []), ...(folha.servicosAdicionais || [])];
+  const allPecas = [...(folha.pecas || []), ...(folha.pecasAdicionais || [])];
+
+  const servicesHtml = allServices.length === 0
+    ? '<tr><td colspan="4" style="text-align: center; padding: 12px; color: #64748b; font-style: italic;">Nenhum serviço individual discriminado.</td></tr>'
+    : allServices.map(s => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 10px; color: #1e293b; font-weight: 500;">${s.descricao}</td>
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: bold;">${s.horas || 0}h</td>
+          <td style="padding: 8px 10px; color: #475569;">${s.tecnico || '-'}</td>
+          <td style="padding: 8px 10px; text-align: center;">
+            <span style="background-color: ${s.concluido ? '#dcfce7' : '#fef3c7'}; color: ${s.concluido ? '#166534' : '#92400e'}; font-weight: bold; font-size: 11px; padding: 2px 6px; border-radius: 4px;">
+              ${s.concluido ? 'Concluído' : 'Pendente'}
+            </span>
+          </td>
+        </tr>
+      `).join('');
+
+  const pecasHtml = allPecas.length === 0
+    ? '<tr><td colspan="3" style="text-align: center; padding: 12px; color: #64748b; font-style: italic;">Nenhum material/peça registada.</td></tr>'
+    : allPecas.map(p => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 10px; font-family: monospace; color: #64748b;">${p.referencia || '-'}</td>
+          <td style="padding: 8px 10px; color: #1e293b; font-weight: 500;">${p.designacao}</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: bold; font-family: monospace;">${p.qtd || 1}</td>
+        </tr>
+      `).join('');
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Folha de Serviço ${folha.numero} - Oficina HP</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
+  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    
+    <!-- Header -->
+    <div style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">
+        GRAUMP &bull; OFICINA HP &bull; REGISTO DE SERVIÇO
+      </div>
+      <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">
+        Folha de Serviço: ${folha.numero}
+      </h1>
+      <div style="font-size: 13px; color: #64748b;">
+        Viatura / Equipamento: <strong style="color: #0f172a; font-family: monospace;">${folha.matricula}</strong> &bull; ${folha.marca || ''} ${folha.modelo || ''}
+      </div>
+    </div>
+
+    <!-- Callout Anexo -->
+    <div style="margin: 20px 28px 0 28px; padding: 12px 16px; background-color: #f1f5f9; border-left: 3px solid #0284c7; border-radius: 4px; font-size: 13px; color: #334155;">
+      📎 <strong>Documento Oficial Anexado:</strong> O documento oficial da Folha de Serviço em formato PDF segue em anexo a este email.
+    </div>
+
+    <!-- Conteudo Principal -->
+    <div style="padding: 20px 28px;">
+      
+      <!-- Ficha Tecnica -->
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
+        Identificação & Ficha Técnica
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; width: 30%; background-color: #f8fafc;">Cliente / Entidade</td>
+          <td style="padding: 8px 12px; font-weight: 600; color: #0f172a;">${clienteNome}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Tipo & Estado</td>
+          <td style="padding: 8px 12px; color: #0f172a;">
+            <strong>${folha.tipo}</strong> &bull; <span style="color: #0284c7; font-weight: 600;">${folha.status}</span>
+          </td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Data da Intervenção</td>
+          <td style="padding: 8px 12px; font-family: monospace; color: #0f172a;">${formatDate(folha.data)}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Quilómetros / Horas</td>
+          <td style="padding: 8px 12px; color: #0f172a;">${(folha.kmsAtuais || 0).toLocaleString('pt-PT')} Km &bull; ${folha.horasAtuais || 0} Horas</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Local</td>
+          <td style="padding: 8px 12px; color: #334155;">${folha.localizacao || 'Oficina Geral'}</td>
+        </tr>
+      </table>
+
+      ${allServices.length > 0 ? `
+      <!-- Tabela Servicos -->
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
+        Serviços e Trabalhos Realizados
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+        <thead>
+          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; color: #64748b;">
+            <th style="padding: 8px 10px;">Descrição</th>
+            <th style="padding: 8px 10px; text-align: center;">Horas</th>
+            <th style="padding: 8px 10px;">Técnico</th>
+            <th style="padding: 8px 10px; text-align: center;">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${servicesHtml}
+        </tbody>
+      </table>
+      ` : ''}
+
+      ${allPecas.length > 0 ? `
+      <!-- Tabela Pecas -->
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
+        Peças e Materiais
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+        <thead>
+          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; color: #64748b;">
+            <th style="padding: 8px 10px;">Referência</th>
+            <th style="padding: 8px 10px;">Designação</th>
+            <th style="padding: 8px 10px; text-align: center;">Qtd</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pecasHtml}
+        </tbody>
+      </table>
+      ` : ''}
+
+      ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
+      <!-- Observacoes -->
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
+        Observações e Anomalias
+      </div>
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; font-size: 13px; color: #334155; margin-bottom: 20px;">
+        ${folha.anomalias ? `<div style="margin-bottom: 4px;"><strong>Anomalias / Diagnóstico:</strong> ${folha.anomalias}</div>` : ''}
+        ${folha.notasCliente ? `<div style="margin-bottom: 4px;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</div>` : ''}
+        ${folha.notasInternas ? `<div><strong>Notas Internas:</strong> ${folha.notasInternas}</div>` : ''}
+      </div>
+      ` : ''}
+
+      <!-- Registo efetuado por -->
+      <div style="font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+        Solicitado por: <strong style="color: #0f172a;">${cleanPersonName(currentUser?.nome || 'Utilizador')}</strong> (${currentUser?.email || 'N/A'}) &bull; ${new Date().toLocaleString('pt-PT')}
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
+      <p style="margin: 0 0 2px 0;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+      <p style="margin: 0;">Notificação operacional gerada pelo sistema.</p>
+    </div>
+
+  </div>
+</body>
+</html>
+  `;
+
+  // Dispatch via /api/send-email
+  let apiDeliverySuccess = false;
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: recipients,
+        subject,
+        html: htmlContent,
+        attachments
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.success) {
+      apiDeliverySuccess = true;
+      console.log(`[EmailService] ✅ Folha de Serviço ${folha.numero} enviada com sucesso para ${recipients.join(', ')}`);
+    } else {
+      console.warn('[EmailService] Resposta da API:', data);
+    }
+  } catch (apiErr) {
+    console.warn('[EmailService] Erro ao contactar /api/send-email:', apiErr);
+  }
+
+  // Store in local logs and PocketBase
+  try {
+    const emailLogEntry = {
+      id: db.generateId('eml'),
+      tipo: 'envio_folha_servico',
+      folhaId: folha.id,
+      folhaNumero: folha.numero,
+      matricula: folha.matricula,
+      destinatarios: recipients,
+      assunto: subject,
+      dataEnvio: new Date().toISOString(),
+      sucesso: apiDeliverySuccess
+    };
+    const logs = db.get<any>('oficina_hp_email_logs') || [];
+    db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+
+    const pb = getPocketBase();
+    pb.collection('app_data').create({
+      key: `email_folha_${folha.numero}_${Date.now()}`,
+      data: {
+        recipients,
+        subject,
+        tipo: 'envio_folha_servico',
+        folhaNumero: folha.numero,
+        matricula: folha.matricula,
+        html: htmlContent,
+        sent: apiDeliverySuccess
+      },
+      timestamp: new Date().toISOString()
+    }).catch(() => {});
+  } catch (e) {}
+
+  return {
+    success: true,
+    recipients,
+    message: apiDeliverySuccess
+      ? `Email enviado com sucesso para: ${recipients.join(', ')}`
+      : `Email registado para envio para: ${recipients.join(', ')}`
+  };
+}
+

@@ -38,7 +38,8 @@ import {
   PackageCheck,
   GraduationCap,
   Handshake,
-  Mail
+  Mail,
+  Loader2
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -49,7 +50,7 @@ import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, clean
 import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
-import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
+import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendFolhaServicoEmail } from '../services/emailService';
 import { estimateDistanceKm } from '../services/distanceService';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel, getFaturacaoBadgeVariant } from '../utils/statusColors';
 import type {
@@ -306,6 +307,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [aiNoteSuggestion, setAiNoteSuggestion] = useState<TaskSuggestionFromNotes | null>(null);
   const [taskCreatedFeedback, setTaskCreatedFeedback] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [sendingEmailFolhaId, setSendingEmailFolhaId] = useState<string | null>(null);
 
   const filePhotoInputRef = useRef<HTMLInputElement>(null);
   const efCameraInputRef = useRef<HTMLInputElement>(null);
@@ -973,6 +975,33 @@ export const Oficina: React.FC<OficinaProps> = ({
     }
   };
 
+  const handleSendFolhaEmail = async (fs: FolhaServico, emp?: Empresa) => {
+    setSendingEmailFolhaId(fs.id);
+    const targetEmp = emp || empresas.find(e => e.id === fs.empresaId);
+    const equip = equipamentos.find(e => e.id === fs.equipamentoId || (fs.matricula && e.matricula.toUpperCase() === fs.matricula.toUpperCase()));
+    const userEmail = currentUser?.email || 'o seu email';
+    setSaveFeedback(`A enviar Folha de Serviço ${fs.numero} por email para hugo@grau-maquinaria.com e ${userEmail}...`);
+    try {
+      const res = await sendFolhaServicoEmail({
+        folha: fs,
+        empresa: targetEmp,
+        equipamento: equip,
+        currentUser
+      });
+      if (res.success) {
+        setSaveFeedback(`Folha ${fs.numero} enviada com sucesso para: ${res.recipients.join(', ')}`);
+      } else {
+        setSaveFeedback(`Não foi possível enviar o email: ${res.message}`);
+      }
+      setTimeout(() => setSaveFeedback(null), 8000);
+    } catch (err: any) {
+      setSaveFeedback(`Erro ao enviar email: ${err?.message || err}`);
+      setTimeout(() => setSaveFeedback(null), 6000);
+    } finally {
+      setSendingEmailFolhaId(null);
+    }
+  };
+
   // Generate Proposta / Orçamento from Additional items (or all items)
   const handleGenerateOrçamentoFromAdicionais = () => {
     const config = db.getConfig();
@@ -1487,6 +1516,24 @@ export const Oficina: React.FC<OficinaProps> = ({
                     </button>
 
                     <button
+                      type="button"
+                      onClick={() => handleSendFolhaEmail(fs, empresa)}
+                      disabled={sendingEmailFolhaId === fs.id}
+                      title="Enviar Folha por Email (Para o seu email e hugo@grau-maquinaria.com)"
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        sendingEmailFolhaId === fs.id
+                          ? 'text-sky-400 bg-sky-950/60 animate-pulse'
+                          : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
+                      }`}
+                    >
+                      {sendingEmailFolhaId === fs.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                      ) : (
+                        <Mail className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <button
                       onClick={() => generateFolhaServicoPDF(fs, empresa)}
                       title="Exportar PDF Oficial (Sem preços nem códigos)"
                       className="p-1.5 text-slate-400 hover:text-hp-400 hover:bg-slate-800 rounded-lg transition-colors"
@@ -1578,6 +1625,24 @@ export const Oficina: React.FC<OficinaProps> = ({
                       <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
+                            type="button"
+                            onClick={() => handleSendFolhaEmail(fs, empresa)}
+                            disabled={sendingEmailFolhaId === fs.id}
+                            title="Enviar Folha por Email (Para o seu email e hugo@grau-maquinaria.com)"
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              sendingEmailFolhaId === fs.id
+                                ? 'text-sky-400 bg-sky-950/60 animate-pulse'
+                                : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
+                            }`}
+                          >
+                            {sendingEmailFolhaId === fs.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                            ) : (
+                              <Mail className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => generateFolhaServicoPDF(fs, empresa)}
                             title="Exportar PDF"
                             className="p-1.5 text-slate-400 hover:text-hp-400 hover:bg-slate-800 rounded-lg transition-colors"
@@ -1585,6 +1650,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                             <FileDown className="w-4 h-4" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => {
                               setEditingFolha(fs);
                               setPlateQuery(fs.matricula || '');
