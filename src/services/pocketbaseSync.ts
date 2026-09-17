@@ -1,4 +1,4 @@
-﻿import { getPocketBase } from './pocketbase';
+import { getPocketBase } from './pocketbase';
 import { STORAGE_KEYS } from './dbService';
 
 export interface SyncStatus {
@@ -19,6 +19,54 @@ const SYNC_COLLECTION = 'app_data';
 
 // Debounce map for sync pushes to avoid excessive network calls
 const pushTimeouts: Record<string, NodeJS.Timeout> = {};
+
+/**
+ * Merges local and cloud collections safely without losing items.
+ */
+function mergeCollectionData(localData: any, cloudData: any): any {
+  if (!cloudData) return localData;
+  if (!localData) return cloudData;
+
+  // If not arrays (e.g. configuration object), prefer cloud if available or merge objects
+  if (!Array.isArray(localData) || !Array.isArray(cloudData)) {
+    if (typeof localData === 'object' && typeof cloudData === 'object') {
+      return { ...cloudData, ...localData };
+    }
+    return cloudData;
+  }
+
+  // If arrays of objects, merge by unique key
+  const mergedMap = new Map<string, any>();
+
+  const getKey = (item: any, idx: number): string => {
+    if (item && typeof item === 'object') {
+      if (item.id) return `id:${item.id}`;
+      if (item.numero) return `num:${item.numero}`;
+      if (item.codigo) return `cod:${item.codigo}`;
+      if (item.matricula) return `mat:${item.matricula}`;
+    }
+    return `idx:${idx}`;
+  };
+
+  // Add cloud items first
+  cloudData.forEach((item, idx) => {
+    mergedMap.set(getKey(item, idx), item);
+  });
+
+  // Merge or add local items (local items take precedence for field edits, but all unique cloud items are preserved)
+  localData.forEach((item, idx) => {
+    const key = getKey(item, idx);
+    if (mergedMap.has(key)) {
+      const cloudItem = mergedMap.get(key);
+      mergedMap.set(key, { ...cloudItem, ...item });
+    } else {
+      // Local-only item: preserve it!
+      mergedMap.set(key, item);
+    }
+  });
+
+  return Array.from(mergedMap.values());
+}
 
 /**
  * Pushes a specific collection to PocketBase cloud in background
@@ -42,15 +90,25 @@ export async function syncPushToCloud(key: string, data: any): Promise<boolean> 
           // Record doesn't exist yet (404)
         }
 
+        let payloadData = data;
+        if (existingRecord && Array.isArray(data) && Array.isArray(existingRecord.data)) {
+          // Merge with remote data so concurrent additions aren't wiped
+          payloadData = mergeCollectionData(data, existingRecord.data);
+          // If remote had items not yet in localStorage, write them back
+          if (payloadData.length !== data.length && typeof localStorage !== 'undefined') {
+            localStorage.setItem(key, JSON.stringify(payloadData));
+          }
+        }
+
         if (existingRecord) {
           await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
-            data: data,
+            data: payloadData,
             timestamp: new Date().toISOString()
           });
         } else {
           await pb.collection(SYNC_COLLECTION).create({
             key: key,
-            data: data,
+            data: payloadData,
             timestamp: new Date().toISOString()
           });
         }
@@ -85,10 +143,16 @@ export async function syncPullFromCloud(): Promise<boolean> {
       let hasChanges = false;
       for (const record of records) {
         if (record.key && record.data) {
-          const currentLocal = localStorage.getItem(record.key);
-          const newCloud = JSON.stringify(record.data);
-          if (currentLocal !== newCloud) {
-            localStorage.setItem(record.key, newCloud);
+          const currentLocalStr = localStorage.getItem(record.key);
+          let currentLocal = null;
+          try {
+            if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
+          } catch {}
+
+          const merged = mergeCollectionData(currentLocal, record.data);
+          const newCloudStr = JSON.stringify(merged);
+          if (currentLocalStr !== newCloudStr) {
+            localStorage.setItem(record.key, newCloudStr);
             hasChanges = true;
           }
         }
@@ -121,10 +185,16 @@ export function subscribeToRealtimeSync(): () => void {
       if (e.action === 'create' || e.action === 'update') {
         const record = e.record;
         if (record.key && record.data) {
-          const currentLocal = localStorage.getItem(record.key);
-          const newCloud = JSON.stringify(record.data);
-          if (currentLocal !== newCloud) {
-            localStorage.setItem(record.key, newCloud);
+          const currentLocalStr = localStorage.getItem(record.key);
+          let currentLocal = null;
+          try {
+            if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
+          } catch {}
+
+          const merged = mergeCollectionData(currentLocal, record.data);
+          const newCloudStr = JSON.stringify(merged);
+          if (currentLocalStr !== newCloudStr) {
+            localStorage.setItem(record.key, newCloudStr);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { source: 'realtime_event', key: record.key } }));
             }
@@ -175,3 +245,4 @@ export async function uploadAllLocalToCloud(): Promise<{ success: boolean; count
 export function getSyncStatus(): SyncStatus {
   return { ...syncStatus };
 }
+
