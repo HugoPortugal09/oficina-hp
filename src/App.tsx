@@ -299,7 +299,7 @@ export default function App() {
       if (existing) {
         // Find if there is an active folha
         const activeFolha = folhas.find(
-          f => f.equipamentoId === existing.id && !f.status.includes('FEITO - Faturado')
+          f => f.equipamentoId === existing.id && f.status !== 'Concluído' && !f.status.includes('FEITO') && f.status !== 'Feito'
         );
 
         if (activeFolha) {
@@ -394,7 +394,7 @@ export default function App() {
   }
 
   const openFolhasCount = folhas.filter(f => {
-    if (f.status.startsWith('FEITO')) return false;
+    if (f.status.startsWith('FEITO') || f.status === 'Concluído' || f.status === 'Feito') return false;
     const isInOficina =
       f.localizacaoTipo === 'oficina' ||
       f.tipo === 'Oficina' ||

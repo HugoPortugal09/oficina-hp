@@ -1,0 +1,49 @@
+id,nome,telemovel,email,empresaId,created_at
+01cf2ecc-3009-479f-b14d-45ec3b0a402b,Vera Fernandes,962541967,gtf@cm-vilavicosa.pt,E211,2026-08-12 18:14:18.015738+00
+02d52fa9-0363-4e39-a2ec-a6c1fcb010d5,Coutinho,913487388,,E091,2026-02-09 16:39:59.922168+00
+05c83ba7-a821-4a27-b2f5-41b8b29b35f7,Vânia Figueiredo,,vania.figueiredo@cm-cuba.pt,E008,2026-02-06 16:01:54.475432+00
+0dde585d-ba10-440e-906f-0a62a9831f89,Sérgio Pinto,934055131,sergiopinto@portoambiente.pt,E007,2026-02-22 23:06:10.289449+00
+0e3036a2-460c-4ac8-be50-1f85c154cd47,Daniel Couto,928520004,daniel.couto@prezero.com,E001,2026-01-31 15:10:30.314267+00
+1506cd9a-b2a4-40da-ba82-622bec476177,Vasco,961358476,vasco.rodrigues@agere.pt,E004,2026-02-01 15:41:39.574724+00
+19a7d396-309b-4b3f-9566-585183089c06,Emanuel Costa,,emanuelbandeirasilva@portoambiente.pt,E007,2026-02-22 23:04:37.701132+00
+1bd90f7a-accd-4a61-8996-845ac2b9c7d4,Hélder Pereira,916999609,hpereira@cm-valenca.pt,E136,2026-04-08 15:52:25.162109+00
+267e1bee-bc0d-47ab-87d1-65bfe4446b2a,Liliana Novais,,lnovais@vilavitaparc.com,E134,2026-03-10 19:48:13.226996+00
+289e6bae-5d0a-4a01-a304-5b4cac653f96,Filipa Teixeira,961115070,filipa@sm-nazare.pt,E058,2026-03-02 11:43:39.292448+00
+296da94f-07c0-47ca-9fb6-61415598bf69,Luís Ascensão,"911136762 ",lascensao@vilamouraworld.com,E109,2026-09-07 10:15:22.870183+00
+2b94d116-88ff-432f-bf25-c6c59bbbd393,Manuel Amador,962793231,manuel.amador@cm-alvito.pt,E208,2026-07-28 12:15:15.60993+00
+3621ad66-3ca1-4cf4-bcd2-210ccc085c8a,Jorge Falcão,914230411,jorge.falcao@cm-coimbra.pt,E005,2026-02-01 20:04:06.647941+00
+3afdfebe-c643-47b5-a33c-4a1c716fd4e7,Armando Neves,91545846,armazem@cm-alfandegadafe.pt,E062,2026-02-24 10:25:58.085657+00
+3f0c2313-5130-4e82-a27a-efd6595cb114,Jorge Sousa,967756766,jorge.sousa@emarp.pt,E002,2026-01-31 15:10:30.314267+00
+3f90b49f-b076-4272-9cbe-dc8fc395eadd,Luís Amaro,,lamaro@cm-arraiolos.pt,E077,2026-03-09 22:18:29.967784+00
+497288b7-0498-4bf5-a57e-abdacee8ba6e,Luís Ascensão,911136762,Frota_marina@vilamouraworld.com,E109,2026-09-07 10:16:11.549151+00
+49f4099d-efce-4446-b2e6-b63dbfe1d94f,Marco Franco,915695988,marco.franco@tejoambiente.pt,E079,2026-02-09 16:21:25.860479+00
+4d00f91b-c554-4140-b690-41fa5c7e7bd1,Mário Barreiros,934110126,mbarreiros@cm-arraiolos.pt,E077,2026-03-09 22:17:33.009979+00
+4d777d21-6540-4fa4-bfb3-baa9ea36ae76,Carmen Estrela,,carmen.estrela@cm-cuba.pt,E008,2026-02-06 16:02:12.124469+00
+4f89be5e-b2d9-4d6e-b8be-760602a2e590,Emídio Soeiro,916618631,,E058,2026-02-24 10:09:37.957798+00
+59f1b230-caf8-4023-a153-38c97e9165bc,Luís Araújo,,luisaraujo@portoambiente.pt,E007,2026-04-09 22:15:06.033962+00
+5c7660b9-cd8b-4731-83da-997bc56fb382,Pedro Mota,914518603,pedro.mota@cm-baiao..pt,E016,2026-02-24 13:08:23.471676+00
+612aa4f0-16c2-4011-a444-7bde3276c9c7,Nélia Oliveira,,nelia.oliveira@cm-mira.pt,E117,2026-02-18 17:11:53.633181+00
+8051203b-76a6-451c-89c6-e64a008a8b6e,"Carlos Marugeiro ",961620163,oficina@cm-soure.pt,E045,2026-04-08 13:27:31.118838+00
+82246177-8626-4e23-bf10-044f3dc34fd5,Carlos Santos,927049677,csantos@prainha-ei.pt,E129,2026-02-11 09:17:16.759815+00
+847b530b-6bff-4f7c-8b85-cd6a7cad32a6,Celso Ferreira,939994086,celso.ferreira@cm-baiao..pt,E016,2026-02-24 13:07:38.42731+00
+85d9e2c6-ddab-4193-9e19-4c9735fb8836,Emidio Moura,933491263,emidio.moura@prezero.com,E001,2026-01-31 15:10:30.314267+00
+88fee283-b05a-450f-9360-5957776fd7cc,Sandra Coelho,910041202,scoelho@serlima.pt,E003,2026-01-31 15:10:30.314267+00
+892fd3c1-0325-4a6f-b035-b63fc2b56706,Mónica Duarte,966901879,monica.duarte@cm-odemira.pt,E120,2026-02-24 23:15:45.698257+00
+8bf0eaac-412b-43f5-b85b-83ee00c70e0c,Elizabete Alves,962047544,ealves@cmpb.pt,E006,2026-01-31 15:10:30.314267+00
+926c0d1f-4994-459f-92f7-1b9be3753d97,Rui Sousa,"910134529 ",rui.sousa@maiambiente.pt,E202,2026-02-10 18:15:37.967506+00
+a0f97adc-8d7d-4c52-904c-9116e521823b,José Lobo,961511354,jose.lobo@cm-evora.pt,E145,2026-02-09 16:25:39.706274+00
+a7062a90-f55a-48dc-adc2-b40e16209e9f,Júlio Fernandes,966938824,julio.fernandes@agere.pt,E004,2026-02-01 15:40:11.841031+00
+a934156d-eb93-4eb6-9c6a-0d152fcf9e13,Rui Godinho,938569366,rui.godinho@jf_mina de agua.pt,E198,2026-05-14 07:53:34.280146+00
+aafacf6e-109a-4b32-9f2b-4779c4aebb4e,Rui Garcia,,rui.garcia@tejoambiente.pt,E079,2026-02-09 16:22:16.535528+00
+ab1d0124-aeef-4162-9990-0a0be2ca0e03,José Machado,,jose.machado@cm-cuba.pt,E008,2026-02-06 16:01:28.45344+00
+aeee2e3f-ad03-4ea3-9335-23143cf967ca,Celso Pereira,933093684,celso.pereira@prezero.com,E001,2026-01-31 15:10:30.314267+00
+b217a5fa-3190-4683-8d50-a6b2ec0c2fc2,João Palma,,joao.palma@cm-cuba.pt,E008,2026-02-06 16:01:07.531213+00
+b8f55658-84fb-48a7-a310-2dfa05089782,André Gabriel,,andregabriel@cm-soure.pt,E045,2026-04-08 13:28:04.724623+00
+bc7602cc-119b-48f9-a85f-3a9a79950561,Francisco Faria,962186154,francisco.faria@cm-paredes.pt,E141,2026-03-17 21:50:13.522799+00
+c1bee92a-d115-49c0-981f-a5afae4e05e3,Pedro Sota,,pedro.sota@cm-evora.pt,E145,2026-02-09 16:26:46.733208+00
+e6e470c3-9bcd-45e7-bb96-1c851036da90,Catarina Chora,,catarina.chora@cm-cuba.pt,E008,2026-02-06 16:00:34.630244+00
+eedfe273-d830-4d53-8f0a-505cc2ab7964,Aires Martins,932984260,aires.martins@prezero.com,E001,2026-01-31 15:10:30.314267+00
+f5af3f27-5090-41a4-96f2-60efcaa3bca7,Manuel Faustino,962858751,manuel.faustino@cm-vilavicosa.pt,E211,2026-08-12 18:09:47.035161+00
+f6a6a3f6-9a64-45e1-a5f7-ec441c5d6843,Eduardo Minhoto,966821066,eduardominhoto@cm-mondimdebasto.pt,E041,2026-02-10 00:15:27.339331+00
+fcecb115-8e12-47a9-98a3-3471cd8d566e,Miguel Silva - SAIU,961170839,miguel.silva@agere.pt,E004,2026-02-01 15:40:15.502407+00
+feed5281-dc0f-45aa-85b2-fea01ea29ff6,Rui Nóbrega,961340449,ruinobrega@portoambiente.pt,E007,2026-02-02 23:42:59.20573+00

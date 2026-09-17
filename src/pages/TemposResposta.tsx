@@ -69,7 +69,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
   const processedRows = useMemo(() => {
     return folhas.map(f => {
       const emp = empresas.find(e => e.id === f.empresaId);
-      const isConcluido = f.status.startsWith('FEITO -');
+      const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
 
       // 1. Tempo de Imobilização (Oficina): calculated from dataEntradaOficina (or f.data) to dataConclusao (or now)
       const startDateImobilizacao = f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined);

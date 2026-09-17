@@ -48,15 +48,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   // Compute Key Metrics
   const activeFolhas = folhasServico.filter(
-    f => !f.status.includes('FEITO - Faturado')
+    f => f.status !== 'Concluído' && !f.status.startsWith('FEITO') && f.status !== 'Feito'
   );
 
   const viaturasEmOficina = folhasServico.filter(
-    f => f.status.startsWith('OF -') || f.localizacaoTipo === 'oficina'
+    f => (f.status !== 'Concluído' && !f.status.startsWith('FEITO') && f.status !== 'Feito') &&
+         (f.status.startsWith('OF -') || f.localizacaoTipo === 'oficina' || f.tipo === 'Oficina')
   );
 
   const pedidosNoTerreno = folhasServico.filter(f => {
-    if (f.status.startsWith('FEITO')) return false;
+    if (f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito') return false;
     const isInOficina =
       f.localizacaoTipo === 'oficina' ||
       f.tipo === 'Oficina' ||
@@ -72,7 +73,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const valorTotalOrcado = propostas.reduce((acc, p) => acc + p.totalComIva, 0);
 
   const concluidosEsteMes = folhasServico.filter(
-    f => f.status.startsWith('FEITO -')
+    f => f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito'
   );
 
   return (
@@ -276,7 +277,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {empresas.map(emp => {
                 const empEquips = equipamentos.filter(e => e.empresaId === emp.id);
                 const empActiveServices = folhasServico.filter(
-                  f => f.empresaId === emp.id && !f.status.includes('FEITO - Faturado')
+                  f => f.empresaId === emp.id && f.status !== 'Concluído' && !f.status.startsWith('FEITO') && f.status !== 'Feito'
                 );
 
                 return (

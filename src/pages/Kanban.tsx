@@ -40,53 +40,62 @@ interface KanbanColumn {
 
 const KANBAN_COLUMNS: KanbanColumn[] = [
   {
-    id: 'at',
-    title: 'ASSISTÊNCIA TÉCNICA',
+    id: 'orcamento',
+    title: 'PEDIDOS & ORÇAMENTOS',
     color: 'from-blue-600/30 to-blue-900/20 border-blue-500/40 text-blue-300',
     statuses: [
+      'Pedido de Assistência',
+      'Fazer orçamento',
+      'Enviar orçamento',
+      'Orçamento enviado – Aguardar resposta',
       'AT - Pedido de Assistência',
+      'OF - Fazer orçamento',
+      'OF - Orçamento Enviado – Aguardar resposta'
+    ]
+  },
+  {
+    id: 'planeamento',
+    title: 'PLANEAMENTO & ESPERA',
+    color: 'from-amber-600/30 to-amber-900/20 border-amber-500/40 text-amber-300',
+    statuses: [
+      'Aguardar agenda',
+      'Agendado',
+      'Aguardar viatura',
+      'Aguardar peças',
       'AT - Agendar – Sem requisição',
       'AT - Agendar – Com requisição',
       'AT - Agendado',
       'AT - Aguardar requisição',
       'AT - Com requisição - Aguardar peças',
+      'OF - Com requisição - Aguardar agenda',
+      'OF - Com requisição - Aguardar viatura',
+      'OF - Com requisição - Aguardar peças',
+      'OF - Sem requisição - Aguardar peças',
+      'CT - Contrato',
+      'CT - Agendar',
+      'CT - Aguardar peças',
+      'CT - Aguardar resposta Fornecedor',
       'A Agendar',
-      'Agendado',
       'EF - A Agendar',
       'EF - Agendado'
     ]
   },
   {
-    id: 'of',
-    title: 'OFICINA / EM REPARAÇÃO',
-    color: 'from-amber-600/30 to-amber-900/20 border-amber-500/40 text-amber-300',
+    id: 'intervencao',
+    title: 'EM INTERVENÇÃO',
+    color: 'from-orange-600/30 to-orange-900/20 border-orange-500/40 text-orange-300',
     statuses: [
-      'OF - Fazer orçamento',
-      'OF - Orçamento Enviado – Aguardar resposta',
-      'OF - Com requisição - Aguardar agenda',
-      'OF - Com requisição - Aguardar viatura',
+      'A ser intervencionado',
       'OF - A ser intervencionado',
-      'OF - Em Intervenção',
-      'OF - Com requisição - Aguardar peças',
-      'OF - Sem requisição - Aguardar peças'
+      'OF - Em Intervenção'
     ]
   },
   {
-    id: 'ct',
-    title: 'CONTRATOS & PREVENTIVA',
-    color: 'from-teal-600/30 to-teal-900/20 border-teal-500/40 text-teal-300',
-    statuses: [
-      'CT - Contrato',
-      'CT - Agendar',
-      'CT - Aguardar peças',
-      'CT - Aguardar resposta Fornecedor'
-    ]
-  },
-  {
-    id: 'finalizado',
-    title: 'FINALIZADO & FATURAÇÃO',
+    id: 'concluido',
+    title: 'CONCLUÍDO & FATURAÇÃO',
     color: 'from-emerald-600/30 to-emerald-900/20 border-emerald-500/40 text-emerald-300',
     statuses: [
+      'Concluído',
       'FEITO - Resolvido',
       'FEITO - Faturar',
       'FEITO - Aguardar Requisição',

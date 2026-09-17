@@ -308,7 +308,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
             const empClients = clientes.filter(c => c.empresaId === emp.id);
             const empFolhas = folhas.filter(f => f.empresaId === emp.id);
             const totalServices = empFolhas.length;
-            const completedServices = empFolhas.filter(f => f.status.startsWith('FEITO')).length;
+            const completedServices = empFolhas.filter(f => f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito').length;
             const sedeKm = emp.distanciaKmGRAUMP || estimateDistanceKm(emp.moradaSede);
 
             return (

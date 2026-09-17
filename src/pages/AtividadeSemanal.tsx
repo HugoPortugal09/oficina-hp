@@ -167,7 +167,7 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         ? f.dataConclusao.split('T')[0]
         : (f.dataPlaneada || f.dataEntradaOficina || f.data || formatDateISO(new Date()));
 
-      const isConcluido = f.status.startsWith('FEITO -') || !!f.dataConclusao;
+      const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
       
       const totalHoras = (f.servicos?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0) +
                          (f.servicosAdicionais?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0);

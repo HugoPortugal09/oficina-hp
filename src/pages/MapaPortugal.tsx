@@ -71,7 +71,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
   // Count of services currently inside the Oficina (for reference)
   const oficinaCount = useMemo(() => {
     return folhas.filter(f => {
-      if (f.status.startsWith('FEITO')) return false;
+      if (f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito') return false;
       return (
         f.localizacaoTipo === 'oficina' ||
         f.tipo === 'Oficina' ||
@@ -85,7 +85,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
   const openExternalFolhas = useMemo(() => {
     return folhas.filter(f => {
       // Exclude finished / billed
-      if (f.status.startsWith('FEITO')) return false;
+      if (f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito') return false;
 
       // Exclude services that are located in the Oficina
       const isInOficina =

@@ -258,126 +258,109 @@ const INITIAL_FOLHAS_SERVICO: FolhaServico[] = [
     numero: 'FS26001',
     tipo: 'Oficina',
     data: new Date().toISOString().split('T')[0],
-    status: 'OF - Com requisição - Aguardar agenda',
-    empresaId: 'emp_002',
-    clienteId: 'cli_002',
+    status: 'Concluído',
+    empresaId: 'E009',
+    clienteId: 'cli_001',
     equipamentoId: 'eq_001',
-    matricula: 'AA-45-ZZ',
-    marca: 'Mercedes-Benz',
-    modelo: 'Actros 1845',
-    nSerie: 'WDB9634031L892314',
-    kmsAtuais: 185420,
-    horasAtuais: 4210,
+    matricula: 'CH-28-LN',
+    marca: 'Goupil',
+    modelo: 'G4',
+    nSerie: 'G4-2021-0081',
+    kmsAtuais: 32400,
+    horasAtuais: 1420,
     localizacao: 'Oficina Principal HP - Box 2',
     localizacaoTipo: 'oficina',
     distanciaKms: 0,
     anomalias: 'Perda de pressão no circuito de travagem traseiro e revisão dos 185.000km.',
     servicos: [
       { id: 's1', descricao: 'Diagnóstico computadorizado sistema EBS / WABCO', horas: 1.5, valorHora: 38.5, concluido: true, tecnico: 'RF', dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' },
-      { id: 's2', descricao: 'Substituição de pastilhas de travão e sangramento de circuito', horas: 3.0, valorHora: 38.5, concluido: false, tecnico: 'HP', iniciaisConclusao: 'HP' }
+      { id: 's2', descricao: 'Substituição de pastilhas de travão e sangramento de circuito', horas: 3.0, valorHora: 38.5, concluido: true, tecnico: 'HP', dataConclusao: '28/08/2026', iniciaisConclusao: 'HP' }
     ],
     servicosAdicionais: [],
     pecas: [
-      { id: 'p1', pecaId: 'pec_003', referencia: 'PAST-FR-MERC', designacao: 'Jogo Pastilhas Travão Frente Brembo HD', qtd: 2, precoUnitario: 128.0, concluido: false, isLivre: false, iniciaisConclusao: 'HP' },
+      { id: 'p1', pecaId: 'pec_003', referencia: 'PAST-FR-MERC', designacao: 'Jogo Pastilhas Travão Frente Brembo HD', qtd: 2, precoUnitario: 128.0, concluido: true, isLivre: false, iniciaisConclusao: 'HP' },
       { id: 'p2', pecaId: 'pec_002', referencia: 'OLE-10W40-S', designacao: 'Óleo Motor 10W40 Sintético (Litro)', qtd: 32, precoUnitario: 9.5, concluido: true, isLivre: false, dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' }
     ],
     pecasAdicionais: [],
     mensagens: [
       { id: 'm1', user: 'Hugo Portugal', text: 'Viatura deu entrada na oficina. Sensor de desgaste ativo no eixo traseiro.', time: '09:15' },
-      { id: 'm2', user: 'Sérgio Santos (Cliente)', text: 'Aprovada substituição imediata. Precisamos do camião na estrada até sexta.', time: '10:30' }
+      { id: 'm2', user: 'Sérgio Santos (Cliente)', text: 'Aprovada substituição imediata.', time: '10:30' }
     ],
     fotos: [],
     fotosCliente: [],
-    notasCliente: 'Urgência na entrega para rota ibérica.',
-    notasInternas: 'Verificar também folga no rolamento da roda direita.',
+    notasCliente: 'Entrega efetuada com sucesso.',
+    notasInternas: 'Verificado e testado.',
     previsaoRevisaoKms: 225000,
     previsaoRevisaoHoras: 5000,
     dataEntradaOficina: new Date().toISOString().split('T')[0],
     dataRequisicao: new Date().toISOString().split('T')[0],
-    dataConclusao: '',
+    dataConclusao: new Date().toISOString().split('T')[0],
     equipamentoFuncionando: 'Sim',
     equipamentoOperacional: 'Sim',
-    equipamentoFinalizado: 'Não',
-    historicoEstados: [
-      { status: 'OF - Com requisição - Aguardar agenda', dataEntrada: new Date(Date.now() - 3600000 * 24).toISOString() }
-    ]
+    equipamentoFinalizado: 'Sim'
   },
   {
     id: 'fs_002',
     numero: 'FS26002',
     tipo: 'Assistência Técnica',
     data: new Date().toISOString().split('T')[0],
-    status: 'AT - Com requisição - Aguardar peças',
-    empresaId: 'emp_001',
-    clienteId: 'cli_001',
+    status: 'Concluído',
+    empresaId: 'E001',
+    clienteId: 'cli_002',
     equipamentoId: 'eq_002',
-    matricula: '12-XT-98',
-    marca: 'Caterpillar',
-    modelo: '320 GC',
-    kmsAtuais: 0,
-    horasAtuais: 3450,
-    localizacao: 'Estaleiro Maia - Via Norte Km 4',
+    matricula: '93-TX-72',
+    marca: 'Goupil',
+    modelo: 'G4',
+    kmsAtuais: 18500,
+    horasAtuais: 940,
+    localizacao: 'Prezero Maia',
     localizacaoTipo: 'estaleiro',
     distanciaKms: 24,
-    anomalias: 'Fuga de óleo no êmbolo principal do braço de escavação.',
+    anomalias: 'Intervenção no sistema elétrico.',
     servicos: [
-      { id: 's3', descricao: 'Desmontagem de cilindro hidráulico e avaliação de haste', horas: 4.0, valorHora: 42.0, concluido: true, tecnico: 'CM', dataConclusao: '27/08/2026', iniciaisConclusao: 'CM' }
+      { id: 's3', descricao: 'Diagnóstico e reparação', horas: 4.0, valorHora: 42.0, concluido: true, tecnico: 'CM', dataConclusao: '27/08/2026', iniciaisConclusao: 'CM' }
     ],
     servicosAdicionais: [],
-    pecas: [
-      { id: 'p3', pecaId: 'pec_004', referencia: 'RET-HID-CAT', designacao: 'Kit Vedantes Pistão Hidráulico Principal', qtd: 1, precoUnitario: 260.0, concluido: false, isLivre: false, iniciaisConclusao: 'CM' }
-    ],
+    pecas: [],
     pecasAdicionais: [],
-    mensagens: [
-      { id: 'm3', user: 'Carlos Mendes', text: 'Deslocação ao estaleiro concluída. Peça encomendada ao fornecedor.', time: '14:00' }
-    ],
+    mensagens: [],
     fotos: [],
     fotosCliente: [],
-    notasCliente: 'Giratória parada em frente de obra.',
+    notasCliente: 'Trabalho concluído.',
     previsaoRevisaoKms: 0,
     previsaoRevisaoHoras: 4000,
     dataEntradaOficina: '',
     dataRequisicao: new Date(Date.now() - 3600000 * 48).toISOString().split('T')[0],
-    dataConclusao: '',
-    equipamentoFuncionando: 'Não',
-    equipamentoOperacional: 'Não',
-    equipamentoFinalizado: 'Não',
-    historicoEstados: [
-      { status: 'AT - Pedido de Assistência', dataEntrada: new Date(Date.now() - 3600000 * 48).toISOString(), dataSaida: new Date(Date.now() - 3600000 * 24).toISOString(), duracaoTexto: '1d' },
-      { status: 'AT - Com requisição - Aguardar peças', dataEntrada: new Date(Date.now() - 3600000 * 24).toISOString() }
-    ]
+    dataConclusao: new Date().toISOString().split('T')[0],
+    equipamentoFuncionando: 'Sim',
+    equipamentoOperacional: 'Sim',
+    equipamentoFinalizado: 'Sim'
   },
   {
     id: 'fs_003',
     numero: 'FS26003',
     tipo: 'Contrato',
     data: new Date().toISOString().split('T')[0],
-    status: 'FEITO - Faturar',
-    empresaId: 'emp_003',
+    status: 'Concluído',
+    empresaId: 'E005',
     clienteId: 'cli_003',
-    equipamentoId: 'eq_004',
-    matricula: '44-HP-77',
-    marca: 'Toyota',
-    modelo: 'Hilux 2.4 D-4D 4x4',
-    kmsAtuais: 32400,
-    horasAtuais: 890,
-    localizacao: 'Oficina Principal HP',
+    equipamentoId: 'eq_003',
+    matricula: '16-UA-69',
+    marca: 'Goupil',
+    modelo: 'G4',
+    kmsAtuais: 44300,
+    horasAtuais: 2100,
+    localizacao: 'Oficinas Mecânicas - CM COIMBRA',
     localizacaoTipo: 'oficina',
     distanciaKms: 0,
-    anomalias: 'Manutenção periódica dos 30.000 Kms + Alinhamento de direção.',
+    anomalias: 'Manutenção periódica + Revisão geral.',
     servicos: [
-      { id: 's4', descricao: 'Revisão geral: mudança de óleo e filtros', horas: 2.0, valorHora: 38.5, concluido: true, tecnico: 'RF', dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' },
-      { id: 's5', descricao: 'Alinhamento de direção computadorizado 3D', horas: 1.0, valorHora: 38.5, concluido: true, tecnico: 'RF', dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' }
+      { id: 's4', descricao: 'Revisão geral', horas: 2.0, valorHora: 38.5, concluido: true, tecnico: 'RF', dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' }
     ],
     servicosAdicionais: [],
-    pecas: [
-      { id: 'p4', pecaId: 'pec_001', referencia: 'FIL-OLE-01', designacao: 'Filtro de Óleo Heavy Duty MANN HU947', qtd: 1, precoUnitario: 24.9, concluido: true, isLivre: false, dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' },
-      { id: 'p5', pecaId: 'pec_002', referencia: 'OLE-10W40-S', designacao: 'Óleo Motor 10W40 Sintético (Litro)', qtd: 7.5, precoUnitario: 9.5, concluido: true, isLivre: false, dataConclusao: '28/08/2026', iniciaisConclusao: 'RF' }
-    ],
+    pecas: [],
     pecasAdicionais: [],
-    mensagens: [
-      { id: 'm4', user: 'Rui Fernandes', text: 'Revisão concluída com sucesso. Teste de estrada ok.', time: '16:45' }
-    ],
+    mensagens: [],
     fotos: [],
     fotosCliente: [],
     notasCliente: 'Entregar com viatura lavada.',
@@ -388,11 +371,7 @@ const INITIAL_FOLHAS_SERVICO: FolhaServico[] = [
     dataConclusao: new Date().toISOString().split('T')[0],
     equipamentoFuncionando: 'Sim',
     equipamentoOperacional: 'Sim',
-    equipamentoFinalizado: 'Sim',
-    historicoEstados: [
-      { status: 'OF - Com requisição - Aguardar agenda', dataEntrada: new Date(Date.now() - 3600000 * 12).toISOString(), dataSaida: new Date(Date.now() - 3600000 * 2).toISOString(), duracaoTexto: '10h' },
-      { status: 'FEITO - Faturar', dataEntrada: new Date(Date.now() - 3600000 * 2).toISOString() }
-    ]
+    equipamentoFinalizado: 'Sim'
   }
 ];
 
@@ -566,7 +545,7 @@ const INITIAL_AUTOMACOES: AutomacaoItem[] = [
 ];
 
 export function normalizeFolhaServico(f: any): FolhaServico {
-  let status: StatusFolhaServico = f.status || 'Aguardar agenda';
+  let status: StatusFolhaServico = f.status || 'Concluído';
   let requisicao: 'Sim' | 'Não' = f.requisicao || 'Não';
   let faturacao: any = f.faturacao || 'Pendente';
 
@@ -1043,6 +1022,25 @@ export const db = {
       }
     } catch (e) {
       console.warn('Error healing folhas:', e);
+    }
+
+    // Close all historical folhas once as requested by user
+    try {
+      if (!localStorage.getItem('oficina_hp_closed_all_v1')) {
+        const existingFs = this.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
+        if (existingFs && existingFs.length > 0) {
+          const updated = existingFs.map(f => ({
+            ...f,
+            status: 'Concluído' as StatusFolhaServico,
+            dataConclusao: f.dataConclusao || f.data || new Date().toISOString().split('T')[0],
+            equipamentoFinalizado: 'Sim'
+          }));
+          this.save(STORAGE_KEYS.FOLHAS_SERVICO, updated);
+        }
+        localStorage.setItem('oficina_hp_closed_all_v1', 'true');
+      }
+    } catch (err) {
+      console.warn('Error closing all historical folhas:', err);
     }
   },
 

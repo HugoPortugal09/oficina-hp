@@ -256,7 +256,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
 
   // Open Folhas de Serviço (not finalized)
   const openFolhas = useMemo(() => {
-    return folhas.filter(f => !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
+    return folhas.filter(f => f.status !== 'Concluído' && !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
   }, [folhas]);
 
   // Open Visita Modal (New or Edit)
