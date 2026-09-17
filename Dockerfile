@@ -1,9 +1,8 @@
 # Stage 1: Build the SPA
 FROM node:22-slim AS build
 WORKDIR /app
-ENV NODE_ENV=development
-COPY package*.json ./
-RUN npm install
+COPY package.json ./
+RUN npm install --include=optional
 COPY . .
 RUN npx vite build
 
@@ -11,7 +10,7 @@ RUN npx vite build
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package*.json ./
+COPY package.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY server.mjs ./
