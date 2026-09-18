@@ -51,6 +51,8 @@ interface ActivityItem {
   descricao: string;
   concluido: boolean;
   tecnico?: string;
+  tecnicoInitials?: string;
+  tecnicoFullNames?: string[];
   horas?: number;
   qtdServicos?: number;
   qtdPecas?: number;
@@ -63,6 +65,50 @@ interface ActivityItem {
   rawFolha?: FolhaServico;
   rawTarefa?: Tarefa;
   prioridade?: string;
+}
+
+/**
+ * Converte o nome de um técnico nas suas iniciais (ex: "Hugo Portugal" -> "HP", "Rui Fernandes" -> "RF")
+ */
+export function getTechnicianInitials(name?: string | null): string {
+  if (!name) return '';
+  const clean = cleanPersonName(name).trim();
+  if (!clean) return '';
+
+  // Se já forem iniciais maiúsculas (ex: "HP", "RF", "CM", "MS", "AS")
+  if (/^[A-Z]{2,4}$/.test(clean)) return clean;
+
+  const lower = clean.toLowerCase();
+  if (lower === 'oficina hp' || lower === 'oficina' || lower === 'hugo portugal' || lower === 'hugo') return 'HP';
+  if (lower === 'rui fernandes' || lower === 'rui') return 'RF';
+  if (lower === 'carlos mendes' || lower === 'carlos') return 'CM';
+  if (lower === 'miguel santos' || lower === 'miguel') return 'MS';
+  if (lower === 'antónio silva' || lower === 'antonio silva' || lower === 'antonio') return 'AS';
+
+  // Se tiver várias palavras: primeira letra da primeira palavra + primeira letra da última palavra
+  const words = clean.split(/[\s\-_]+/).filter(w => w.length > 0);
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
+}
+
+/**
+ * Agrupa técnicos e devolve as iniciais únicas separadas por vírgula (ex: "HP", "HP, RF")
+ */
+export function formatTechniciansInitials(techs: string[] | string): string {
+  const list = Array.isArray(techs) ? techs : (techs || '').split(/[,;&+/]/);
+  const initialsSet = new Set<string>();
+
+  list.forEach(t => {
+    const raw = t.trim();
+    if (!raw) return;
+    const ini = getTechnicianInitials(raw);
+    if (ini) initialsSet.add(ini);
+  });
+
+  if (initialsSet.size === 0) return 'HP';
+  return Array.from(initialsSet).join(', ');
 }
 
 // Helpers for Week calculations (Monday to Sunday)
@@ -179,37 +225,59 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         ...(f.servicos?.map(s => cleanPersonName(s.tecnico)) || []),
         ...(f.servicosAdicionais?.map(s => cleanPersonName(s.tecnico)) || []),
         cleanPersonName(f.tecnicoPlaneado)
-      ])).filter(Boolean).join(', ') || 'Oficina HP';
+      ])).filter(Boolean);
 
       const firstServiceDesc = f.servicos?.[0]?.descricao || f.servicosAdicionais?.[0]?.descricao;
       const defaultDesc = f.anomalias || firstServiceDesc || f.notasInternas || `${f.tipo} • ${f.status}`;
 
-      let addedSpecificEvent = false;
+      // Mapa para agrupar todas as ações desta folha por data (evita duplicados no mesmo dia quando feita por 2 ou mais técnicos)
+      interface FolhaDayEntry {
+        dateStr: string;
+        types: Set<string>;
+        descriptions: string[];
+        tecnicos: Set<string>;
+        horas: number;
+        qtdServicos: number;
+        qtdPecas: number;
+        concluido: boolean;
+      }
+
+      const folhaDays = new Map<string, FolhaDayEntry>();
+
+      const getOrCreateDay = (d: string) => {
+        if (!folhaDays.has(d)) {
+          folhaDays.set(d, {
+            dateStr: d,
+            types: new Set<string>(),
+            descriptions: [],
+            tecnicos: new Set<string>(),
+            horas: 0,
+            qtdServicos: 0,
+            qtdPecas: 0,
+            concluido: isConcluido
+          });
+        }
+        return folhaDays.get(d)!;
+      };
 
       // 1. Registo de Formação (ex: FS26882 em 14/09)
       if (f.dataFormacao && f.dataFormacao.trim() !== '' && f.dataFormacao !== '-') {
         const formacaoDate = formatDateToInput(f.dataFormacao);
         if (formacaoDate) {
-          list.push({
-            id: `folha_${f.id}_formacao`,
-            tipo: 'folha',
-            dateStr: formacaoDate,
-            titulo: `${f.numero} • Formação`,
-            descricao: f.formacaoPor ? `Formação ministrada por ${cleanPersonName(f.formacaoPor)}` : 'Formação técnica registada',
-            concluido: true,
-            tecnico: cleanPersonName(f.formacaoPor) || 'Hugo Portugal',
-            horas: f.tipo === 'Entrega e Formação' ? totalHoras : 0,
-            qtdServicos: countServicos,
-            qtdPecas: countPecas,
-            folhaNumero: f.numero,
-            folhaId: f.id,
-            matricula: f.matricula,
-            marcaModelo: `${f.marca} ${f.modelo}`,
-            empresaNome: emp?.nome || 'Cliente',
-            status: f.status,
-            rawFolha: f
-          });
-          addedSpecificEvent = true;
+          const dayEntry = getOrCreateDay(formacaoDate);
+          dayEntry.types.add('Formação');
+          dayEntry.concluido = true;
+          if (f.formacaoPor) {
+            dayEntry.descriptions.push(`Formação ministrada por ${cleanPersonName(f.formacaoPor)}`);
+            dayEntry.tecnicos.add(cleanPersonName(f.formacaoPor));
+          } else {
+            dayEntry.descriptions.push('Formação técnica registada');
+          }
+          if (f.tipo === 'Entrega e Formação') {
+            dayEntry.horas = Math.max(dayEntry.horas, totalHoras);
+            dayEntry.qtdServicos = Math.max(dayEntry.qtdServicos, countServicos);
+            dayEntry.qtdPecas = Math.max(dayEntry.qtdPecas, countPecas);
+          }
         }
       }
 
@@ -217,53 +285,31 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
       if (f.dataEntrega && f.dataEntrega.trim() !== '' && f.dataEntrega !== '-') {
         const entregaDate = formatDateToInput(f.dataEntrega);
         if (entregaDate) {
-          list.push({
-            id: `folha_${f.id}_entrega`,
-            tipo: 'folha',
-            dateStr: entregaDate,
-            titulo: `${f.numero} • Entrega`,
-            descricao: f.entregaPor ? `Entrega efetuada por ${cleanPersonName(f.entregaPor)}` : 'Entrega de viatura registada',
-            concluido: true,
-            tecnico: cleanPersonName(f.entregaPor) || 'Oficina HP',
-            horas: 0,
-            qtdServicos: 0,
-            qtdPecas: 0,
-            folhaNumero: f.numero,
-            folhaId: f.id,
-            matricula: f.matricula,
-            marcaModelo: `${f.marca} ${f.modelo}`,
-            empresaNome: emp?.nome || 'Cliente',
-            status: f.status,
-            rawFolha: f
-          });
-          addedSpecificEvent = true;
+          const dayEntry = getOrCreateDay(entregaDate);
+          dayEntry.types.add('Entrega');
+          dayEntry.concluido = true;
+          if (f.entregaPor) {
+            dayEntry.descriptions.push(`Entrega efetuada por ${cleanPersonName(f.entregaPor)}`);
+            dayEntry.tecnicos.add(cleanPersonName(f.entregaPor));
+          } else {
+            dayEntry.descriptions.push('Entrega de viatura registada');
+          }
         }
       }
 
       // 3. Registo de Validação
       if (f.validacaoData && f.validacaoData.trim() !== '' && f.validacaoData !== '-') {
-        const validacaoDate = formatDateToInput(f.validacaoData);
-        if (validacaoDate) {
-          list.push({
-            id: `folha_${f.id}_validacao`,
-            tipo: 'folha',
-            dateStr: validacaoDate,
-            titulo: `${f.numero} • Validação`,
-            descricao: f.validacaoPor ? `Validação técnica por ${cleanPersonName(f.validacaoPor)}` : 'Validação de viatura efetuada',
-            concluido: true,
-            tecnico: cleanPersonName(f.validacaoPor) || 'Oficina HP',
-            horas: 0,
-            qtdServicos: 0,
-            qtdPecas: 0,
-            folhaNumero: f.numero,
-            folhaId: f.id,
-            matricula: f.matricula,
-            marcaModelo: `${f.marca} ${f.modelo}`,
-            empresaNome: emp?.nome || 'Cliente',
-            status: f.status,
-            rawFolha: f
-          });
-          addedSpecificEvent = true;
+        const valDate = formatDateToInput(f.validacaoData);
+        if (valDate) {
+          const dayEntry = getOrCreateDay(valDate);
+          dayEntry.types.add('Validação');
+          dayEntry.concluido = true;
+          if (f.validacaoPor) {
+            dayEntry.descriptions.push(`Validação técnica por ${cleanPersonName(f.validacaoPor)}`);
+            dayEntry.tecnicos.add(cleanPersonName(f.validacaoPor));
+          } else {
+            dayEntry.descriptions.push('Validação de viatura efetuada');
+          }
         }
       }
 
@@ -271,26 +317,15 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
       if (f.preparacaoData && f.preparacaoData.trim() !== '' && f.preparacaoData !== '-') {
         const prepDate = formatDateToInput(f.preparacaoData);
         if (prepDate) {
-          list.push({
-            id: `folha_${f.id}_preparacao`,
-            tipo: 'folha',
-            dateStr: prepDate,
-            titulo: `${f.numero} • Preparação`,
-            descricao: f.preparacaoPor ? `Preparação efetuada por ${cleanPersonName(f.preparacaoPor)}` : 'Preparação de viatura efetuada',
-            concluido: true,
-            tecnico: cleanPersonName(f.preparacaoPor) || 'Oficina HP',
-            horas: 0,
-            qtdServicos: 0,
-            qtdPecas: 0,
-            folhaNumero: f.numero,
-            folhaId: f.id,
-            matricula: f.matricula,
-            marcaModelo: `${f.marca} ${f.modelo}`,
-            empresaNome: emp?.nome || 'Cliente',
-            status: f.status,
-            rawFolha: f
-          });
-          addedSpecificEvent = true;
+          const dayEntry = getOrCreateDay(prepDate);
+          dayEntry.types.add('Preparação');
+          dayEntry.concluido = true;
+          if (f.preparacaoPor) {
+            dayEntry.descriptions.push(`Preparação efetuada por ${cleanPersonName(f.preparacaoPor)}`);
+            dayEntry.tecnicos.add(cleanPersonName(f.preparacaoPor));
+          } else {
+            dayEntry.descriptions.push('Preparação de viatura efetuada');
+          }
         }
       }
 
@@ -306,7 +341,6 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
 
       const hasCheckedIntervention = completedServicos.length > 0 || completedPecas.length > 0 || isConcluido;
 
-      // Só deve aparecer intervencionada se tiver pisco nas peças ou serviços, ou folha concluída
       if (hasCheckedIntervention) {
         const datesMap = new Map<string, { servicos: typeof completedServicos; pecas: typeof completedPecas }>();
 
@@ -327,38 +361,82 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         }
 
         datesMap.forEach((group, dateKey) => {
+          const dayEntry = getOrCreateDay(dateKey);
+          dayEntry.types.add('Intervenção');
+
           const groupHoras = group.servicos.reduce((acc, s) => acc + (s.horas || 0), 0) || (isConcluido ? totalHoras : 0);
           const groupCountServicos = group.servicos.length || (isConcluido ? countServicos : 0);
           const groupCountPecas = group.pecas.reduce((acc, p) => acc + (p.qtd || 1), 0) || (isConcluido ? countPecas : 0);
 
-          const groupTecnicos = Array.from(new Set([
-            ...group.servicos.map(s => cleanPersonName(s.tecnico)),
-            cleanPersonName(f.tecnicoPlaneado)
-          ])).filter(Boolean).join(', ') || tecnicosUnicos;
+          dayEntry.horas = Math.max(dayEntry.horas, groupHoras);
+          dayEntry.qtdServicos = Math.max(dayEntry.qtdServicos, groupCountServicos);
+          dayEntry.qtdPecas = Math.max(dayEntry.qtdPecas, groupCountPecas);
+          if (isConcluido || groupCountServicos > 0 || groupCountPecas > 0) {
+            dayEntry.concluido = true;
+          }
 
-          const desc = group.servicos.map(s => s.descricao).filter(Boolean).join(', ') || defaultDesc;
-
-          list.push({
-            id: `folha_${f.id}_${dateKey}`,
-            tipo: 'folha',
-            dateStr: dateKey,
-            titulo: `${f.numero} • Intervenção`,
-            descricao: desc,
-            concluido: isConcluido || (groupCountServicos > 0 || groupCountPecas > 0),
-            tecnico: groupTecnicos,
-            horas: groupHoras,
-            qtdServicos: groupCountServicos,
-            qtdPecas: groupCountPecas,
-            folhaNumero: f.numero,
-            folhaId: f.id,
-            matricula: f.matricula,
-            marcaModelo: `${f.marca} ${f.modelo}`,
-            empresaNome: emp?.nome || 'Cliente',
-            status: f.status,
-            rawFolha: f
+          group.servicos.forEach(s => {
+            if (s.tecnico) dayEntry.tecnicos.add(cleanPersonName(s.tecnico));
           });
+          if (f.tecnicoPlaneado) dayEntry.tecnicos.add(cleanPersonName(f.tecnicoPlaneado));
+
+          const servDesc = group.servicos.map(s => s.descricao).filter(Boolean).join(', ');
+          if (servDesc) {
+            dayEntry.descriptions.push(servDesc);
+          } else if (defaultDesc) {
+            dayEntry.descriptions.push(defaultDesc);
+          }
         });
       }
+
+      // Gera apenas 1 registo por folha por dia, unindo os técnicos envolvidos e calculando as iniciais
+      folhaDays.forEach((entry, dayDate) => {
+        if (entry.tecnicos.size === 0) {
+          tecnicosUnicos.forEach(t => entry.tecnicos.add(t));
+          if (entry.tecnicos.size === 0) entry.tecnicos.add('Oficina HP');
+        }
+
+        const fullTechNames = Array.from(entry.tecnicos).filter(Boolean);
+        const initials = formatTechniciansInitials(fullTechNames);
+
+        // Deduplicar descrições
+        const seen = new Set<string>();
+        const uniqueDescs: string[] = [];
+        entry.descriptions.forEach(d => {
+          const norm = d.trim().toLowerCase();
+          if (norm && !seen.has(norm)) {
+            seen.add(norm);
+            uniqueDescs.push(d.trim());
+          }
+        });
+        const finalDesc = uniqueDescs.join(' • ') || defaultDesc;
+
+        // Título unificado
+        const typeLabels = Array.from(entry.types);
+        const titleType = typeLabels.length > 0 ? typeLabels.join(' / ') : f.tipo;
+
+        list.push({
+          id: `folha_${f.id}_${dayDate}`,
+          tipo: 'folha',
+          dateStr: dayDate,
+          titulo: `${f.numero} • ${titleType}`,
+          descricao: finalDesc,
+          concluido: entry.concluido,
+          tecnico: initials,
+          tecnicoInitials: initials,
+          tecnicoFullNames: fullTechNames,
+          horas: entry.horas,
+          qtdServicos: entry.qtdServicos,
+          qtdPecas: entry.qtdPecas,
+          folhaNumero: f.numero,
+          folhaId: f.id,
+          matricula: f.matricula,
+          marcaModelo: `${f.marca} ${f.modelo}`.trim(),
+          empresaNome: emp?.nome || 'Cliente',
+          status: f.status,
+          rawFolha: f
+        });
+      });
     });
 
     // Tarefas Concluídas
@@ -366,6 +444,8 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
       if (t.status === 'Concluída') {
         const taskDate = formatDateToInput(t.dataConclusao || t.dataCriacao) || formatDateISO(new Date());
         const timePart = t.dataConclusao && t.dataConclusao.includes(' ') ? t.dataConclusao.split(' ')[1] : '';
+        const techName = cleanPersonName(t.concluidoPorNome || t.responsavel) || 'Hugo Portugal';
+        const initials = formatTechniciansInitials(techName);
 
         list.push({
           id: `tar_${t.id}`,
@@ -375,7 +455,9 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
           titulo: `Tarefa Concluída • ${t.numero}`,
           descricao: t.descricao,
           concluido: true,
-          tecnico: cleanPersonName(t.concluidoPorNome || t.responsavel) || 'Hugo Portugal',
+          tecnico: initials,
+          tecnicoInitials: initials,
+          tecnicoFullNames: [techName],
           prioridade: t.prioridade,
           rawTarefa: t
         });
@@ -395,9 +477,13 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
       const inWeek = item.dateStr >= weekStartStr && item.dateStr <= weekEndStr;
       if (!inWeek) return false;
 
-      // Filter by Técnico
+      // Filter by Técnico (suporta nome completo e iniciais)
       if (selectedTecnico !== 'TODOS') {
-        if (!item.tecnico?.toLowerCase().includes(selectedTecnico.toLowerCase())) return false;
+        const targetInitials = getTechnicianInitials(selectedTecnico).toLowerCase();
+        const matchesFullName = item.tecnicoFullNames?.some(t => t.toLowerCase().includes(selectedTecnico.toLowerCase()));
+        const matchesInitials = (item.tecnicoInitials || item.tecnico)?.toLowerCase().includes(targetInitials);
+        const matchesLegacy = item.tecnico?.toLowerCase().includes(selectedTecnico.toLowerCase());
+        if (!matchesFullName && !matchesInitials && !matchesLegacy) return false;
       }
 
       // Filter by Tipo
@@ -416,7 +502,9 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         const matchesPlate = item.matricula?.toLowerCase().includes(q) || false;
         const matchesEmp = item.empresaNome?.toLowerCase().includes(q) || false;
         const matchesFs = item.folhaNumero?.toLowerCase().includes(q) || false;
-        const matchesTec = item.tecnico?.toLowerCase().includes(q) || false;
+        const matchesTec = (item.tecnico?.toLowerCase().includes(q)) ||
+                           (item.tecnicoInitials?.toLowerCase().includes(q)) ||
+                           (item.tecnicoFullNames?.some(t => t.toLowerCase().includes(q))) || false;
         if (!matchesDesc && !matchesPlate && !matchesEmp && !matchesFs && !matchesTec) return false;
       }
 
@@ -812,9 +900,14 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
 
                         {/* Footer: Technician, and (if Admin) Hours and Summary */}
                         <div className="pl-1.5 mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                          <span className="flex items-center gap-1 truncate max-w-[110px]">
+                          <span
+                            className="flex items-center gap-1 truncate max-w-[130px]"
+                            title={item.tecnicoFullNames && item.tecnicoFullNames.length > 0 ? item.tecnicoFullNames.join(', ') : item.tecnico}
+                          >
                             <User className="w-2.5 h-2.5 text-slate-500 shrink-0" />
-                            <span className="truncate">{item.tecnico}</span>
+                            <span className="truncate font-bold text-slate-200 tracking-wider">
+                              {item.tecnicoInitials || item.tecnico}
+                            </span>
                           </span>
 
                           {isAdmin && (
