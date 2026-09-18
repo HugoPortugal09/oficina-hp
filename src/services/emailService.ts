@@ -150,6 +150,23 @@ export function resolveTaskRecipients(
 /**
  * Builds the HTML content for task notification email
  */
+function getPriorityBadgeStyle(prioridade?: string): { bg: string; text: string; border: string } {
+  switch (prioridade) {
+    case 'Crítica':
+    case 'Urgente':
+      return { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' };
+    case 'Alta':
+      return { bg: '#ffedd5', text: '#9a3412', border: '#f97316' };
+    case 'Normal':
+      return { bg: '#e0f2fe', text: '#0369a1', border: '#0284c7' };
+    default:
+      return { bg: '#f1f5f9', text: '#334155', border: '#94a3b8' };
+  }
+}
+
+/**
+ * Builds the HTML content for task notification email
+ */
 export function buildTaskNotificationHtml(
   action: 'CRIADA' | 'CONCLUIDA',
   tarefa: Tarefa,
@@ -158,150 +175,185 @@ export function buildTaskNotificationHtml(
   const isCreated = action === 'CRIADA';
   const badgeColor = isCreated ? '#0284c7' : '#16a34a';
   const badgeText = isCreated ? 'NOVA TAREFA REGISTADA' : 'TAREFA CONCLUÍDA COM SUCESSO';
-  const priorityColor =
-    tarefa.prioridade === 'Crítica' || tarefa.prioridade === 'Urgente'
-      ? '#dc2626'
-      : tarefa.prioridade === 'Alta'
-      ? '#ea580c'
-      : tarefa.prioridade === 'Normal'
-      ? '#0284c7'
-      : '#64748b';
+  const currentPStyle = getPriorityBadgeStyle(tarefa.prioridade);
 
   // Table rows for remaining open tasks
   const openTasksRows = outrasTarefasAbertas.length === 0
-    ? '<tr><td colspan="5" style="text-align: center; padding: 16px; color: #64748b; font-style: italic;">Não existem outras tarefas pendentes ou em curso no sistema.</td></tr>'
-    : outrasTarefasAbertas.map(t => {
-        const pColor =
-          t.prioridade === 'Crítica' || t.prioridade === 'Urgente'
-            ? '#dc2626'
-            : t.prioridade === 'Alta'
-            ? '#ea580c'
-            : '#0284c7';
+    ? '<tr><td colspan="5" bgcolor="#ffffff" style="text-align: center; padding: 16px; color: #0f172a; font-style: italic; border: 1px solid #cbd5e1;">Não existem outras tarefas pendentes ou em curso no sistema.</td></tr>'
+    : outrasTarefasAbertas.map((t, idx) => {
+        const pStyle = getPriorityBadgeStyle(t.prioridade);
+        const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
         return `
-          <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 10px; font-weight: bold; font-family: monospace; color: #0f172a;">${t.numero}</td>
-            <td style="padding: 10px; color: #334155;">${t.descricao}</td>
-            <td style="padding: 10px;"><span style="background-color: ${pColor}15; color: ${pColor}; font-weight: bold; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid ${pColor}40;">${t.prioridade}</span></td>
-            <td style="padding: 10px; color: #475569; font-weight: 600;">${t.responsavel || '-'}</td>
-            <td style="padding: 10px; color: #64748b; font-size: 12px;">${t.dataLimite || '-'}</td>
+          <tr bgcolor="${rowBg}">
+            <td style="padding: 10px 8px; font-weight: bold; font-family: monospace; color: #0f172a; border: 1px solid #cbd5e1;">${t.numero}</td>
+            <td style="padding: 10px 8px; color: #0f172a; font-weight: 500; border: 1px solid #cbd5e1;">${t.descricao}</td>
+            <td style="padding: 10px 8px; text-align: center; border: 1px solid #cbd5e1;">
+              <span style="background-color: ${pStyle.bg}; color: ${pStyle.text}; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid ${pStyle.border}; display: inline-block;">${t.prioridade}</span>
+            </td>
+            <td style="padding: 10px 8px; color: #0f172a; font-weight: 600; border: 1px solid #cbd5e1;">${t.responsavel || '-'}</td>
+            <td style="padding: 10px 8px; color: #0f172a; font-size: 12px; font-weight: 600; border: 1px solid #cbd5e1;">${t.dataLimite || '-'}</td>
           </tr>
         `;
       }).join('');
 
-  return `
-<!DOCTYPE html>
-<html lang="pt">
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
 <head>
-  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <title>Notificação de Tarefa - Oficina HP</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
-    
-    <!-- Top Header -->
-    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; padding: 28px 32px; border-bottom: 3px solid ${badgeColor};">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #38bdf8;">Oficina HP &bull; Gestão Operacional</span>
-        <span style="background-color: ${badgeColor}; color: #ffffff; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 20px; text-transform: uppercase;">
-          ${badgeText}
-        </span>
-      </div>
-      <h1 style="margin: 12px 0 4px 0; font-size: 22px; font-weight: 800; color: #ffffff;">
-        ${tarefa.numero}: ${tarefa.descricao}
-      </h1>
-      <p style="margin: 0; color: #94a3b8; font-size: 13px;">
-        Notificação automática de gestão de tarefas da oficina.
-      </p>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#0f172a" style="background-color: #0f172a; padding: 24px 28px; border-bottom: 4px solid ${badgeColor};">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" valign="middle" style="font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #38bdf8; font-family: 'Segoe UI', Arial, sans-serif;">
+                    OFICINA HP &bull; GESTÃO OPERACIONAL
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="background-color: ${badgeColor}; color: #ffffff; font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 14px; text-transform: uppercase; font-family: 'Segoe UI', Arial, sans-serif; display: inline-block;">
+                      ${badgeText}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 14px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #ffffff; line-height: 1.3; font-family: 'Segoe UI', Arial, sans-serif;">
+                      ${tarefa.numero}: ${tarefa.descricao}
+                    </h1>
+                    <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Notificação automática de gestão de tarefas da oficina.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <!-- Main Card Details -->
-    <div style="padding: 28px 32px;">
-      <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-top: 0; margin-bottom: 16px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">
-        📌 Detalhes da Tarefa
-      </h2>
+          <!-- Main Card Details -->
+          <tr>
+            <td style="padding: 24px 28px;">
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 16px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                📌 Detalhes da Tarefa
+              </h2>
 
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px; width: 35%;"><strong>Número:</strong></td>
-          <td style="padding: 8px 0; font-family: monospace; font-weight: bold; color: #0f172a; font-size: 14px;">${tarefa.numero}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px;"><strong>Descrição:</strong></td>
-          <td style="padding: 8px 0; font-weight: 600; color: #0f172a; font-size: 14px;">${tarefa.descricao}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px;"><strong>Responsável:</strong></td>
-          <td style="padding: 8px 0; font-weight: 700; color: #0284c7; font-size: 14px;">${tarefa.responsavel}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px;"><strong>Prioridade:</strong></td>
-          <td style="padding: 8px 0;">
-            <span style="background-color: ${priorityColor}15; color: ${priorityColor}; font-weight: 800; font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid ${priorityColor}40;">
-              ${tarefa.prioridade}
-            </span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px;"><strong>Data Limite:</strong></td>
-          <td style="padding: 8px 0; font-weight: 600; color: #334155; font-size: 13px;">${tarefa.dataLimite || 'Sem data limite definida'}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px;"><strong>Criado Por:</strong></td>
-          <td style="padding: 8px 0; color: #334155; font-size: 13px;">
-            ${tarefa.criadoPorNome && tarefa.criadoPorNome !== 'IA' ? tarefa.criadoPorNome : 'Hugo Portugal'} [<strong>${tarefa.criadoPorIniciais === 'IA' ? 'HP' : (tarefa.criadoPorIniciais || 'HP')}</strong>] em ${tarefa.dataCriacao}
-          </td>
-        </tr>
-        ${action === 'CONCLUIDA' ? `
-        <tr>
-          <td style="padding: 8px 0; color: #16a34a; font-size: 13px;"><strong>Concluído Por:</strong></td>
-          <td style="padding: 8px 0; color: #16a34a; font-weight: bold; font-size: 13px;">
-            ${tarefa.concluidoPorNome || ''} [<strong>${tarefa.concluidoPorIniciais}</strong>] em ${tarefa.dataConclusao}
-          </td>
-        </tr>
-        ` : ''}
-        ${tarefa.notasAdicionais ? `
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-size: 13px; vertical-align: top;"><strong>Notas / Obs:</strong></td>
-          <td style="padding: 8px 0; color: #475569; font-size: 13px; background-color: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            ${tarefa.notasAdicionais}
-          </td>
-        </tr>
-        ` : ''}
-      </table>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; border: 1px solid #cbd5e1; border-collapse: collapse;">
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; width: 32%; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Número:</td>
+                  <td style="padding: 10px 14px; font-family: monospace; font-weight: bold; color: #0f172a; font-size: 14px; border-bottom: 1px solid #cbd5e1;">${tarefa.numero}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Descrição:</td>
+                  <td style="padding: 10px 14px; font-weight: 600; color: #0f172a; font-size: 14px; border-bottom: 1px solid #cbd5e1;">${tarefa.descricao}</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Responsável:</td>
+                  <td style="padding: 10px 14px; font-weight: 700; color: #0284c7; font-size: 14px; border-bottom: 1px solid #cbd5e1;">${tarefa.responsavel}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Prioridade:</td>
+                  <td style="padding: 10px 14px; border-bottom: 1px solid #cbd5e1;">
+                    <span style="background-color: ${currentPStyle.bg}; color: ${currentPStyle.text}; font-weight: 800; font-size: 12px; padding: 4px 10px; border-radius: 4px; border: 1px solid ${currentPStyle.border}; display: inline-block;">
+                      ${tarefa.prioridade}
+                    </span>
+                  </td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Data Limite:</td>
+                  <td style="padding: 10px 14px; font-weight: 600; color: #0f172a; font-size: 13px; border-bottom: 1px solid #cbd5e1;">${tarefa.dataLimite || 'Sem data limite definida'}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Criado Por:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; border-bottom: 1px solid #cbd5e1;">
+                    ${tarefa.criadoPorNome && tarefa.criadoPorNome !== 'IA' ? tarefa.criadoPorNome : 'Hugo Portugal'} [<strong>${tarefa.criadoPorIniciais === 'IA' ? 'HP' : (tarefa.criadoPorIniciais || 'HP')}</strong>] em ${tarefa.dataCriacao}
+                  </td>
+                </tr>
+                ${action === 'CONCLUIDA' ? `
+                <tr bgcolor="#f0fdf4">
+                  <td style="padding: 10px 14px; color: #166534; font-size: 13px; font-weight: 700; border-bottom: 1px solid #bbf7d0; border-right: 1px solid #bbf7d0;">Concluído Por:</td>
+                  <td style="padding: 10px 14px; color: #166534; font-weight: bold; font-size: 13.5px; border-bottom: 1px solid #bbf7d0;">
+                    ${tarefa.concluidoPorNome || ''} [<strong>${tarefa.concluidoPorIniciais}</strong>] em ${tarefa.dataConclusao}
+                  </td>
+                </tr>
+                ` : ''}
+                ${tarefa.notasAdicionais ? `
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; font-weight: 700; vertical-align: top; border-right: 1px solid #cbd5e1;">Notas / Obs:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-size: 13px; background-color: #ffffff;">
+                    ${tarefa.notasAdicionais}
+                  </td>
+                </tr>
+                ` : ''}
+              </table>
 
-      <!-- Remaining Open Tasks Section -->
-      <div style="margin-top: 32px;">
-        <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-top: 0; margin-bottom: 12px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">
-          📋 Quadro de Tarefas Abertas no Sistema (Total: ${outrasTarefasAbertas.length})
-        </h2>
-        
-        <table style="width: 100%; border-collapse: collapse; font-size: 13px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background-color: #f8fafc; text-align: left; color: #475569; font-size: 12px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0;">
-              <th style="padding: 10px; font-weight: 700;">Nº</th>
-              <th style="padding: 10px; font-weight: 700;">Descrição</th>
-              <th style="padding: 10px; font-weight: 700;">Prioridade</th>
-              <th style="padding: 10px; font-weight: 700;">Responsável</th>
-              <th style="padding: 10px; font-weight: 700;">Limite</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${openTasksRows}
-          </tbody>
+              <!-- Remaining Open Tasks Section -->
+              <div style="margin-top: 28px;">
+                <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 12px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                  📋 Quadro de Tarefas Abertas no Sistema (Total: ${outrasTarefasAbertas.length})
+                </h2>
+                
+                <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 12.5px; background-color: #ffffff; border: 1px solid #cbd5e1; border-collapse: collapse;">
+                  <thead>
+                    <tr bgcolor="#e2e8f0" style="background-color: #e2e8f0; text-align: left; color: #0f172a;">
+                      <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Nº</th>
+                      <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Descrição</th>
+                      <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1; text-align: center;">Prioridade</th>
+                      <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Responsável</th>
+                      <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Limite</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${openTasksRows}
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP</strong> &bull; Sistema Integrado de Gestão Mecânica &amp; Frotas</p>
+              <p style="margin: 0; color: #475569;">Este é um email automático de notificação operacional enviado pelo sistema.</p>
+            </td>
+          </tr>
+
         </table>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8;">
-      <p style="margin: 0 0 4px 0;"><strong>Oficina HP</strong> &bull; Sistema Integrado de Gestão Mecânica &amp; Frotas</p>
-      <p style="margin: 0;">Este é um email automático de notificação operacional enviado pelo sistema.</p>
-    </div>
-
-  </div>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
-</html>
-  `;
+</html>`;
 }
 
 /**
@@ -503,131 +555,192 @@ export function buildEntregaFormacaoHtml(
   const horas = folha.horasAtuais || equipamento?.horasAtuais || 0;
   const clienteNome = empresa?.nome || (folha as any).empresaNome || (folha as any).cliente || 'Cliente Geral';
 
-  return `
-<!DOCTYPE html>
-<html lang="pt">
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
 <head>
-  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <title>Registo de Entrega e Formação - Oficina HP</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
-  <div style="max-width: 640px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-    
-    <!-- Header -->
-    <div style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
-      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">
-        GRAUMP &bull; OFICINA HP &bull; REGISTO OPERACIONAL
-      </div>
-      <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">
-        Auto de Entrega e Formação: ${folha.matricula || 'Equipamento'}
-      </h1>
-      <div style="font-size: 13px; color: #64748b;">
-        Folha de Serviço: <strong style="color: #0f172a; font-family: monospace;">${folha.numero}</strong> &bull; ${folha.marca || ''} ${folha.modelo || ''}
-      </div>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#0f172a" style="background-color: #0f172a; padding: 24px 28px; border-bottom: 4px solid #0284c7;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" valign="middle" style="font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #38bdf8; font-family: 'Segoe UI', Arial, sans-serif;">
+                    GRAUMP &bull; OFICINA HP &bull; REGISTO OPERACIONAL
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="background-color: #0284c7; color: #ffffff; font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 14px; text-transform: uppercase; font-family: 'Segoe UI', Arial, sans-serif; display: inline-block;">
+                      ENTREGA E FORMAÇÃO
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 14px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #ffffff; line-height: 1.3; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Auto de Entrega e Formação: ${folha.matricula || 'Equipamento'}
+                    </h1>
+                    <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Folha de Serviço: <strong style="color: #ffffff; font-family: monospace;">${folha.numero}</strong> &bull; ${folha.marca || ''} ${folha.modelo || ''}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <!-- Attachment Notification Callout -->
-    <div style="margin: 20px 28px 0 28px; padding: 12px 16px; background-color: #f1f5f9; border-left: 3px solid #0284c7; border-radius: 4px; font-size: 13px; color: #334155;">
-      📎 <strong>Documento Oficial Anexado:</strong> O Certificado / Auto de Entrega e Formação em formato PDF com o layout gráfico completo e campos de assinatura segue em anexo a este email.
-    </div>
+          <!-- Callout PDF Anexo -->
+          <tr>
+            <td style="padding: 20px 28px 0 28px;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0284c7; border-radius: 6px;">
+                <tr>
+                  <td style="padding: 12px 16px; font-size: 13px; color: #0f172a; line-height: 1.4;">
+                    📎 <strong>Documento Oficial Anexado:</strong> O Certificado / Auto de Entrega e Formação em formato PDF com o layout gráfico completo segue em anexo a este email.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <!-- Main Content -->
-    <div style="padding: 20px 28px;">
-      
-      <!-- Dados Entrega e Formacao -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
-        <tr>
-          <td style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; width: 50%; vertical-align: top;">
-            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 6px;">
-              📦 Entrega
-            </div>
-            <div style="margin-bottom: 4px;">
-              <span style="color: #64748b;">Data:</span> <strong style="color: #0f172a;">${dataEntrega}</strong>
-            </div>
-            <div>
-              <span style="color: #64748b;">Entregue por:</span> <strong style="color: #0f172a;">${entregaPor}</strong>
-            </div>
-          </td>
-          <td style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; width: 50%; vertical-align: top;">
-            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 6px;">
-              🎓 Formação
-            </div>
-            <div style="margin-bottom: 4px;">
-              <span style="color: #64748b;">Data:</span> <strong style="color: #0f172a;">${dataFormacao}</strong>
-            </div>
-            <div>
-              <span style="color: #64748b;">Formador:</span> <strong style="color: #0f172a;">${formacaoPor}</strong>
-            </div>
-          </td>
-        </tr>
-      </table>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 28px;">
+              
+              <!-- Dados Entrega e Formação (2 Boxes) -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 22px;">
+                <tr>
+                  <td width="48%" valign="top" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-top: 4px solid #0284c7; border-radius: 6px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-bottom: 8px;">
+                      📦 ENTREGA
+                    </div>
+                    <div style="margin-bottom: 6px; font-size: 13px; color: #0f172a;">
+                      <span style="font-weight: 700;">Data:</span> <strong>${dataEntrega}</strong>
+                    </div>
+                    <div style="font-size: 13px; color: #0f172a;">
+                      <span style="font-weight: 700;">Entregue por:</span> <strong>${entregaPor}</strong>
+                    </div>
+                  </td>
+                  <td width="4%">&nbsp;</td>
+                  <td width="48%" valign="top" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-top: 4px solid #16a34a; border-radius: 6px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #16a34a; margin-bottom: 8px;">
+                      🎓 FORMAÇÃO
+                    </div>
+                    <div style="margin-bottom: 6px; font-size: 13px; color: #0f172a;">
+                      <span style="font-weight: 700;">Data:</span> <strong>${dataFormacao}</strong>
+                    </div>
+                    <div style="font-size: 13px; color: #0f172a;">
+                      <span style="font-weight: 700;">Formador:</span> <strong>${formacaoPor}</strong>
+                    </div>
+                  </td>
+                </tr>
+              </table>
 
-      <!-- Ficha Técnica do Equipamento -->
-      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
-        Ficha do Equipamento / Viatura
-      </div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; width: 35%; background-color: #f8fafc;">Matrícula</td>
-          <td style="padding: 8px 12px; font-family: monospace; font-weight: 700; color: #0f172a;">${folha.matricula || '---'}</td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Marca / Modelo</td>
-          <td style="padding: 8px 12px; color: #0f172a;">${folha.marca || ''} ${folha.modelo || ''}</td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Nº de Série (VIN)</td>
-          <td style="padding: 8px 12px; font-family: monospace; color: #334155;">${nSerie}</td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Quilómetros / Horas</td>
-          <td style="padding: 8px 12px; color: #0f172a;">${kms.toLocaleString('pt-PT')} Km &bull; ${horas} Horas</td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Cliente / Entidade</td>
-          <td style="padding: 8px 12px; color: #0f172a; font-weight: 600;">${clienteNome}</td>
-        </tr>
-        ${folha.pessoaPresente ? `
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Pessoa Presente</td>
-          <td style="padding: 8px 12px; color: #0f172a;">${folha.pessoaPresente}</td>
-        </tr>
-        ` : ''}
-        <tr>
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Local da Intervenção</td>
-          <td style="padding: 8px 12px; color: #334155;">${folha.localizacao || 'Oficina Geral'}</td>
-        </tr>
-      </table>
+              <!-- Ficha Técnica do Equipamento -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 12px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                🚜 Ficha do Equipamento / Viatura
+              </h2>
+              
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 20px; border: 1px solid #cbd5e1; border-collapse: collapse; font-size: 13px;">
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; width: 35%; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Matrícula</td>
+                  <td style="padding: 9px 12px; font-family: monospace; font-weight: 700; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${folha.matricula || '---'}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Marca / Modelo</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${folha.marca || ''} ${folha.modelo || ''}</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Nº de Série (VIN)</td>
+                  <td style="padding: 9px 12px; font-family: monospace; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${nSerie}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Quilómetros / Horas</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${kms.toLocaleString('pt-PT')} Km &bull; ${horas} Horas</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Cliente / Entidade</td>
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 600; border-bottom: 1px solid #cbd5e1;">${clienteNome}</td>
+                </tr>
+                ${folha.pessoaPresente ? `
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Pessoa Presente</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${folha.pessoaPresente}</td>
+                </tr>
+                ` : ''}
+                <tr bgcolor="${folha.pessoaPresente ? '#f8fafc' : '#ffffff'}">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-right: 1px solid #cbd5e1;">Local da Intervenção</td>
+                  <td style="padding: 9px 12px; color: #0f172a;">${folha.localizacao || 'Oficina Geral'}</td>
+                </tr>
+              </table>
 
-      ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
-      <!-- Observações -->
-      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
-        Observações Técnicas
-      </div>
-      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; font-size: 13px; color: #334155; margin-bottom: 20px;">
-        ${folha.anomalias ? `<div style="margin-bottom: 4px;"><strong>Trabalhos / Descrição:</strong> ${folha.anomalias}</div>` : ''}
-        ${folha.notasCliente ? `<div style="margin-bottom: 4px;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</div>` : ''}
-        ${folha.notasInternas ? `<div><strong>Notas Internas:</strong> ${folha.notasInternas}</div>` : ''}
-      </div>
-      ` : ''}
+              ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
+              <!-- Observações -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 10px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                📝 Observações Técnicas
+              </h2>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0284c7; border-radius: 6px; margin-bottom: 20px;">
+                <tr>
+                  <td style="padding: 12px 14px; font-size: 13px; color: #0f172a; line-height: 1.5;">
+                    ${folha.anomalias ? `<div style="margin-bottom: 4px;"><strong>Trabalhos / Descrição:</strong> ${folha.anomalias}</div>` : ''}
+                    ${folha.notasCliente ? `<div style="margin-bottom: 4px;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</div>` : ''}
+                    ${folha.notasInternas ? `<div><strong>Notas Internas:</strong> ${folha.notasInternas}</div>` : ''}
+                  </td>
+                </tr>
+              </table>
+              ` : ''}
 
-      <!-- Registo efetuado por -->
-      <div style="font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px;">
-        Registo efetuado por: <strong style="color: #0f172a;">${cleanPersonName(currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Hugo Portugal')}</strong> &bull; ${new Date().toLocaleString('pt-PT')}
-      </div>
+              <!-- Registo efetuado por -->
+              <div style="font-size: 12px; color: #0f172a; border-top: 1px solid #cbd5e1; padding-top: 12px;">
+                Registo efetuado por: <strong style="color: #0f172a;">${cleanPersonName(currentUser?.nome || folha.criadoPor || folha.entregaPor || 'Hugo Portugal')}</strong> &bull; ${new Date().toLocaleString('pt-PT')}
+              </div>
 
-    </div>
+            </td>
+          </tr>
 
-    <!-- Footer -->
-    <div style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
-      <p style="margin: 0 0 2px 0;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
-      <p style="margin: 0;">Notificação operacional gerada automaticamente pelo sistema.</p>
-    </div>
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 3px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+              <p style="margin: 0; color: #475569;">Notificação operacional gerada automaticamente pelo sistema.</p>
+            </td>
+          </tr>
 
-  </div>
+        </table>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
-</html>
-  `;
+</html>`;
 }
 
 /**
@@ -809,164 +922,219 @@ export function buildTemposRespostaDailyHtml(
   dataHoje: string
 ): string {
   const criticalTableRows = criticalRows.length === 0
-    ? '<tr><td colspan="5" style="text-align: center; padding: 14px; color: #16a34a; font-weight: 600;">✅ Excelente! Não existem viaturas em estado crítico (≥ 10 dias) de momento.</td></tr>'
-    : criticalRows.map(r => {
+    ? '<tr><td colspan="5" bgcolor="#ffffff" style="text-align: center; padding: 14px; color: #166534; font-weight: 700; border: 1px solid #cbd5e1;">✅ Excelente! Não existem viaturas em estado crítico (≥ 10 dias) de momento.</td></tr>'
+    : criticalRows.map((r, idx) => {
         const imobText = r.imobilizacao ? r.imobilizacao.text : '-';
         const reqText = r.diasRequisicao ? r.diasRequisicao.text : '-';
+        const rowBg = idx % 2 === 0 ? '#ffffff' : '#fff1f2';
         return `
-          <tr style="border-bottom: 1px solid #fee2e2;">
-            <td style="padding: 10px 8px; font-weight: bold; font-family: monospace; color: #0f172a;">${r.folha.numero}</td>
-            <td style="padding: 10px 8px; font-family: monospace; font-weight: bold; color: #dc2626;">${r.folha.matricula || '-'}</td>
-            <td style="padding: 10px 8px; color: #334155;">${r.empresaNome}</td>
-            <td style="padding: 10px 8px; font-weight: bold; color: #dc2626;">${imobText} (Oficina) / ${reqText} (Req.)</td>
-            <td style="padding: 10px 8px; color: #64748b; font-size: 12px;">${r.folha.status}</td>
+          <tr bgcolor="${rowBg}">
+            <td style="padding: 10px 8px; font-weight: bold; font-family: monospace; color: #0f172a; border: 1px solid #fca5a5;">${r.folha.numero}</td>
+            <td style="padding: 10px 8px; font-family: monospace; font-weight: bold; color: #b91c1c; border: 1px solid #fca5a5;">${r.folha.matricula || '-'}</td>
+            <td style="padding: 10px 8px; color: #0f172a; font-weight: 600; border: 1px solid #fca5a5;">${r.empresaNome}</td>
+            <td style="padding: 10px 8px; font-weight: bold; color: #b91c1c; border: 1px solid #fca5a5;">${imobText} (Oficina) / ${reqText} (Req.)</td>
+            <td style="padding: 10px 8px; color: #0f172a; font-size: 12px; font-weight: 600; border: 1px solid #fca5a5;">${r.folha.status}</td>
           </tr>
         `;
       }).join('');
 
-  return `
-<!DOCTYPE html>
-<html lang="pt">
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
 <head>
-  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <title>Tempos de Resposta &amp; Imobilização - Relatório Diário</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
-  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
-    
-    <!-- Top Header -->
-    <div style="background: linear-gradient(135deg, #0b1528 0%, #1e293b 100%); color: #ffffff; padding: 26px 30px; border-bottom: 3px solid #0d9488;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #2dd4bf;">GRAUMP &bull; OFICINA HP &bull; FROTAS</span>
-        <span style="background-color: #0d9488; color: #ffffff; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 14px; text-transform: uppercase;">
-          DISPARO DIÁRIO DAS 06H00
-        </span>
-      </div>
-      <h1 style="margin: 4px 0 2px 0; font-size: 20px; font-weight: 800; color: #ffffff;">
-        Quadro Diário de Tempos de Resposta &amp; Imobilização
-      </h1>
-      <p style="margin: 0; color: #94a3b8; font-size: 13px;">
-        Relatório de controlo operacional emitido a <strong>${dataHoje}</strong>.
-      </p>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#0b1528" style="background-color: #0b1528; padding: 24px 28px; border-bottom: 4px solid #0d9488;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" valign="middle" style="font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #2dd4bf; font-family: 'Segoe UI', Arial, sans-serif;">
+                    GRAUMP &bull; OFICINA HP &bull; FROTAS
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="background-color: #0d9488; color: #ffffff; font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 14px; text-transform: uppercase; font-family: 'Segoe UI', Arial, sans-serif; display: inline-block;">
+                      DISPARO DIÁRIO DAS 06H00
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 14px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #ffffff; line-height: 1.3; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Quadro Diário de Tempos de Resposta &amp; Imobilização
+                    </h1>
+                    <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Relatório de controlo operacional emitido a <strong>${dataHoje}</strong>.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <!-- Main Content Body -->
-    <div style="padding: 24px 30px;">
-      
-      <!-- Section Title -->
-      <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-top: 0; margin-bottom: 14px; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">
-        📊 Resumo Executivo &amp; Médias Operacionais
-      </h2>
+          <!-- Main Content Body -->
+          <tr>
+            <td style="padding: 24px 28px;">
+              
+              <!-- Section Title -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 16px; font-weight: 800; border-bottom: 2px solid #0d9488; padding-bottom: 6px;">
+                📊 Resumo Executivo &amp; Médias Operacionais
+              </h2>
 
-      <!-- 4 KPI Cards Grid (Universal Table Layout) -->
-      <table style="width: 100%; border-collapse: separate; border-spacing: 8px; margin-bottom: 20px;">
-        <tr>
-          <!-- Card 1: Imobilização Média -->
-          <td style="width: 50%; background-color: #fff7ed; border: 1px solid #ffedd5; border-left: 4px solid #ea580c; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
-            <div style="font-size: 11px; font-weight: 700; color: #9a3412; text-transform: uppercase; margin-bottom: 4px;">
-              ⏱️ Imobilização Média (Oficina)
-            </div>
-            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #c2410c;">
-              ${stats.avgImobilizacaoOficina.toFixed(1)} <span style="font-size: 13px; font-weight: 500; color: #7c2d12;">dias</span>
-            </div>
-            <div style="font-size: 11px; color: #9a3412; margin-top: 2px;">
-              Média desde a entrada na oficina
-            </div>
-          </td>
+              <!-- 4 KPI Cards Grid -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 22px;">
+                <tr>
+                  <!-- Card 1: Imobilização Média -->
+                  <td width="48%" valign="top" bgcolor="#fff7ed" style="background-color: #fff7ed; border: 1px solid #fdba74; border-left: 5px solid #ea580c; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #9a3412; text-transform: uppercase; margin-bottom: 4px;">
+                      ⏱️ Imobilização Média (Oficina)
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #c2410c;">
+                      ${stats.avgImobilizacaoOficina.toFixed(1)} <span style="font-size: 13px; font-weight: 700; color: #9a3412;">dias</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #9a3412; font-weight: 600; margin-top: 2px;">
+                      Média desde a entrada na oficina
+                    </div>
+                  </td>
 
-          <!-- Card 2: Média Requisição -->
-          <td style="width: 50%; background-color: #f0f9ff; border: 1px solid #e0f2fe; border-left: 4px solid #0284c7; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
-            <div style="font-size: 11px; font-weight: 700; color: #075985; text-transform: uppercase; margin-bottom: 4px;">
-              📅 Média desde Requisição
-            </div>
-            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0284c7;">
-              ${stats.avgDiasReq.toFixed(1)} <span style="font-size: 13px; font-weight: 500; color: #0369a1;">dias</span>
-            </div>
-            <div style="font-size: 11px; color: #075985; margin-top: 2px;">
-              Para serviços com requisição
-            </div>
-          </td>
-        </tr>
+                  <td width="4%">&nbsp;</td>
 
-        <tr>
-          <!-- Card 3: Viaturas Críticas -->
-          <td style="width: 50%; background-color: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #e11d48; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
-            <div style="font-size: 11px; font-weight: 700; color: #9f1239; text-transform: uppercase; margin-bottom: 4px;">
-              🚨 Viaturas Críticas (&ge; 10 dias)
-            </div>
-            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #be123c;">
-              ${stats.criticalCount} <span style="font-size: 13px; font-weight: 500; color: #9f1239;">viaturas</span>
-            </div>
-            <div style="font-size: 11px; color: #9f1239; margin-top: 2px;">
-              Imobilização ou requisição &ge; 10 dias
-            </div>
-          </td>
+                  <!-- Card 2: Média Requisição -->
+                  <td width="48%" valign="top" bgcolor="#f0f9ff" style="background-color: #f0f9ff; border: 1px solid #7dd3fc; border-left: 5px solid #0284c7; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #075985; text-transform: uppercase; margin-bottom: 4px;">
+                      📅 Média desde Requisição
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0284c7;">
+                      ${stats.avgDiasReq.toFixed(1)} <span style="font-size: 13px; font-weight: 700; color: #0369a1;">dias</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #075985; font-weight: 600; margin-top: 2px;">
+                      Para serviços com requisição
+                    </div>
+                  </td>
+                </tr>
 
-          <!-- Card 4: Serviços em Aberto -->
-          <td style="width: 50%; background-color: #f0fdfa; border: 1px solid #ccfbf1; border-left: 4px solid #0d9488; border-radius: 8px; padding: 12px 14px; vertical-align: top;">
-            <div style="font-size: 11px; font-weight: 700; color: #115e59; text-transform: uppercase; margin-bottom: 4px;">
-              🔧 Serviços em Aberto
-            </div>
-            <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0f766e;">
-              ${stats.totalAbertas} <span style="font-size: 13px; font-weight: 500; color: #134e4a;">em curso</span>
-            </div>
-            <div style="font-size: 11px; color: #115e59; margin-top: 2px;">
-              Oficina (${stats.totalOficinaAbertas}) &bull; AT (${stats.totalAssistenciaAbertas}) &bull; Contratos (${stats.totalContratoAbertas})
-            </div>
-          </td>
-        </tr>
-      </table>
+                <tr><td colspan="3" style="height: 10px; font-size: 10px; line-height: 10px;">&nbsp;</td></tr>
 
-      <!-- Attachments Notice Banner -->
-      <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
-        <div style="font-size: 13px; font-weight: bold; color: #0f172a; margin-bottom: 6px;">
-          📎 3 Documentos Oficiais em PDF Formato A3 Anexados a este Email:
-        </div>
-        <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #334155;">
-          <li style="margin-bottom: 4px;"><strong>1. Tempos_Resposta_Oficina.pdf</strong> — Quadro de acompanhamento detalhado apenas da Oficina.</li>
-          <li style="margin-bottom: 4px;"><strong>2. Tempos_Resposta_Assistencia_Contratos.pdf</strong> — Quadro com Assistência Técnica no terreno e Contratos.</li>
-          <li style="margin-bottom: 0;"><strong>3. Tempos_Resposta_Geral_Completo.pdf</strong> — Quadro Geral completo com toda a informação operacional.</li>
-        </ul>
-        <div style="margin-top: 8px; font-size: 11px; color: #64748b; font-style: italic;">
-          * Nota: Em cumprimento das diretrizes de apresentação, os ficheiros PDF anexos contêm apenas as tabelas detalhadas em formato A3 horizontal para fácil impressão ou consulta em grande ecrã, sem o cabeçalho de médias.
-        </div>
-      </div>
+                <tr>
+                  <!-- Card 3: Viaturas Críticas -->
+                  <td width="48%" valign="top" bgcolor="#fef2f2" style="background-color: #fef2f2; border: 1px solid #fca5a5; border-left: 5px solid #e11d48; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #9f1239; text-transform: uppercase; margin-bottom: 4px;">
+                      🚨 Viaturas Críticas (&ge; 10 dias)
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #be123c;">
+                      ${stats.criticalCount} <span style="font-size: 13px; font-weight: 700; color: #9f1239;">viaturas</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #9f1239; font-weight: 600; margin-top: 2px;">
+                      Imobilização ou requisição &ge; 10 dias
+                    </div>
+                  </td>
 
-      <!-- Critical Vehicles Mini Table (If any) -->
-      ${stats.criticalCount > 0 ? `
-      <div style="margin-top: 20px;">
-        <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #be123c; margin-top: 0; margin-bottom: 10px; font-weight: 800;">
-          ⚠️ Viaturas e Serviços Críticos em Atenção Imediata (${stats.criticalCount})
-        </h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px; background-color: #ffffff; border: 1px solid #fecdd3; border-radius: 6px; overflow: hidden;">
-          <thead>
-            <tr style="background-color: #fff1f2; text-align: left; color: #9f1239; font-size: 11px; text-transform: uppercase; border-bottom: 2px solid #fecdd3;">
-              <th style="padding: 8px; font-weight: 700;">Folha</th>
-              <th style="padding: 8px; font-weight: 700;">Matrícula</th>
-              <th style="padding: 8px; font-weight: 700;">Cliente</th>
-              <th style="padding: 8px; font-weight: 700;">Dias</th>
-              <th style="padding: 8px; font-weight: 700;">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${criticalTableRows}
-          </tbody>
+                  <td width="4%">&nbsp;</td>
+
+                  <!-- Card 4: Serviços em Aberto -->
+                  <td width="48%" valign="top" bgcolor="#f0fdfa" style="background-color: #f0fdfa; border: 1px solid #5eead4; border-left: 5px solid #0d9488; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #115e59; text-transform: uppercase; margin-bottom: 4px;">
+                      🔧 Serviços em Aberto
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0f766e;">
+                      ${stats.totalAbertas} <span style="font-size: 13px; font-weight: 700; color: #134e4a;">em curso</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #115e59; font-weight: 600; margin-top: 2px;">
+                      Oficina (${stats.totalOficinaAbertas}) &bull; AT (${stats.totalAssistenciaAbertas}) &bull; Contratos (${stats.totalContratoAbertas})
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Attachments Notice Banner -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0d9488; border-radius: 6px; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 14px 18px;">
+                    <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">
+                      📎 3 Documentos Oficiais em PDF Formato A3 Anexados a este Email:
+                    </div>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #0f172a;">
+                      <li style="margin-bottom: 4px;"><strong>1. Tempos_Resposta_Oficina.pdf</strong> — Quadro de acompanhamento detalhado apenas da Oficina.</li>
+                      <li style="margin-bottom: 4px;"><strong>2. Tempos_Resposta_Assistencia_Contratos.pdf</strong> — Quadro com Assistência Técnica no terreno e Contratos.</li>
+                      <li style="margin-bottom: 0;"><strong>3. Tempos_Resposta_Geral_Completo.pdf</strong> — Quadro Geral completo com toda a informação operacional.</li>
+                    </ul>
+                    <div style="margin-top: 8px; font-size: 11.5px; color: #475569; font-style: italic;">
+                      * Nota: Em cumprimento das diretrizes de apresentação, os ficheiros PDF anexos contêm apenas as tabelas detalhadas em formato A3 horizontal para fácil impressão ou consulta em grande ecrã.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Critical Vehicles Mini Table (If any) -->
+              ${stats.criticalCount > 0 ? `
+              <div style="margin-top: 20px;">
+                <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #9f1239; margin-top: 0; margin-bottom: 10px; font-weight: 800; border-bottom: 2px solid #e11d48; padding-bottom: 6px;">
+                  ⚠️ Viaturas e Serviços Críticos em Atenção Imediata (${stats.criticalCount})
+                </h3>
+                <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 12px; background-color: #ffffff; border: 1px solid #fca5a5; border-collapse: collapse;">
+                  <thead>
+                    <tr bgcolor="#fee2e2" style="background-color: #fee2e2; text-align: left; color: #991b1b;">
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Folha</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Matrícula</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Cliente</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Dias</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${criticalTableRows}
+                  </tbody>
+                </table>
+              </div>
+              ` : ''}
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+              <p style="margin: 0; color: #475569;">Disparo automático diário às 06:00 (Dias de semana) &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+            </td>
+          </tr>
+
         </table>
-      </div>
-      ` : ''}
-
-    </div>
-
-    <!-- Footer -->
-    <div style="background-color: #f8fafc; padding: 18px 30px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11.5px; color: #94a3b8;">
-      <p style="margin: 0 0 3px 0;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
-      <p style="margin: 0;">Disparo automático diário às 06:00 (Dias de semana) &bull; hugo@grau-maquinaria.com</p>
-    </div>
-
-  </div>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
-</html>
-  `;
+</html>`;
 }
 
 /**
@@ -1294,158 +1462,225 @@ export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): 
   const allPecas = [...(folha.pecas || []), ...(folha.pecasAdicionais || [])];
 
   const servicesHtml = allServices.length === 0
-    ? '<tr><td colspan="4" style="text-align: center; padding: 12px; color: #64748b; font-style: italic;">Nenhum serviço individual discriminado.</td></tr>'
-    : allServices.map(s => `
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 10px; color: #1e293b; font-weight: 500;">${s.descricao}</td>
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: bold;">${s.horas || 0}h</td>
-          <td style="padding: 8px 10px; color: #475569;">${s.tecnico || '-'}</td>
-          <td style="padding: 8px 10px; text-align: center;">
-            <span style="background-color: ${s.concluido ? '#dcfce7' : '#fef3c7'}; color: ${s.concluido ? '#166534' : '#92400e'}; font-weight: bold; font-size: 11px; padding: 2px 6px; border-radius: 4px;">
-              ${s.concluido ? 'Concluído' : 'Pendente'}
+    ? '<tr><td colspan="4" bgcolor="#ffffff" style="text-align: center; padding: 12px; color: #0f172a; font-style: italic; border: 1px solid #cbd5e1;">Nenhum serviço individual discriminado.</td></tr>'
+    : allServices.map((s, idx) => {
+        const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+        const isDone = s.concluido;
+        return `
+        <tr bgcolor="${rowBg}">
+          <td style="padding: 8px 10px; color: #0f172a; font-weight: 500; border: 1px solid #cbd5e1;">${s.descricao}</td>
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: bold; color: #0f172a; border: 1px solid #cbd5e1;">${s.horas || 0}h</td>
+          <td style="padding: 8px 10px; color: #0f172a; font-weight: 600; border: 1px solid #cbd5e1;">${s.tecnico || '-'}</td>
+          <td style="padding: 8px 10px; text-align: center; border: 1px solid #cbd5e1;">
+            <span style="background-color: ${isDone ? '#dcfce7' : '#fef3c7'}; color: ${isDone ? '#166534' : '#92400e'}; border: 1px solid ${isDone ? '#22c55e' : '#f59e0b'}; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 4px; display: inline-block;">
+              ${isDone ? 'Concluído' : 'Pendente'}
             </span>
           </td>
         </tr>
-      `).join('');
+      `;
+      }).join('');
 
   const pecasHtml = allPecas.length === 0
-    ? '<tr><td colspan="3" style="text-align: center; padding: 12px; color: #64748b; font-style: italic;">Nenhum material/peça registada.</td></tr>'
-    : allPecas.map(p => `
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 10px; font-family: monospace; color: #64748b;">${p.referencia || '-'}</td>
-          <td style="padding: 8px 10px; color: #1e293b; font-weight: 500;">${p.designacao}</td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: bold; font-family: monospace;">${p.qtd || 1}</td>
+    ? '<tr><td colspan="3" bgcolor="#ffffff" style="text-align: center; padding: 12px; color: #0f172a; font-style: italic; border: 1px solid #cbd5e1;">Nenhum material/peça registada.</td></tr>'
+    : allPecas.map((p, idx) => {
+        const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+        return `
+        <tr bgcolor="${rowBg}">
+          <td style="padding: 8px 10px; font-family: monospace; color: #0f172a; font-weight: 600; border: 1px solid #cbd5e1;">${p.referencia || '-'}</td>
+          <td style="padding: 8px 10px; color: #0f172a; font-weight: 500; border: 1px solid #cbd5e1;">${p.designacao}</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: bold; font-family: monospace; color: #0f172a; border: 1px solid #cbd5e1;">${p.qtd || 1}</td>
         </tr>
-      `).join('');
+      `;
+      }).join('');
 
-  const htmlContent = `
-<!DOCTYPE html>
-<html lang="pt">
+  const htmlContent = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
 <head>
-  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <title>Folha de Serviço ${folha.numero} - Oficina HP</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
-  <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-    
-    <!-- Header -->
-    <div style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
-      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">
-        GRAUMP &bull; OFICINA HP &bull; REGISTO DE SERVIÇO
-      </div>
-      <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">
-        Folha de Serviço: ${folha.numero}
-      </h1>
-      <div style="font-size: 13px; color: #64748b;">
-        Viatura / Equipamento: <strong style="color: #0f172a; font-family: monospace;">${folha.matricula}</strong> &bull; ${folha.marca || ''} ${folha.modelo || ''}
-      </div>
-    </div>
-
-    <!-- Callout Anexo -->
-    <div style="margin: 20px 28px 0 28px; padding: 12px 16px; background-color: #f1f5f9; border-left: 3px solid #0284c7; border-radius: 4px; font-size: 13px; color: #334155;">
-      📎 <strong>Documento Oficial Anexado:</strong> O documento oficial da Folha de Serviço em formato PDF segue em anexo a este email.
-    </div>
-
-    <!-- Conteudo Principal -->
-    <div style="padding: 20px 28px;">
-      
-      <!-- Ficha Tecnica -->
-      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
-        Identificação & Ficha Técnica
-      </div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; width: 30%; background-color: #f8fafc;">Cliente / Entidade</td>
-          <td style="padding: 8px 12px; font-weight: 600; color: #0f172a;">${clienteNome}</td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Tipo & Estado</td>
-          <td style="padding: 8px 12px; color: #0f172a;">
-            <strong>${folha.tipo}</strong> &bull; <span style="color: #0284c7; font-weight: 600;">${folha.status}</span>
-          </td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Data da Intervenção</td>
-          <td style="padding: 8px 12px; font-family: monospace; color: #0f172a;">${formatDate(folha.data)}</td>
-        </tr>
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Quilómetros / Horas</td>
-          <td style="padding: 8px 12px; color: #0f172a;">${(folha.kmsAtuais || 0).toLocaleString('pt-PT')} Km &bull; ${folha.horasAtuais || 0} Horas</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 12px; color: #64748b; background-color: #f8fafc;">Local</td>
-          <td style="padding: 8px 12px; color: #334155;">${folha.localizacao || 'Oficina Geral'}</td>
-        </tr>
-      </table>
-
-      ${allServices.length > 0 ? `
-      <!-- Tabela Servicos -->
-      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
-        Serviços e Trabalhos Realizados
-      </div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-        <thead>
-          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; color: #64748b;">
-            <th style="padding: 8px 10px;">Descrição</th>
-            <th style="padding: 8px 10px; text-align: center;">Horas</th>
-            <th style="padding: 8px 10px;">Técnico</th>
-            <th style="padding: 8px 10px; text-align: center;">Estado</th>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#0f172a" style="background-color: #0f172a; padding: 24px 28px; border-bottom: 4px solid #0284c7;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" valign="middle" style="font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #38bdf8; font-family: 'Segoe UI', Arial, sans-serif;">
+                    GRAUMP &bull; OFICINA HP &bull; REGISTO DE SERVIÇO
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="background-color: #0284c7; color: #ffffff; font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 14px; text-transform: uppercase; font-family: 'Segoe UI', Arial, sans-serif; display: inline-block;">
+                      ${folha.status.toUpperCase()}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 14px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #ffffff; line-height: 1.3; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Folha de Serviço: ${folha.numero}
+                    </h1>
+                    <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Viatura / Equipamento: <strong style="color: #ffffff; font-family: monospace;">${folha.matricula}</strong> &bull; ${folha.marca || ''} ${folha.modelo || ''}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          ${servicesHtml}
-        </tbody>
-      </table>
-      ` : ''}
 
-      ${allPecas.length > 0 ? `
-      <!-- Tabela Pecas -->
-      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
-        Peças e Materiais
-      </div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-        <thead>
-          <tr style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; color: #64748b;">
-            <th style="padding: 8px 10px;">Referência</th>
-            <th style="padding: 8px 10px;">Designação</th>
-            <th style="padding: 8px 10px; text-align: center;">Qtd</th>
+          <!-- Callout Anexo -->
+          <tr>
+            <td style="padding: 20px 28px 0 28px;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0284c7; border-radius: 6px;">
+                <tr>
+                  <td style="padding: 12px 16px; font-size: 13px; color: #0f172a; line-height: 1.4;">
+                    📎 <strong>Documento Oficial Anexado:</strong> O documento oficial da Folha de Serviço em formato PDF segue em anexo a este email.
+                  </td>
+                </tr>
+              </table>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          ${pecasHtml}
-        </tbody>
-      </table>
-      ` : ''}
 
-      ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
-      <!-- Observacoes -->
-      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin-bottom: 8px;">
-        Observações e Anomalias
-      </div>
-      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; font-size: 13px; color: #334155; margin-bottom: 20px;">
-        ${folha.anomalias ? `<div style="margin-bottom: 4px;"><strong>Anomalias / Diagnóstico:</strong> ${folha.anomalias}</div>` : ''}
-        ${folha.notasCliente ? `<div style="margin-bottom: 4px;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</div>` : ''}
-        ${folha.notasInternas ? `<div><strong>Notas Internas:</strong> ${folha.notasInternas}</div>` : ''}
-      </div>
-      ` : ''}
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 28px;">
+              
+              <!-- Ficha Técnica -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 12px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                🚜 Identificação &amp; Ficha Técnica
+              </h2>
 
-      <!-- Registo efetuado por -->
-      <div style="font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px;">
-        Solicitado por: <strong style="color: #0f172a;">${cleanPersonName(currentUser?.nome || 'Utilizador')}</strong> (${currentUser?.email || 'N/A'}) &bull; ${new Date().toLocaleString('pt-PT')}
-      </div>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 22px; border: 1px solid #cbd5e1; border-collapse: collapse; font-size: 13px;">
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; width: 32%; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Cliente / Entidade</td>
+                  <td style="padding: 9px 12px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${clienteNome}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Tipo &amp; Estado</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">
+                    <strong>${folha.tipo}</strong> &bull; <span style="color: #0284c7; font-weight: 700;">${folha.status}</span>
+                  </td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Data da Intervenção</td>
+                  <td style="padding: 9px 12px; font-family: monospace; color: #0f172a; font-weight: 600; border-bottom: 1px solid #cbd5e1;">${formatDate(folha.data)}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Quilómetros / Horas</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${(folha.kmsAtuais || 0).toLocaleString('pt-PT')} Km &bull; ${folha.horasAtuais || 0} Horas</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-right: 1px solid #cbd5e1;">Local</td>
+                  <td style="padding: 9px 12px; color: #0f172a;">${folha.localizacao || 'Oficina Geral'}</td>
+                </tr>
+              </table>
 
-    </div>
+              ${allServices.length > 0 ? `
+              <!-- Tabela Servicos -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 12px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                🔧 Serviços e Trabalhos Realizados
+              </h2>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 12.5px; border: 1px solid #cbd5e1; border-collapse: collapse; margin-bottom: 22px;">
+                <thead>
+                  <tr bgcolor="#e2e8f0" style="background-color: #e2e8f0; text-align: left; color: #0f172a;">
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Descrição</th>
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1; text-align: center;">Horas</th>
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Técnico</th>
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1; text-align: center;">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${servicesHtml}
+                </tbody>
+              </table>
+              ` : ''}
 
-    <!-- Footer -->
-    <div style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8;">
-      <p style="margin: 0 0 2px 0;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
-      <p style="margin: 0;">Notificação operacional gerada pelo sistema.</p>
-    </div>
+              ${allPecas.length > 0 ? `
+              <!-- Tabela Pecas -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 12px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                ⚙️ Peças e Materiais
+              </h2>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 12.5px; border: 1px solid #cbd5e1; border-collapse: collapse; margin-bottom: 22px;">
+                <thead>
+                  <tr bgcolor="#e2e8f0" style="background-color: #e2e8f0; text-align: left; color: #0f172a;">
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Referência</th>
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1;">Designação</th>
+                    <th style="padding: 10px 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #cbd5e1; text-align: center;">Qtd</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pecasHtml}
+                </tbody>
+              </table>
+              ` : ''}
 
-  </div>
+              ${folha.anomalias || folha.notasCliente || folha.notasInternas ? `
+              <!-- Observacoes -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 10px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; font-weight: 800;">
+                📝 Observações e Anomalias
+              </h2>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0284c7; border-radius: 6px; margin-bottom: 20px;">
+                <tr>
+                  <td style="padding: 12px 14px; font-size: 13px; color: #0f172a; line-height: 1.5;">
+                    ${folha.anomalias ? `<div style="margin-bottom: 4px;"><strong>Anomalias / Diagnóstico:</strong> ${folha.anomalias}</div>` : ''}
+                    ${folha.notasCliente ? `<div style="margin-bottom: 4px;"><strong>Notas Cliente:</strong> ${folha.notasCliente}</div>` : ''}
+                    ${folha.notasInternas ? `<div><strong>Notas Internas:</strong> ${folha.notasInternas}</div>` : ''}
+                  </td>
+                </tr>
+              </table>
+              ` : ''}
+
+              <!-- Registo efetuado por -->
+              <div style="font-size: 12px; color: #0f172a; border-top: 1px solid #cbd5e1; padding-top: 12px;">
+                Solicitado por: <strong style="color: #0f172a;">${cleanPersonName(currentUser?.nome || 'Utilizador')}</strong> (${currentUser?.email || 'N/A'}) &bull; ${new Date().toLocaleString('pt-PT')}
+              </div>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 3px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+              <p style="margin: 0; color: #475569;">Notificação operacional gerada pelo sistema.</p>
+            </td>
+          </tr>
+
+        </table>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
-</html>
-  `;
+</html>`;
 
   // Dispatch via /api/send-email
   let apiDeliverySuccess = false;
@@ -1550,93 +1785,149 @@ export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
   const dataFormatada = formatDate(visita.data);
   const subject = `[Oficina HP] Agendamento de Visita: ${visita.nomeEmpresa} - ${dataFormatada} às ${visita.hora}`;
 
-  const htmlContent = `
-<!DOCTYPE html>
-<html lang="pt">
+  const htmlContent = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
 <head>
-  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
   <title>Agendamento de Visita - ${visita.nomeEmpresa}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
-  <div style="max-width: 650px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-    
-    <!-- Header -->
-    <div style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
-      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #059669; margin-bottom: 4px;">
-        GRAUMP &bull; OFICINA HP &bull; PLANEAMENTO DE VISITAS
-      </div>
-      <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">
-        Novo Agendamento de Visita ao Cliente
-      </h1>
-      <div style="font-size: 13px; color: #64748b;">
-        Registo: <strong style="color: #0f172a; font-family: monospace;">${visita.numero}</strong> &bull; Estado: <span style="background-color: #dcfce7; color: #166534; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${visita.status}</span>
-      </div>
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#0f172a" style="background-color: #0f172a; padding: 24px 28px; border-bottom: 4px solid #059669;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" valign="middle" style="font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #34d399; font-family: 'Segoe UI', Arial, sans-serif;">
+                    GRAUMP &bull; OFICINA HP &bull; PLANEAMENTO DE VISITAS
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="background-color: #059669; color: #ffffff; font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 14px; text-transform: uppercase; font-family: 'Segoe UI', Arial, sans-serif; display: inline-block;">
+                      ${visita.status.toUpperCase()}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 14px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #ffffff; line-height: 1.3; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Novo Agendamento de Visita ao Cliente
+                    </h1>
+                    <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Registo: <strong style="color: #ffffff; font-family: monospace;">${visita.numero}</strong> &bull; ${visita.nomeEmpresa}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <!-- Conteudo Principal -->
-    <div style="padding: 20px 28px;">
-      
-      <!-- Dados Principais da Visita -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
-        <tr>
-          <td style="padding: 8px 0; width: 38%; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Empresa / Cliente:</td>
-          <td style="padding: 8px 0; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9; font-size: 14px;">${visita.nomeEmpresa}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Data da Visita:</td>
-          <td style="padding: 8px 0; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9;">${dataFormatada}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Hora Prevista:</td>
-          <td style="padding: 8px 0; color: #0f172a; font-weight: 700; font-family: monospace; border-bottom: 1px solid #f1f5f9;">${visita.hora}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Técnico / Responsável:</td>
-          <td style="padding: 8px 0; color: #059669; font-weight: 700; border-bottom: 1px solid #f1f5f9;">${visita.tecnico}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Motivo da Visita:</td>
-          <td style="padding: 8px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #f1f5f9;">${visita.motivo}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Pessoa de Contacto:</td>
-          <td style="padding: 8px 0; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${visita.nomeContacto || '<span style="color: #94a3b8; font-style: italic;">Não especificado</span>'}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Telefone:</td>
-          <td style="padding: 8px 0; color: #0f172a; font-family: monospace; border-bottom: 1px solid #f1f5f9;">${visita.telefone || '<span style="color: #94a3b8; font-style: italic;">Não especificado</span>'}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Morada / Local:</td>
-          <td style="padding: 8px 0; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${visita.morada || '<span style="color: #94a3b8; font-style: italic;">Não especificada</span>'}</td>
-        </tr>
-      </table>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 24px 28px;">
+              
+              <!-- Section Title -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 16px; border-bottom: 2px solid #059669; padding-bottom: 6px; font-weight: 800;">
+                📅 Detalhes do Agendamento
+              </h2>
 
-      <!-- Notas / Observacoes -->
-      <div style="margin-top: 16px; padding: 14px 18px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
-        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">
-          Notas / Observações
-        </div>
-        <p style="margin: 0; font-size: 13px; color: #334155; white-space: pre-wrap;">${visita.notas || 'Sem notas adicionais registadas.'}</p>
-      </div>
+              <!-- Dados Principais da Visita -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 22px; border: 1px solid #cbd5e1; border-collapse: collapse; font-size: 13px;">
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; width: 35%; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Empresa / Cliente:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; font-size: 14px;">${visita.nomeEmpresa}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Data da Visita:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1;">${dataFormatada}</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Hora Prevista:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; font-family: monospace; border-bottom: 1px solid #cbd5e1;">${visita.hora}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Técnico / Responsável:</td>
+                  <td style="padding: 10px 14px; color: #059669; font-weight: 700; border-bottom: 1px solid #cbd5e1;">${visita.tecnico}</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Motivo da Visita:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 600; border-bottom: 1px solid #cbd5e1;">${visita.motivo}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Pessoa de Contacto:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${visita.nomeContacto || '<span style="color: #64748b; font-style: italic;">Não especificado</span>'}</td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Telefone:</td>
+                  <td style="padding: 10px 14px; color: #0f172a; font-family: monospace; border-bottom: 1px solid #cbd5e1;">${visita.telefone || '<span style="color: #64748b; font-style: italic;">Não especificado</span>'}</td>
+                </tr>
+                <tr bgcolor="#ffffff">
+                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 700; border-right: 1px solid #cbd5e1;">Morada / Local:</td>
+                  <td style="padding: 10px 14px; color: #0f172a;">${visita.morada || '<span style="color: #64748b; font-style: italic;">Não especificada</span>'}</td>
+                </tr>
+              </table>
 
-      <!-- Informacao de Registo -->
-      <div style="margin-top: 20px; font-size: 12px; color: #64748b; border-top: 1px dashed #cbd5e1; padding-top: 12px;">
-        Agendado por: <strong style="color: #334155;">${currentUser?.nome || visita.tecnico}</strong> ${currentUser?.email ? `(${currentUser.email})` : ''} &bull; Data de Registo: ${formatDate(visita.dataCriacao || new Date())}
-      </div>
+              <!-- Notas / Observacoes -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 10px; border-bottom: 2px solid #059669; padding-bottom: 6px; font-weight: 800;">
+                📝 Notas / Observações
+              </h2>
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #059669; border-radius: 6px; margin-bottom: 20px;">
+                <tr>
+                  <td style="padding: 12px 14px; font-size: 13px; color: #0f172a; line-height: 1.5; white-space: pre-wrap;">
+                    ${visita.notas || 'Sem notas adicionais registadas.'}
+                  </td>
+                </tr>
+              </table>
 
-    </div>
+              <!-- Informacao de Registo -->
+              <div style="font-size: 12px; color: #0f172a; border-top: 1px solid #cbd5e1; padding-top: 12px;">
+                Agendado por: <strong style="color: #0f172a;">${currentUser?.nome || visita.tecnico}</strong> ${currentUser?.email ? `(${currentUser.email})` : ''} &bull; Data de Registo: ${formatDate(visita.dataCriacao || new Date())}
+              </div>
 
-    <!-- Footer -->
-    <div style="padding: 16px 28px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center;">
-      <p style="margin: 0 0 4px 0;">Este é um email automático gerado pelo sistema de gestão Oficina HP.</p>
-      <p style="margin: 0;">GRAUMP &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
-    </div>
+            </td>
+          </tr>
 
-  </div>
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+              <p style="margin: 0; color: #475569;">GRAUMP &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+            </td>
+          </tr>
+
+        </table>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
-</html>
-  `;
+</html>`;
 
   let apiDeliverySuccess = false;
   try {
