@@ -17,6 +17,7 @@ import type {
 } from '../types';
 import { USERS } from '../types';
 import { syncPushToCloud } from './pocketbaseSync';
+import { safeLocalStorageSet, optimizeLocalStorageQuota } from '../utils/storageUtils';
 
 const STORAGE_KEYS = {
   EMPRESAS: 'oficina_hp_empresas',
@@ -627,7 +628,7 @@ export const db = {
   },
 
   save<T>(key: string, items: T[]): void {
-    localStorage.setItem(key, JSON.stringify(items));
+    safeLocalStorageSet(key, JSON.stringify(items));
     notifyChange(key);
     // Push automatically to PocketBase Cloud in background
     syncPushToCloud(key, items).catch(err => {
@@ -671,7 +672,7 @@ export const db = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CONFIGURACAO);
       if (!data) {
-        localStorage.setItem(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(DEFAULT_CONFIG));
+        safeLocalStorageSet(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(DEFAULT_CONFIG));
         return DEFAULT_CONFIG;
       }
       return { ...DEFAULT_CONFIG, ...JSON.parse(data) };
@@ -683,15 +684,18 @@ export const db = {
   saveConfig(config: Partial<ConfiguracaoOficina>): ConfiguracaoOficina {
     const current = this.getConfig();
     const updated = { ...current, ...config };
-    localStorage.setItem(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(updated));
+    safeLocalStorageSet(STORAGE_KEYS.CONFIGURACAO, JSON.stringify(updated));
     if (updated.pocketbaseUrl) {
-      localStorage.setItem('oficina_hp_pb_url', updated.pocketbaseUrl);
+      safeLocalStorageSet('oficina_hp_pb_url', updated.pocketbaseUrl);
     }
     notifyChange(STORAGE_KEYS.CONFIGURACAO);
     return updated;
   },
 
   initSeed(): void {
+    // Run emergency storage cleanup immediately on startup to free space
+    optimizeLocalStorageQuota();
+
     if (!localStorage.getItem(STORAGE_KEYS.EMPRESAS)) {
       this.save(STORAGE_KEYS.EMPRESAS, INITIAL_EMPRESAS);
     }

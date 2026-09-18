@@ -1,5 +1,6 @@
 import { getPocketBase } from './pocketbase';
 import { STORAGE_KEYS } from './dbService';
+import { safeLocalStorageSet } from '../utils/storageUtils';
 
 export interface SyncStatus {
   isSyncing: boolean;
@@ -96,7 +97,7 @@ export async function syncPushToCloud(key: string, data: any): Promise<boolean> 
           payloadData = mergeCollectionData(data, existingRecord.data);
           // If remote had items not yet in localStorage, write them back
           if (payloadData.length !== data.length && typeof localStorage !== 'undefined') {
-            localStorage.setItem(key, JSON.stringify(payloadData));
+            safeLocalStorageSet(key, JSON.stringify(payloadData));
           }
         }
 
@@ -152,7 +153,7 @@ export async function syncPullFromCloud(): Promise<boolean> {
           const merged = mergeCollectionData(currentLocal, record.data);
           const newCloudStr = JSON.stringify(merged);
           if (currentLocalStr !== newCloudStr) {
-            localStorage.setItem(record.key, newCloudStr);
+            safeLocalStorageSet(record.key, newCloudStr);
             hasChanges = true;
           }
         }
@@ -194,7 +195,7 @@ export function subscribeToRealtimeSync(): () => void {
           const merged = mergeCollectionData(currentLocal, record.data);
           const newCloudStr = JSON.stringify(merged);
           if (currentLocalStr !== newCloudStr) {
-            localStorage.setItem(record.key, newCloudStr);
+            safeLocalStorageSet(record.key, newCloudStr);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { source: 'realtime_event', key: record.key } }));
             }

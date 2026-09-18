@@ -27,6 +27,7 @@ import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { formatDate, formatDateToInput, parseDateToMs } from '../utils/dateUtils';
+import { compressImageFile } from '../utils/imageUtils';
 import type { Equipamento, Empresa, FolhaServico } from '../types';
 
 export function getEquipamentoLatestData(eq: Partial<Equipamento>, folhas: FolhaServico[]) {
@@ -183,27 +184,27 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
     setIsEmpresaDropdownOpen(false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (reader.result && typeof reader.result === 'string') {
-          const newPhoto = reader.result;
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const compressed = await compressImageFile(files[i], 800, 0.65);
+        if (compressed) {
           setEditingEquip(prev => {
             const currentFotos = prev.fotos || [];
             return {
               ...prev,
-              fotos: [...currentFotos, newPhoto],
-              fotoUrl: prev.fotoUrl || newPhoto
+              fotos: [...currentFotos, compressed],
+              fotoUrl: prev.fotoUrl || compressed
             };
           });
         }
-      };
-      reader.readAsDataURL(file);
-    });
+      } catch (err) {
+        console.warn('[Equipamentos] Erro ao comprimir imagem:', err);
+      }
+    }
 
     if (e.target) e.target.value = '';
   };
