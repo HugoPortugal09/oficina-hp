@@ -1125,7 +1125,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const handleUpdateService = (id: string, field: keyof ServicoItem, value: any, isAdicional: boolean = false) => {
     const targetKey = isAdicional ? 'servicosAdicionais' : 'servicos';
-    const today = new Date().toLocaleDateString('pt-PT');
+    const fallbackDate = editingFolha.data ? formatDate(editingFolha.data) : new Date().toLocaleDateString('pt-PT');
     setEditingFolha(prev => ({
       ...prev,
       [targetKey]: prev[targetKey]?.map(s => {
@@ -1136,9 +1136,15 @@ export const Oficina: React.FC<OficinaProps> = ({
           return {
             ...s,
             concluido: checked,
-            dataConclusao: checked ? (s.dataConclusao || today) : undefined,
+            dataConclusao: checked ? (s.dataConclusao || fallbackDate) : undefined,
             tecnico: initials,
             iniciaisConclusao: checked ? initials : undefined
+          };
+        }
+        if (field === 'dataConclusao') {
+          return {
+            ...s,
+            dataConclusao: value ? formatDate(value) : undefined
           };
         }
         if (field === 'tecnico') {
@@ -1170,6 +1176,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
     const newPart: PecaItem = {
       id: db.generateId('pec'),
+      referencia: '',
       designacao: '',
       qtd: 1,
       concluido: false,
@@ -1206,7 +1213,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const handleUpdatePart = (id: string, field: keyof PecaItem, value: any, isAdicional: boolean = false) => {
     const targetKey = isAdicional ? 'pecasAdicionais' : 'pecas';
-    const today = new Date().toLocaleDateString('pt-PT');
+    const fallbackDate = editingFolha.data ? formatDate(editingFolha.data) : new Date().toLocaleDateString('pt-PT');
     setEditingFolha(prev => ({
       ...prev,
       [targetKey]: prev[targetKey]?.map(p => {
@@ -1217,8 +1224,14 @@ export const Oficina: React.FC<OficinaProps> = ({
           return {
             ...p,
             concluido: checked,
-            dataConclusao: checked ? (p.dataConclusao || today) : undefined,
+            dataConclusao: checked ? (p.dataConclusao || fallbackDate) : undefined,
             iniciaisConclusao: initials
+          };
+        }
+        if (field === 'dataConclusao') {
+          return {
+            ...p,
+            dataConclusao: value ? formatDate(value) : undefined
           };
         }
         if (field === 'iniciaisConclusao') {
@@ -2544,10 +2557,17 @@ export const Oficina: React.FC<OficinaProps> = ({
                         onChange={e => handleUpdateService(srv.id, 'concluido', e.target.checked, false)}
                         className="w-4 h-4 rounded text-hp-600 bg-slate-900 border-slate-700 cursor-pointer"
                       />
-                      {srv.concluido && srv.dataConclusao && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono font-bold border border-emerald-500/30 shrink-0" title="Data em que o serviço foi concluído">
-                          📅 {srv.dataConclusao}
-                        </span>
+                      {srv.concluido && (
+                        <div className="flex items-center gap-1 shrink-0 bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded-lg" title="Clique para alterar a data de realização deste serviço">
+                          <span className="text-[10px] text-emerald-400 font-bold select-none">📅</span>
+                          <input
+                            type="date"
+                            value={formatDateToInput(srv.dataConclusao || editingFolha.data)}
+                            onChange={e => handleUpdateService(srv.id, 'dataConclusao', e.target.value, false)}
+                            className="bg-transparent text-[11px] text-emerald-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                            title="Alterar data de realização deste serviço"
+                          />
+                        </div>
                       )}
                     </div>
                     <input
@@ -2563,28 +2583,28 @@ export const Oficina: React.FC<OficinaProps> = ({
                           type="number"
                           step="0.5"
                           placeholder="Horas"
-                          value={srv.horas}
-                          onChange={e => handleUpdateService(srv.id, 'horas', Number(e.target.value), false)}
-                          className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono text-center font-bold"
+                          value={srv.horas || ''}
+                          onChange={e => handleUpdateService(srv.id, 'horas', parseFloat(e.target.value) || 0, false)}
+                          className="w-16 py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono text-center"
                         />
-                        <span className="text-[11px] text-slate-400 font-mono">h</span>
+                        <span className="text-[11px] text-slate-500 font-mono">h</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Téc:</span>
+                        <span className="text-[10px] text-slate-500 font-semibold uppercase">Téc:</span>
                         <input
                           type="text"
+                          value={srv.tecnico || ''}
                           placeholder="HP"
                           maxLength={4}
-                          value={getInitials(srv.tecnico || 'HP')}
-                          onChange={e => handleUpdateService(srv.id, 'tecnico', e.target.value.toUpperCase(), false)}
-                          className="w-14 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-hp-400 font-mono font-bold text-center uppercase"
-                          title="Iniciais do Técnico"
+                          onChange={e => handleUpdateService(srv.id, 'tecnico', e.target.value, false)}
+                          className="w-12 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-hp-400 font-mono font-bold text-center uppercase"
+                          title="Iniciais do Técnico responsável pelo serviço"
                         />
                       </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveService(srv.id, false)}
-                        className="p-1 text-slate-400 hover:text-rose-400 rounded-lg"
+                        className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -2625,10 +2645,17 @@ export const Oficina: React.FC<OficinaProps> = ({
                           onChange={e => handleUpdateService(srv.id, 'concluido', e.target.checked, true)}
                           className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
                         />
-                        {srv.concluido && srv.dataConclusao && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0" title="Data em que o serviço adicional foi concluído">
-                            📅 {srv.dataConclusao}
-                          </span>
+                        {srv.concluido && (
+                          <div className="flex items-center gap-1 shrink-0 bg-amber-950/80 border border-amber-500/40 px-1.5 py-0.5 rounded-lg" title="Clique para alterar a data de realização deste serviço adicional">
+                            <span className="text-[10px] text-amber-400 font-bold select-none">📅</span>
+                            <input
+                              type="date"
+                              value={formatDateToInput(srv.dataConclusao || editingFolha.data)}
+                              onChange={e => handleUpdateService(srv.id, 'dataConclusao', e.target.value, true)}
+                              className="bg-transparent text-[11px] text-amber-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                              title="Alterar data de realização deste serviço adicional"
+                            />
+                          </div>
                         )}
                       </div>
                       <input
@@ -2742,10 +2769,17 @@ export const Oficina: React.FC<OficinaProps> = ({
                         onChange={e => handleUpdatePart(pec.id, 'concluido', e.target.checked, false)}
                         className="w-4 h-4 rounded text-emerald-600 bg-slate-900 border-slate-700 cursor-pointer"
                       />
-                      {pec.concluido && pec.dataConclusao && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono font-bold border border-emerald-500/30 shrink-0" title="Data em que a peça foi aplicada">
-                          📅 {pec.dataConclusao}
-                        </span>
+                      {pec.concluido && (
+                        <div className="flex items-center gap-1 shrink-0 bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded-lg" title="Clique para alterar a data de aplicação da peça">
+                          <span className="text-[10px] text-emerald-400 font-bold select-none">📅</span>
+                          <input
+                            type="date"
+                            value={formatDateToInput(pec.dataConclusao || editingFolha.data)}
+                            onChange={e => handleUpdatePart(pec.id, 'dataConclusao', e.target.value, false)}
+                            className="bg-transparent text-[11px] text-emerald-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                            title="Alterar data de aplicação da peça"
+                          />
+                        </div>
                       )}
                       <SearchablePartSelect
                         value={pec.pecaId}
@@ -2835,10 +2869,17 @@ export const Oficina: React.FC<OficinaProps> = ({
                             onChange={e => handleUpdatePart(pec.id, 'concluido', e.target.checked, true)}
                             className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700 cursor-pointer"
                           />
-                          {pec.concluido && pec.dataConclusao && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0" title="Data em que a peça adicional foi aplicada">
-                              📅 {pec.dataConclusao}
-                            </span>
+                          {pec.concluido && (
+                            <div className="flex items-center gap-1 shrink-0 bg-amber-950/80 border border-amber-500/40 px-1.5 py-0.5 rounded-lg" title="Clique para alterar a data de aplicação da peça adicional">
+                              <span className="text-[10px] text-amber-400 font-bold select-none">📅</span>
+                              <input
+                                type="date"
+                                value={formatDateToInput(pec.dataConclusao || editingFolha.data)}
+                                onChange={e => handleUpdatePart(pec.id, 'dataConclusao', e.target.value, true)}
+                                className="bg-transparent text-[11px] text-amber-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                                title="Alterar data de aplicação da peça adicional"
+                              />
+                            </div>
                           )}
                           <SearchablePartSelect
                             value={pec.pecaId}

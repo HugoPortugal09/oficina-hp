@@ -863,7 +863,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (!selectedFolha) return;
     const key = isAdicional ? 'servicosAdicionais' : 'servicos';
     const list = selectedFolha[key] || [];
-    const today = new Date().toLocaleDateString('pt-PT');
+    const fallbackDate = selectedFolha.data ? formatDate(selectedFolha.data) : new Date().toLocaleDateString('pt-PT');
     const updatedList = list.map(s => {
       if (s.id === servicoId) {
         const willBeDone = !s.concluido;
@@ -871,7 +871,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return {
           ...s,
           concluido: willBeDone,
-          dataConclusao: willBeDone ? (s.dataConclusao || today) : undefined,
+          dataConclusao: willBeDone ? (s.dataConclusao || fallbackDate) : undefined,
           tecnico: initials,
           iniciaisConclusao: willBeDone ? initials : undefined
         };
@@ -887,7 +887,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (!selectedFolha) return;
     const key = isAdicional ? 'pecasAdicionais' : 'pecas';
     const list = selectedFolha[key] || [];
-    const today = new Date().toLocaleDateString('pt-PT');
+    const fallbackDate = selectedFolha.data ? formatDate(selectedFolha.data) : new Date().toLocaleDateString('pt-PT');
     const updatedList = list.map(p => {
       if (p.id === pecaId) {
         const willBeDone = !p.concluido;
@@ -895,7 +895,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return {
           ...p,
           concluido: willBeDone,
-          dataConclusao: willBeDone ? (p.dataConclusao || today) : undefined,
+          dataConclusao: willBeDone ? (p.dataConclusao || fallbackDate) : undefined,
           iniciaisConclusao: willBeDone ? initials : undefined
         };
       }
@@ -928,7 +928,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (!selectedFolha) return;
     const key = isAdicional ? 'servicosAdicionais' : 'servicos';
     const list = selectedFolha[key] || [];
-    const today = new Date().toLocaleDateString('pt-PT');
+    const fallbackDate = selectedFolha.data ? formatDate(selectedFolha.data) : new Date().toLocaleDateString('pt-PT');
     const updatedList = list.map(s => {
       if (s.id !== servicoId) return s;
       if (field === 'concluido') {
@@ -937,9 +937,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return {
           ...s,
           concluido: checked,
-          dataConclusao: checked ? (s.dataConclusao || today) : undefined,
+          dataConclusao: checked ? (s.dataConclusao || fallbackDate) : undefined,
           tecnico: initials,
           iniciaisConclusao: checked ? initials : undefined
+        };
+      }
+      if (field === 'dataConclusao') {
+        return {
+          ...s,
+          dataConclusao: value ? formatDate(value) : undefined
         };
       }
       if (field === 'tecnico') {
@@ -985,7 +991,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (!selectedFolha) return;
     const key = isAdicional ? 'pecasAdicionais' : 'pecas';
     const list = selectedFolha[key] || [];
-    const today = new Date().toLocaleDateString('pt-PT');
+    const fallbackDate = selectedFolha.data ? formatDate(selectedFolha.data) : new Date().toLocaleDateString('pt-PT');
     const updatedList = list.map(p => {
       if (p.id !== pecaId) return p;
       if (field === 'concluido') {
@@ -994,8 +1000,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return {
           ...p,
           concluido: checked,
-          dataConclusao: checked ? (p.dataConclusao || today) : undefined,
+          dataConclusao: checked ? (p.dataConclusao || fallbackDate) : undefined,
           iniciaisConclusao: initials
+        };
+      }
+      if (field === 'dataConclusao') {
+        return {
+          ...p,
+          dataConclusao: value ? formatDate(value) : undefined
         };
       }
       if (field === 'iniciaisConclusao') {
@@ -2197,10 +2209,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {s.concluido && s.dataConclusao && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-emerald-950 text-emerald-400 font-mono font-bold border border-emerald-500/30 shrink-0">
-                                📅 {s.dataConclusao}
-                              </span>
+                            {s.concluido && (
+                              <div className="flex items-center gap-1 shrink-0 bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 rounded-lg" title="Clique para alterar a data de realização deste serviço">
+                                <span className="text-[10px] text-emerald-400 font-bold select-none">📅</span>
+                                <input
+                                  type="date"
+                                  value={formatDateToInput(s.dataConclusao || selectedFolha.data)}
+                                  onChange={e => handleUpdateServiceInSelected(s.id, 'dataConclusao', e.target.value, false)}
+                                  className="bg-transparent text-[11px] text-emerald-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                                  title="Alterar data deste serviço"
+                                />
+                              </div>
                             )}
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-400 font-semibold uppercase">Téc:</span>
@@ -2303,10 +2322,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                             </div>
 
                             <div className="flex items-center gap-2">
-                              {s.concluido && s.dataConclusao && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40 shrink-0">
-                                  📅 {s.dataConclusao}
-                                </span>
+                              {s.concluido && (
+                                <div className="flex items-center gap-1 shrink-0 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-lg" title="Clique para alterar a data de realização deste serviço adicional">
+                                  <span className="text-[10px] text-amber-400 font-bold select-none">📅</span>
+                                  <input
+                                    type="date"
+                                    value={formatDateToInput(s.dataConclusao || selectedFolha.data)}
+                                    onChange={e => handleUpdateServiceInSelected(s.id, 'dataConclusao', e.target.value, true)}
+                                    className="bg-transparent text-[11px] text-amber-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                                    title="Alterar data deste serviço adicional"
+                                  />
+                                </div>
                               )}
                               <div className="flex items-center gap-1">
                                 <span className="text-[10px] text-slate-400 font-semibold uppercase">Téc:</span>
@@ -2439,10 +2465,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
                         {/* Footer row with Date and Technician Initials */}
                         <div className="flex items-center justify-between gap-2 pl-8 text-xs">
-                          {p.concluido && p.dataConclusao ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-lg bg-emerald-950 text-emerald-400 font-mono font-bold border border-emerald-500/30">
-                              📅 {p.dataConclusao}
-                            </span>
+                          {p.concluido ? (
+                            <div className="flex items-center gap-1 shrink-0 bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 rounded-lg" title="Clique para alterar a data de aplicação da peça">
+                              <span className="text-[10px] text-emerald-400 font-bold select-none">📅</span>
+                              <input
+                                type="date"
+                                value={formatDateToInput(p.dataConclusao || selectedFolha.data)}
+                                onChange={e => handleUpdatePartInSelected(p.id, 'dataConclusao', e.target.value, false)}
+                                className="bg-transparent text-[11px] text-emerald-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                                title="Alterar data de aplicação da peça"
+                              />
+                            </div>
                           ) : <span />}
 
                           <div className="flex items-center gap-1">
@@ -2473,71 +2506,74 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         <Package className="w-4 h-4 text-amber-400" />
                         Peças Adicionais ({selectedFolha.pecasAdicionais?.length || 0})
                       </h4>
-                      <p className="text-[10px] text-slate-400">Peças aplicadas não orçamentadas inicialmente</p>
+                      <p className="text-[10px] text-slate-400">
+                        Peças e consumíveis requisitados fora do plano inicial
+                      </p>
                     </div>
+
                     <button
-                      type="button"
                       onClick={() => handleAddPartToSelected(true)}
-                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-amber-500/30 transition-all"
+                      className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-xl text-xs font-bold transition-colors"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Adicionar
+                      <Plus className="w-3.5 h-3.5" />
+                      Extra
                     </button>
                   </div>
 
                   <div className="space-y-2">
                     {(!selectedFolha.pecasAdicionais || selectedFolha.pecasAdicionais.length === 0) ? (
-                      <p className="text-[11px] text-slate-500 italic p-3 text-center bg-slate-950/40 rounded-2xl border border-slate-800/60">
-                        Nenhuma peça adicional registada.
-                      </p>
+                      <p className="text-xs text-slate-400 italic py-1">Nenhuma peça adicional registada.</p>
                     ) : (
-                      selectedFolha.pecasAdicionais.map((p, idx) => (
+                      selectedFolha.pecasAdicionais.map(p => (
                         <div
-                          key={p.id || idx}
-                          className={`p-3 rounded-2xl border transition-all space-y-2 ${
+                          key={p.id}
+                          className={`p-3 rounded-xl border transition-all ${
                             p.concluido
                               ? 'bg-amber-950/20 border-amber-500/40'
-                              : 'bg-slate-950/80 border-slate-800'
+                              : 'bg-slate-900/80 border-slate-800'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-2.5 mb-2">
                             <button
                               type="button"
                               onClick={() => handleTogglePecaConcluido(p.id, true)}
-                              className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-colors shrink-0 ${
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                                 p.concluido
-                                  ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-sm'
-                                  : 'bg-slate-900 border-slate-700 text-transparent hover:border-slate-500'
+                                  ? 'bg-amber-500 text-slate-950 font-bold'
+                                  : 'border border-slate-600 hover:border-amber-400'
                               }`}
                             >
-                              <Check className="w-4 h-4 stroke-[3]" />
+                              {p.concluido && <Check className="w-4 h-4" />}
                             </button>
 
-                            <div className="grid grid-cols-3 gap-1.5 flex-1">
-                              <input
-                                type="text"
-                                placeholder="Ref..."
-                                value={p.referencia || ''}
-                                onChange={e => handleUpdatePartInSelected(p.id, 'referencia', e.target.value, true)}
-                                className="py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] text-amber-400 font-mono font-bold"
+                            <div className="flex-1 space-y-1">
+                              <SearchablePartSelect
+                                value={p.pecaId}
+                                referencia={p.referencia}
+                                isLivre={p.isLivre}
+                                catalogo={catalogoPecas}
+                                onSelect={part => handleSelectCatalogPart(part, p.id, true)}
                               />
                               <input
                                 type="text"
-                                placeholder="Designação da peça adicional..."
                                 value={p.designacao}
+                                placeholder="Designação da peça adicional..."
                                 onChange={e => handleUpdatePartInSelected(p.id, 'designacao', e.target.value, true)}
-                                className={`col-span-2 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white ${
+                                className={`w-full bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none ${
                                   p.concluido ? 'line-through text-slate-400' : ''
                                 }`}
                               />
                             </div>
 
                             <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-slate-400 font-mono font-bold">x</span>
+                              <span className="text-[10px] text-slate-400 font-semibold uppercase">Qtd:</span>
                               <input
                                 type="number"
+                                step="1"
+                                min="1"
                                 value={p.qtd}
                                 onChange={e => handleUpdatePartInSelected(p.id, 'qtd', Number(e.target.value), true)}
-                                className="w-12 py-1 px-1.5 bg-slate-900 border border-slate-700 rounded-lg text-amber-400 font-mono font-bold text-center text-xs"
+                                className="w-12 py-1 px-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-center font-bold text-xs"
                               />
                             </div>
 
@@ -2552,10 +2588,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
                           {/* Footer row with Date and Technician Initials */}
                           <div className="flex items-center justify-between gap-2 pl-8 text-xs">
-                            {p.concluido && p.dataConclusao ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-400 font-mono font-bold border border-amber-500/40">
-                                📅 {p.dataConclusao}
-                              </span>
+                            {p.concluido ? (
+                              <div className="flex items-center gap-1 shrink-0 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-lg" title="Clique para alterar a data de aplicação da peça adicional">
+                                <span className="text-[10px] text-amber-400 font-bold select-none">📅</span>
+                                <input
+                                  type="date"
+                                  value={formatDateToInput(p.dataConclusao || selectedFolha.data)}
+                                  onChange={e => handleUpdatePartInSelected(p.id, 'dataConclusao', e.target.value, true)}
+                                  className="bg-transparent text-[11px] text-amber-300 font-mono font-bold focus:outline-none cursor-pointer p-0"
+                                  title="Alterar data de aplicação da peça adicional"
+                                />
+                              </div>
                             ) : <span />}
 
                             <div className="flex items-center gap-1">
