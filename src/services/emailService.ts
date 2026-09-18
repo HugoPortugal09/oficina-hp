@@ -1,6 +1,6 @@
 import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
-import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa } from '../types';
+import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente } from '../types';
 import { USERS } from '../types';
 import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc } from './pdfService';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
@@ -476,6 +476,7 @@ export function resolveEntregaFormacaoRecipients(
   }
   emailsSet.add(adminEmail);
   emailsSet.add('hugo@grau-maquinaria.com');
+  emailsSet.add('pinto@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
   return { recipients, quemFezEmail, adminEmail };
@@ -1096,7 +1097,7 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
     // 3. Resolve recipients
     let recipients = payload?.destinatarios && payload.destinatarios.length > 0
       ? payload.destinatarios
-      : ['hugo@grau-maquinaria.com'];
+      : ['hugo@grau-maquinaria.com', 'pinto@grau-maquinaria.com'];
 
     // Check config if other recipients exist in automations
     try {
@@ -1237,6 +1238,7 @@ export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): 
 
   emailsSet.add(adminEmail);
   emailsSet.add('hugo@grau-maquinaria.com');
+  emailsSet.add('pinto@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
 
@@ -1507,6 +1509,182 @@ export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): 
     message: apiDeliverySuccess
       ? `Email enviado com sucesso para: ${recipients.join(', ')}`
       : `Email registado para envio para: ${recipients.join(', ')}`
+  };
+}
+
+export interface VisitaEmailPayload {
+  visita: VisitaCliente;
+  empresa?: Empresa;
+  currentUser?: UserProfile;
+}
+
+/**
+ * Envia email com os dados da visita/agendamento para o utilizador que inseriu,
+ * hugo@grau-maquinaria.com e pinto@grau-maquinaria.com
+ */
+export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  const { visita, currentUser } = payload;
+  const emailsSet = new Set<string>();
+
+  if (currentUser?.email && currentUser.email.includes('@')) {
+    emailsSet.add(currentUser.email.trim().toLowerCase());
+  }
+
+  let adminEmail = 'hugo@grau-maquinaria.com';
+  try {
+    const config = db.getConfig();
+    if (config.emailDestinatarioPlaneamento && config.emailDestinatarioPlaneamento.includes('@')) {
+      adminEmail = config.emailDestinatarioPlaneamento.trim().toLowerCase();
+    }
+  } catch {}
+
+  emailsSet.add(adminEmail);
+  emailsSet.add('hugo@grau-maquinaria.com');
+  emailsSet.add('pinto@grau-maquinaria.com');
+
+  const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
+  const dataFormatada = formatDate(visita.data);
+  const subject = `[Oficina HP] Agendamento de Visita: ${visita.nomeEmpresa} - ${dataFormatada} às ${visita.hora}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Agendamento de Visita - ${visita.nomeEmpresa}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b; line-height: 1.5;">
+  <div style="max-width: 650px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    
+    <!-- Header -->
+    <div style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #059669; margin-bottom: 4px;">
+        GRAUMP &bull; OFICINA HP &bull; PLANEAMENTO DE VISITAS
+      </div>
+      <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">
+        Novo Agendamento de Visita ao Cliente
+      </h1>
+      <div style="font-size: 13px; color: #64748b;">
+        Registo: <strong style="color: #0f172a; font-family: monospace;">${visita.numero}</strong> &bull; Estado: <span style="background-color: #dcfce7; color: #166534; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${visita.status}</span>
+      </div>
+    </div>
+
+    <!-- Conteudo Principal -->
+    <div style="padding: 20px 28px;">
+      
+      <!-- Dados Principais da Visita -->
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+        <tr>
+          <td style="padding: 8px 0; width: 38%; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Empresa / Cliente:</td>
+          <td style="padding: 8px 0; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9; font-size: 14px;">${visita.nomeEmpresa}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Data da Visita:</td>
+          <td style="padding: 8px 0; color: #0f172a; font-weight: 700; border-bottom: 1px solid #f1f5f9;">${dataFormatada}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Hora Prevista:</td>
+          <td style="padding: 8px 0; color: #0f172a; font-weight: 700; font-family: monospace; border-bottom: 1px solid #f1f5f9;">${visita.hora}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Técnico / Responsável:</td>
+          <td style="padding: 8px 0; color: #059669; font-weight: 700; border-bottom: 1px solid #f1f5f9;">${visita.tecnico}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Motivo da Visita:</td>
+          <td style="padding: 8px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #f1f5f9;">${visita.motivo}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Pessoa de Contacto:</td>
+          <td style="padding: 8px 0; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${visita.nomeContacto || '<span style="color: #94a3b8; font-style: italic;">Não especificado</span>'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Telefone:</td>
+          <td style="padding: 8px 0; color: #0f172a; font-family: monospace; border-bottom: 1px solid #f1f5f9;">${visita.telefone || '<span style="color: #94a3b8; font-style: italic;">Não especificado</span>'}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500; border-bottom: 1px solid #f1f5f9;">Morada / Local:</td>
+          <td style="padding: 8px 0; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${visita.morada || '<span style="color: #94a3b8; font-style: italic;">Não especificada</span>'}</td>
+        </tr>
+      </table>
+
+      <!-- Notas / Observacoes -->
+      <div style="margin-top: 16px; padding: 14px 18px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">
+          Notas / Observações
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #334155; white-space: pre-wrap;">${visita.notas || 'Sem notas adicionais registadas.'}</p>
+      </div>
+
+      <!-- Informacao de Registo -->
+      <div style="margin-top: 20px; font-size: 12px; color: #64748b; border-top: 1px dashed #cbd5e1; padding-top: 12px;">
+        Agendado por: <strong style="color: #334155;">${currentUser?.nome || visita.tecnico}</strong> ${currentUser?.email ? `(${currentUser.email})` : ''} &bull; Data de Registo: ${formatDate(visita.dataCriacao || new Date())}
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="padding: 16px 28px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center;">
+      <p style="margin: 0 0 4px 0;">Este é um email automático gerado pelo sistema de gestão Oficina HP.</p>
+      <p style="margin: 0;">GRAUMP &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+    </div>
+
+  </div>
+</body>
+</html>
+  `;
+
+  let apiDeliverySuccess = false;
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: recipients,
+        subject,
+        html: htmlContent
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.success) {
+      apiDeliverySuccess = true;
+      console.log(`[EmailService] ✅ Email de Agendamento de Visita enviado com sucesso para ${recipients.join(', ')}`);
+    } else {
+      console.warn('[EmailService] Resposta da API:', data);
+    }
+  } catch (apiErr) {
+    console.warn('[EmailService] Erro ao contactar /api/send-email:', apiErr);
+  }
+
+  // Log in local storage
+  try {
+    const emailLogEntry = {
+      id: db.generateId('eml'),
+      tipo: 'agendamento_visita',
+      visitaId: visita.id,
+      visitaNumero: visita.numero,
+      empresaNome: visita.nomeEmpresa,
+      dataVisita: visita.data,
+      tecnico: visita.tecnico,
+      destinatarios: recipients,
+      assunto: subject,
+      dataEnvio: new Date().toISOString(),
+      sucesso: apiDeliverySuccess
+    };
+    const logs = db.get<any>('oficina_hp_email_logs') || [];
+    db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+  } catch {}
+
+  return {
+    success: apiDeliverySuccess,
+    recipients,
+    message: apiDeliverySuccess
+      ? `Email enviado com sucesso para: ${recipients.join(', ')}`
+      : `Visita registada (não foi possível enviar email)`
   };
 }
 

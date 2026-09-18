@@ -980,7 +980,7 @@ export const Oficina: React.FC<OficinaProps> = ({
     const targetEmp = emp || empresas.find(e => e.id === fs.empresaId);
     const equip = equipamentos.find(e => e.id === fs.equipamentoId || (fs.matricula && e.matricula.toUpperCase() === fs.matricula.toUpperCase()));
     const userEmail = currentUser?.email || 'o seu email';
-    setSaveFeedback(`A enviar Folha de Serviço ${fs.numero} por email para hugo@grau-maquinaria.com e ${userEmail}...`);
+    setSaveFeedback(`A enviar Folha de Serviço ${fs.numero} por email para hugo@grau-maquinaria.com, pinto@grau-maquinaria.com e ${userEmail}...`);
     try {
       const res = await sendFolhaServicoEmail({
         folha: fs,
@@ -1519,7 +1519,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                       type="button"
                       onClick={() => handleSendFolhaEmail(fs, empresa)}
                       disabled={sendingEmailFolhaId === fs.id}
-                      title="Enviar Folha por Email (Para o seu email e hugo@grau-maquinaria.com)"
+                      title="Enviar Folha por Email (Para o seu email, hugo@grau-maquinaria.com e pinto@grau-maquinaria.com)"
                       className={`p-1.5 rounded-lg transition-colors ${
                         sendingEmailFolhaId === fs.id
                           ? 'text-sky-400 bg-sky-950/60 animate-pulse'
@@ -1628,7 +1628,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                             type="button"
                             onClick={() => handleSendFolhaEmail(fs, empresa)}
                             disabled={sendingEmailFolhaId === fs.id}
-                            title="Enviar Folha por Email (Para o seu email e hugo@grau-maquinaria.com)"
+                            title="Enviar Folha por Email (Para o seu email, hugo@grau-maquinaria.com e pinto@grau-maquinaria.com)"
                             className={`p-1.5 rounded-lg transition-colors ${
                               sendingEmailFolhaId === fs.id
                                 ? 'text-sky-400 bg-sky-950/60 animate-pulse'

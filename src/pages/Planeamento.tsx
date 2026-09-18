@@ -36,6 +36,7 @@ import type {
   VisitaCliente
 } from '../types';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { sendVisitaEmail } from '../services/emailService';
 import { formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
 
 interface PlaneamentoProps {
@@ -48,6 +49,7 @@ interface PlaneamentoProps {
   onDeleteVisita: (id: string) => void;
   onUpdateFolha: (folha: FolhaServico) => void;
   onSelectFolha?: (folha: FolhaServico) => void;
+  currentUser?: import('../types').UserProfile;
 }
 
 // Helpers for Week calculations (Monday to Sunday)
@@ -100,11 +102,13 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   onSaveVisita,
   onDeleteVisita,
   onUpdateFolha,
-  onSelectFolha
+  onSelectFolha,
+  currentUser
 }) => {
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   
   // Drag & drop state
   const [draggedItem, setDraggedItem] = useState<{ type: 'visita' | 'folha'; id: string } | null>(null);
@@ -401,6 +405,23 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
 
     onSaveVisita(savedVisita);
     setIsVisitaModalOpen(false);
+
+    // Envio automático de email com os dados inseridos para o utilizador, hugo@ e pinto@
+    sendVisitaEmail({
+      visita: savedVisita,
+      currentUser
+    })
+      .then(res => {
+        if (res.success) {
+          setFeedbackMessage(`Email da visita enviado com sucesso para: ${res.recipients.join(', ')}`);
+        } else {
+          setFeedbackMessage(`Visita guardada. Nota: ${res.message}`);
+        }
+        setTimeout(() => setFeedbackMessage(null), 8000);
+      })
+      .catch(err => {
+        console.warn('Erro ao enviar email de visita:', err);
+      });
   };
 
   // Open Schedule Modal for a Folha
@@ -537,6 +558,22 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Feedback Banner */}
+      {feedbackMessage && (
+        <div className="p-3 bg-emerald-950/80 border border-emerald-500/50 rounded-2xl text-xs text-emerald-200 flex items-center justify-between shadow-lg shadow-emerald-950/30 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-medium">{feedbackMessage}</span>
+          </div>
+          <button
+            onClick={() => setFeedbackMessage(null)}
+            className="p-1 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-900/50"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Main Content Grid: Left Drawer (Open Folhas) + Main Planner Board */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3.5 items-start">

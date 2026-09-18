@@ -596,6 +596,7 @@ export default function App() {
               onDeleteVisita={handleDeleteVisita}
               onUpdateFolha={handleUpdateFolhaDirect}
               onSelectFolha={handleSelectFolhaDirect}
+              currentUser={currentUser}
             />
           )}
 
