@@ -220,26 +220,85 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   };
 
   const handleSave = () => {
-    if (!editingEquip.matricula) {
-      alert('Por favor informe a matrícula ou identificador do equipamento.');
-      return;
+    try {
+      const cleanMatricula = (editingEquip.matricula || '').trim().toUpperCase();
+      if (!cleanMatricula) {
+        alert('Por favor informe a matrícula ou identificador do equipamento.');
+        return;
+      }
+
+      let targetEmpresaId = editingEquip.empresaId;
+      const cleanEmpresaName = (empresaQuery || '').trim();
+
+      // If no empresaId selected but company name was typed:
+      if (!targetEmpresaId && cleanEmpresaName) {
+        const matched = safeEmpresas.find(e => {
+          const eNome = (e?.nome || '').trim().toLowerCase();
+          const eNif = String(e?.nif || '').trim().toLowerCase();
+          const target = cleanEmpresaName.toLowerCase();
+          return (eNome && eNome === target) || (eNif && eNif === target);
+        });
+
+        if (matched) {
+          targetEmpresaId = matched.id;
+        } else {
+          const newEmp: Empresa = {
+            id: db.generateId('emp'),
+            nome: cleanEmpresaName,
+            moradaSede: '',
+            distanciaKmGRAUMP: 0,
+            estaleiros: []
+          };
+          db.insert(STORAGE_KEYS.EMPRESAS, newEmp);
+          targetEmpresaId = newEmp.id;
+        }
+      }
+
+      // If still no empresaId, associate with "Cliente Particular / Geral"
+      if (!targetEmpresaId) {
+        let particularEmp = safeEmpresas.find(e => {
+          const eNome = (e?.nome || '').toLowerCase();
+          return eNome.includes('particular') || eNome.includes('cliente geral');
+        });
+        if (!particularEmp) {
+          particularEmp = {
+            id: db.generateId('emp'),
+            nome: 'Cliente Particular / Geral',
+            moradaSede: '',
+            distanciaKmGRAUMP: 0,
+            estaleiros: []
+          };
+          db.insert(STORAGE_KEYS.EMPRESAS, particularEmp);
+        }
+        targetEmpresaId = particularEmp.id;
+      }
+
+      const equipToSave: Equipamento = {
+        ...(editingEquip as Equipamento),
+        matricula: cleanMatricula,
+        empresaId: targetEmpresaId
+      };
+
+      const currentList = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS) || [];
+      const existingIndex = currentList.findIndex(e => e.id === equipToSave.id);
+
+      if (existingIndex >= 0) {
+        db.update(STORAGE_KEYS.EQUIPAMENTOS, equipToSave.id, equipToSave);
+      } else {
+        db.insert(STORAGE_KEYS.EQUIPAMENTOS, equipToSave);
+      }
+
+      // Notify change
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.EQUIPAMENTOS } }));
+      }
+
+      setIsModalOpen(false);
+      alert(`Ficha do equipamento "${cleanMatricula}" gravada com sucesso!`);
+    } catch (err: any) {
+      console.error('[Erro ao gravar equipamento]', err);
+      alert('Ocorreu um erro ao gravar a ficha do equipamento: ' + (err?.message || err));
     }
-
-    if (!editingEquip.empresaId) {
-      alert('Por favor selecione a Empresa Proprietária.');
-      return;
-    }
-
-    const currentList = db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
-    const existingIndex = currentList.findIndex(e => e.id === editingEquip.id);
-
-    if (existingIndex >= 0) {
-      db.update(STORAGE_KEYS.EQUIPAMENTOS, editingEquip.id!, editingEquip);
-    } else {
-      db.insert(STORAGE_KEYS.EQUIPAMENTOS, editingEquip as Equipamento);
-    }
-
-    setIsModalOpen(false);
   };
 
   const handleDelete = (id: string) => {

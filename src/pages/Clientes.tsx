@@ -51,11 +51,13 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
   const [isEmpresaDropdownOpen, setIsEmpresaDropdownOpen] = useState(false);
   const empresaContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter companies matching the search input
-  const matchingEmpresas = empresas.filter(emp =>
-    emp.nome.toLowerCase().includes(empresaQuery.toLowerCase()) ||
-    (emp.nif && emp.nif.toLowerCase().includes(empresaQuery.toLowerCase()))
-  );
+  // Filter companies matching the search input safely
+  const matchingEmpresas = (empresas || []).filter(emp => {
+    const nome = (emp?.nome || '').toLowerCase();
+    const nif = String(emp?.nif || '').toLowerCase();
+    const q = (empresaQuery || '').toLowerCase();
+    return nome.includes(q) || nif.includes(q);
+  });
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -83,7 +85,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
 
   const handleEditCliente = (cli: Cliente) => {
     setEditingCliente(cli);
-    const associatedEmp = empresas.find(e => e.id === cli.empresaId);
+    const associatedEmp = (empresas || []).find(e => e.id === cli.empresaId);
     setEmpresaQuery(associatedEmp?.nome || '');
     setIsModalOpen(true);
   };
@@ -98,79 +100,92 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
   };
 
   const handleSave = () => {
-    const nomeLimpo = (editingCliente.nome || '').trim();
-    if (!nomeLimpo) {
-      alert('Por favor informe o nome do cliente / contacto.');
-      return;
-    }
+    try {
+      const nomeLimpo = (editingCliente.nome || '').trim();
+      if (!nomeLimpo) {
+        alert('Por favor informe o nome do cliente / contacto.');
+        return;
+      }
 
-    let targetEmpresaId = editingCliente.empresaId;
-    const cleanEmpresaName = empresaQuery.trim();
+      let targetEmpresaId = editingCliente.empresaId;
+      const cleanEmpresaName = (empresaQuery || '').trim();
 
-    // If no empresaId is selected, but user typed a company name:
-    if (!targetEmpresaId && cleanEmpresaName && cleanEmpresaName !== 'Cliente Particular / Sem Empresa') {
-      const matched = empresas.find(
-        e => e.nome.trim().toLowerCase() === cleanEmpresaName.toLowerCase() ||
-             (e.nif && e.nif.trim().toLowerCase() === cleanEmpresaName.toLowerCase())
-      );
+      // If no empresaId is selected, but user typed a company name:
+      if (!targetEmpresaId && cleanEmpresaName && cleanEmpresaName !== 'Cliente Particular / Sem Empresa') {
+        const matched = (empresas || []).find(e => {
+          const eNome = (e?.nome || '').trim().toLowerCase();
+          const eNif = String(e?.nif || '').trim().toLowerCase();
+          const target = cleanEmpresaName.toLowerCase();
+          return (eNome && eNome === target) || (eNif && eNif === target);
+        });
 
-      if (matched) {
-        targetEmpresaId = matched.id;
+        if (matched) {
+          targetEmpresaId = matched.id;
+        } else {
+          // Automatically create new Empresa with this name so user is NEVER blocked!
+          const newEmp: Empresa = {
+            id: db.generateId('emp'),
+            nome: cleanEmpresaName,
+            moradaSede: '',
+            distanciaKmGRAUMP: 0,
+            estaleiros: []
+          };
+          db.insert(STORAGE_KEYS.EMPRESAS, newEmp);
+          targetEmpresaId = newEmp.id;
+        }
+      }
+
+      // If still no empresaId and no company name was typed, associate with or create "Cliente Particular / Geral"
+      if (!targetEmpresaId) {
+        let particularEmp = (empresas || []).find(e => {
+          const eNome = (e?.nome || '').toLowerCase();
+          return eNome.includes('particular') || eNome.includes('cliente geral');
+        });
+        if (!particularEmp) {
+          particularEmp = {
+            id: db.generateId('emp'),
+            nome: 'Cliente Particular / Geral',
+            moradaSede: '',
+            distanciaKmGRAUMP: 0,
+            estaleiros: []
+          };
+          db.insert(STORAGE_KEYS.EMPRESAS, particularEmp);
+        }
+        targetEmpresaId = particularEmp.id;
+      }
+
+      const clientToSave: Cliente = {
+        id: editingCliente.id && !editingCliente.id.startsWith('cli_new') ? editingCliente.id : db.generateId('cli'),
+        nome: nomeLimpo,
+        telemovel: (editingCliente.telemovel || '').trim(),
+        email: (editingCliente.email || '').trim(),
+        cargo: (editingCliente.cargo || '').trim() || 'Responsável',
+        empresaId: targetEmpresaId,
+        notas: (editingCliente.notas || '').trim()
+      };
+
+      const currentList = db.get<Cliente>(STORAGE_KEYS.CLIENTES) || [];
+      const existingIndex = currentList.findIndex(c => c.id === clientToSave.id);
+
+      if (existingIndex >= 0) {
+        db.update(STORAGE_KEYS.CLIENTES, clientToSave.id, clientToSave);
       } else {
-        // Automatically create new Empresa with this name so user is NEVER blocked!
-        const newEmp: Empresa = {
-          id: db.generateId('emp'),
-          nome: cleanEmpresaName,
-          moradaSede: '',
-          distanciaKmGRAUMP: 0,
-          estaleiros: []
-        };
-        db.insert(STORAGE_KEYS.EMPRESAS, newEmp);
-        targetEmpresaId = newEmp.id;
+        db.insert(STORAGE_KEYS.CLIENTES, clientToSave);
       }
-    }
 
-    // If still no empresaId and no company name was typed, associate with or create "Cliente Particular / Geral"
-    if (!targetEmpresaId) {
-      let particularEmp = empresas.find(e => 
-        e.nome.toLowerCase().includes('particular') || 
-        e.nome.toLowerCase().includes('cliente geral')
-      );
-      if (!particularEmp) {
-        particularEmp = {
-          id: db.generateId('emp'),
-          nome: 'Cliente Particular / Geral',
-          moradaSede: '',
-          distanciaKmGRAUMP: 0,
-          estaleiros: []
-        };
-        db.insert(STORAGE_KEYS.EMPRESAS, particularEmp);
+      // Explicitly notify change so UI updates immediately
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.CLIENTES } }));
       }
-      targetEmpresaId = particularEmp.id;
+
+      setIsModalOpen(false);
+      setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
+      setTimeout(() => setFeedbackMessage(null), 5000);
+      alert(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
+    } catch (err: any) {
+      console.error('[Erro ao gravar cliente]', err);
+      alert('Ocorreu um erro ao gravar a ficha: ' + (err?.message || err));
     }
-
-    const clientToSave: Cliente = {
-      id: editingCliente.id || db.generateId('cli'),
-      nome: nomeLimpo,
-      telemovel: (editingCliente.telemovel || '').trim(),
-      email: (editingCliente.email || '').trim(),
-      cargo: (editingCliente.cargo || '').trim() || 'Responsável',
-      empresaId: targetEmpresaId,
-      notas: editingCliente.notas || ''
-    };
-
-    const currentList = db.get<Cliente>(STORAGE_KEYS.CLIENTES);
-    const existingIndex = currentList.findIndex(c => c.id === clientToSave.id);
-
-    if (existingIndex >= 0) {
-      db.update(STORAGE_KEYS.CLIENTES, clientToSave.id, clientToSave);
-    } else {
-      db.insert(STORAGE_KEYS.CLIENTES, clientToSave);
-    }
-
-    setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
-    setTimeout(() => setFeedbackMessage(null), 4000);
-    setIsModalOpen(false);
   };
 
   const handleDelete = (id: string) => {
@@ -180,14 +195,14 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
     }
   };
 
-  const filteredClientes = clientes.filter(c => {
-    const emp = empresas.find(e => e.id === c.empresaId);
-    return (
-      c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.telemovel.includes(searchTerm) ||
-      (emp && emp.nome.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+  const filteredClientes = (clientes || []).filter(c => {
+    const emp = (empresas || []).find(e => e.id === c.empresaId);
+    const q = (searchTerm || '').toLowerCase();
+    const nome = (c?.nome || '').toLowerCase();
+    const email = (c?.email || '').toLowerCase();
+    const telemovel = String(c?.telemovel || '');
+    const empNome = (emp?.nome || '').toLowerCase();
+    return nome.includes(q) || email.includes(q) || telemovel.includes(q) || empNome.includes(q);
   });
 
   return (
@@ -251,8 +266,8 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredClientes.map(cli => {
-            const empresa = empresas.find(e => e.id === cli.empresaId);
-            const cleanPhone = cli.telemovel.replace(/\s+/g, '');
+            const empresa = (empresas || []).find(e => e.id === cli.empresaId);
+            const cleanPhone = (cli.telemovel || '').replace(/\s+/g, '');
 
             return (
               <GlassCard
@@ -264,11 +279,11 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-hp-500 flex items-center justify-center text-white font-bold text-sm shadow-md group-hover:scale-105 transition-transform">
-                        {cli.nome.charAt(0)}
+                        {(cli.nome || 'C').charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-white group-hover:text-hp-400 transition-colors">
-                          {cli.nome}
+                          {cli.nome || 'Sem Nome'}
                         </h4>
                         <span className="text-xs text-slate-400">{cli.cargo || 'Responsável'}</span>
                       </div>
@@ -344,8 +359,8 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {filteredClientes.map(cli => {
-                const empresa = empresas.find(e => e.id === cli.empresaId);
-                const cleanPhone = cli.telemovel.replace(/\s+/g, '');
+                const empresa = (empresas || []).find(e => e.id === cli.empresaId);
+                const cleanPhone = (cli.telemovel || '').replace(/\s+/g, '');
                 return (
                   <tr
                     key={cli.id}
@@ -354,9 +369,9 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                   >
                     <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
                       <div className="w-7 h-7 rounded-lg bg-hp-500/20 text-hp-400 flex items-center justify-center font-bold text-xs">
-                        {cli.nome.charAt(0)}
+                        {(cli.nome || 'C').charAt(0).toUpperCase()}
                       </div>
-                      {cli.nome}
+                      {cli.nome || 'Sem Nome'}
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-200">{empresa?.nome || 'Particular'}</td>
                     <td className="py-3 px-4 text-slate-400">{cli.cargo || 'Responsável'}</td>
@@ -399,7 +414,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
           subtitle="Associação à empresa parceira, dados de contacto e notas"
           maxWidth="md"
         >
-          <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="space-y-4">
+          <form noValidate onSubmit={e => { e.preventDefault(); handleSave(); }} className="space-y-4">
             <div>
               <label className="text-xs font-semibold text-slate-400 block mb-1">Nome Completo do Contacto / Cliente *</label>
               <input
@@ -505,7 +520,8 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
               <div>
                 <label className="text-xs font-semibold text-slate-400 block mb-1">Email</label>
                 <input
-                  type="email"
+                  type="text"
+                  inputMode="email"
                   value={editingCliente.email || ''}
                   onChange={e => setEditingCliente(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="Ex: a.silva@empresa.pt"
@@ -536,8 +552,9 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="glass-btn py-2 px-5 rounded-xl text-xs font-bold text-white shadow-lg shadow-hp-600/30 flex items-center gap-1.5"
+                  type="button"
+                  onClick={handleSave}
+                  className="glass-btn py-2.5 px-6 rounded-xl text-xs font-bold text-white shadow-lg shadow-hp-600/30 flex items-center gap-1.5 cursor-pointer hover:bg-hp-500 active:scale-95 transition-all"
                 >
                   <Check className="w-4 h-4" />
                   Guardar Ficha de Cliente
