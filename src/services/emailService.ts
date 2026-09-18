@@ -1,6 +1,6 @@
 import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
-import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente } from '../types';
+import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente, Cliente } from '../types';
 import { USERS } from '../types';
 import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc } from './pdfService';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
@@ -1978,4 +1978,244 @@ export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
       : `Visita registada (não foi possível enviar email)`
   };
 }
+
+export interface NovoContactoEmailPayload {
+  cliente: Cliente;
+  empresa?: Empresa;
+  currentUser?: UserProfile;
+  isEdit?: boolean;
+}
+
+/**
+ * Envia email com os dados do contacto/cliente para o utilizador que inseriu,
+ * hugo@grau-maquinaria.com e pinto@grau-maquinaria.com
+ */
+export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  const { cliente, empresa, currentUser, isEdit } = payload;
+  const emailsSet = new Set<string>();
+
+  if (currentUser?.email && currentUser.email.includes('@')) {
+    emailsSet.add(currentUser.email.trim().toLowerCase());
+  }
+
+  let adminEmail = 'hugo@grau-maquinaria.com';
+  try {
+    const config = db.getConfig();
+    if (config.emailDestinatarioPlaneamento && config.emailDestinatarioPlaneamento.includes('@')) {
+      adminEmail = config.emailDestinatarioPlaneamento.trim().toLowerCase();
+    }
+  } catch {}
+
+  emailsSet.add(adminEmail);
+  emailsSet.add('hugo@grau-maquinaria.com');
+  emailsSet.add('pinto@grau-maquinaria.com');
+
+  const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
+  const empresaNome = empresa?.nome || 'Cliente Particular / Sem Empresa';
+  const subject = isEdit
+    ? `[Oficina HP] Ficha de Contacto Atualizada: ${cliente.nome} (${empresaNome})`
+    : `[Oficina HP] Novo Contacto Registado: ${cliente.nome} (${empresaNome})`;
+
+  const nowStr = new Date().toLocaleDateString('pt-PT') + ' às ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const htmlContent = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>${isEdit ? 'Ficha de Contacto Atualizada' : 'Novo Contacto Registado'} - ${cliente.nome}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="620" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#059669" style="background-color: #059669; padding: 22px 28px; text-align: left;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <span style="display: inline-block; background-color: #047857; color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 9px; border-radius: 6px; margin-bottom: 8px;">
+                      ${isEdit ? 'FICHA DE CONTACTO ATUALIZADA' : 'NOVO CONTACTO / CLIENTE'}
+                    </span>
+                    <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">
+                      ${cliente.nome}
+                    </h1>
+                    <p style="margin: 4px 0 0 0; font-size: 13.5px; color: #d1fae5;">
+                      Empresa: <strong>${empresaNome}</strong>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content Body -->
+          <tr>
+            <td style="padding: 24px 28px;">
+
+              <!-- Status Banner -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ecfdf5" style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; margin-bottom: 20px;">
+                <tr>
+                  <td style="padding: 12px 16px;">
+                    <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td width="30" valign="middle" style="font-size: 20px; line-height: 1;">
+                          👤
+                        </td>
+                        <td valign="middle">
+                          <strong style="color: #065f46; font-size: 13.5px;">
+                            ${isEdit ? 'Dados de Contacto Atualizados' : 'Novo Contacto Registado com Sucesso'}
+                          </strong>
+                          <div style="font-size: 12px; color: #047857; margin-top: 2px;">
+                            Ficha registada no sistema de Gestão de Clientes & Contactos da Oficina HP.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Dados do Contacto -->
+              <h3 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.04em;">
+                Detalhes do Contacto
+              </h3>
+
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+                <tr bgcolor="#f8fafc">
+                  <td width="38%" style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Nome Completo</td>
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1;">${cliente.nome}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Empresa Parceira</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">
+                    <strong>${empresaNome}</strong>
+                    ${empresa?.nif ? `<br/><span style="color: #475569; font-size: 11.5px;">NIF: ${empresa.nif}</span>` : ''}
+                    ${empresa?.moradaSede ? `<br/><span style="color: #475569; font-size: 11.5px;">Sede: ${empresa.moradaSede}</span>` : ''}
+                  </td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Cargo / Função</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">${cliente.cargo || 'Responsável'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Telemóvel / Telefone</td>
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1;">
+                    ${cliente.telemovel ? `<a href="tel:${cliente.telemovel.replace(/\s+/g, '')}" style="color: #0284c7; text-decoration: none; font-weight: 700;">${cliente.telemovel}</a>` : '<span style="color: #94a3b8; font-style: italic;">Não especificado</span>'}
+                  </td>
+                </tr>
+                <tr bgcolor="#f8fafc">
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Email</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1;">
+                    ${cliente.email ? `<a href="mailto:${cliente.email.trim()}" style="color: #0284c7; text-decoration: none; font-weight: 700;">${cliente.email}</a>` : '<span style="color: #94a3b8; font-style: italic;">Não especificado</span>'}
+                  </td>
+                </tr>
+                ${cliente.notas ? `
+                <tr>
+                  <td style="padding: 9px 12px; color: #0f172a; font-weight: 700; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">Notas / Observações</td>
+                  <td style="padding: 9px 12px; color: #0f172a; border-bottom: 1px solid #cbd5e1; white-space: pre-line;">${cliente.notas}</td>
+                </tr>` : ''}
+              </table>
+
+              <!-- Informação de Registo -->
+              <div style="font-size: 12px; color: #0f172a; border-top: 1px solid #cbd5e1; padding-top: 12px;">
+                Registado por: <strong style="color: #0f172a;">${currentUser?.nome || 'Utilizador do Sistema'}</strong> ${currentUser?.email ? `(${currentUser.email})` : ''} &bull; Data: ${nowStr}
+              </div>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+              <p style="margin: 0; color: #475569;">GRAUMP &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+            </td>
+          </tr>
+
+        </table>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  let apiDeliverySuccess = false;
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: recipients,
+        subject,
+        html: htmlContent
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.success) {
+      apiDeliverySuccess = true;
+      console.log(`[EmailService] ✅ Email de Contacto enviado com sucesso para ${recipients.join(', ')}`);
+    } else {
+      console.warn('[EmailService] Resposta da API:', data);
+    }
+  } catch (apiErr) {
+    console.warn('[EmailService] Erro ao contactar /api/send-email:', apiErr);
+  }
+
+  // Log in local storage
+  try {
+    const emailLogEntry = {
+      id: db.generateId('eml'),
+      tipo: isEdit ? 'atualizacao_contacto' : 'novo_contacto',
+      clienteId: cliente.id,
+      clienteNome: cliente.nome,
+      empresaNome,
+      destinatarios: recipients,
+      assunto: subject,
+      dataEnvio: new Date().toISOString(),
+      sucesso: apiDeliverySuccess
+    };
+    const logs = db.get<any>('oficina_hp_email_logs') || [];
+    db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+  } catch {}
+
+  return {
+    success: apiDeliverySuccess,
+    recipients,
+    message: apiDeliverySuccess
+      ? `Email enviado com sucesso para: ${recipients.join(', ')}`
+      : `Contacto registado (não foi possível enviar email)`
+  };
+}
+
 

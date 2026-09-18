@@ -526,6 +526,7 @@ export default function App() {
             <Clientes
               clientes={clientes}
               empresas={empresas}
+              currentUser={currentUser}
             />
           )}
 

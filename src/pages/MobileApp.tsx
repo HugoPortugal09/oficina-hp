@@ -45,7 +45,8 @@ import {
   PackageCheck,
   GraduationCap,
   Handshake,
-  ShieldCheck
+  ShieldCheck,
+  Send
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -58,7 +59,7 @@ import {
   analyzeInternalNotesWithOllama,
   type AiFolhaGenerationResult
 } from '../services/ollamaService';
-import { sendTaskNotificationEmail, sendEntregaFormacaoEmail } from '../services/emailService';
+import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendNovoContactoEmail } from '../services/emailService';
 import { estimateDistanceKm, getGoogleMapsDirectionsUrl } from '../services/distanceService';
 import type {
   FolhaServico,
@@ -760,7 +761,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     };
 
     db.insert(STORAGE_KEYS.CLIENTES, created);
-    setSaveBanner(`Ficha de "${created.nome}" gravada com sucesso!`);
+
+    const targetEmpresa = empresas.find(e => e.id === created.empresaId);
+    sendNovoContactoEmail({
+      cliente: created,
+      empresa: targetEmpresa,
+      currentUser,
+      isEdit: false
+    })
+      .then(res => {
+        if (res.success) {
+          setSaveBanner(`Ficha de "${created.nome}" gravada e email enviado para: ${res.recipients.join(', ')}`);
+        } else {
+          setSaveBanner(`Ficha de "${created.nome}" gravada com sucesso!`);
+        }
+        setTimeout(() => setSaveBanner(null), 6000);
+      })
+      .catch(err => {
+        console.warn('[EmailService] Erro ao enviar email de novo contacto:', err);
+      });
+
+    setSaveBanner(`Ficha de "${created.nome}" gravada! A enviar notificação por email...`);
     setTimeout(() => setSaveBanner(null), 4000);
     setIsAddClienteOpen(false);
     setNewCliente({
@@ -5262,25 +5283,46 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         </div>
 
                         {/* Contact Action Buttons */}
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          {cli.telemovel && (
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                          {cli.telemovel ? (
                             <a
                               href={`tel:${cli.telemovel}`}
-                              className="py-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 border border-emerald-500/30 active:scale-95 transition-all"
+                              className="py-2.5 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-emerald-500/30 active:scale-95 transition-all truncate"
                             >
-                              <Phone className="w-4 h-4 text-emerald-400" />
-                              <span>{cli.telemovel}</span>
+                              <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span className="truncate">Ligar</span>
                             </a>
-                          )}
-                          {cli.email && (
+                          ) : <div />}
+
+                          {cli.email ? (
                             <a
                               href={`mailto:${cli.email}`}
-                              className="py-3 rounded-2xl bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 font-bold text-xs flex items-center justify-center gap-2 border border-hp-500/30 active:scale-95 transition-all truncate px-2"
+                              className="py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-700 active:scale-95 transition-all truncate px-1"
                             >
-                              <Mail className="w-4 h-4 text-hp-400 shrink-0" />
-                              <span className="truncate">Email</span>
+                              <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">Escrever</span>
                             </a>
-                          )}
+                          ) : <div />}
+
+                          <button
+                            onClick={() => {
+                              setSaveBanner(`A enviar dados de "${cli.nome}" por email...`);
+                              sendNovoContactoEmail({
+                                cliente: cli,
+                                empresa: associatedEmp,
+                                currentUser,
+                                isEdit: false
+                              }).then(res => {
+                                setSaveBanner(res.success ? `Email enviado para: ${res.recipients.join(', ')}` : `Nota: ${res.message}`);
+                                setTimeout(() => setSaveBanner(null), 6000);
+                              });
+                            }}
+                            title="Disparar email de dados do contacto para hugo@, pinto@ e utilizador"
+                            className="py-2.5 rounded-2xl bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-hp-500/30 active:scale-95 transition-all truncate px-1"
+                          >
+                            <Send className="w-3.5 h-3.5 text-hp-400 shrink-0" />
+                            <span className="truncate">Email</span>
+                          </button>
                         </div>
                       </div>
                     );

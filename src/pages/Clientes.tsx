@@ -18,14 +18,16 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import type { Cliente, Empresa } from '../types';
+import { sendNovoContactoEmail } from '../services/emailService';
+import type { Cliente, Empresa, UserProfile } from '../types';
 
 interface ClientesProps {
   clientes: Cliente[];
   empresas: Empresa[];
+  currentUser?: UserProfile;
 }
 
-export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
+export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
     try {
@@ -43,8 +45,34 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
   };
 
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [sendingEmailForId, setSendingEmailForId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Partial<Cliente>>({});
+
+  const handleSendContactEmail = async (cli: Cliente, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSendingEmailForId(cli.id);
+    const targetEmpresa = (empresas || []).find(emp => emp.id === cli.empresaId);
+    try {
+      const res = await sendNovoContactoEmail({
+        cliente: cli,
+        empresa: targetEmpresa,
+        currentUser,
+        isEdit: false
+      });
+      if (res.success) {
+        setFeedbackMessage(`Email dos dados de "${cli.nome}" enviado com sucesso para: ${res.recipients.join(', ')}`);
+      } else {
+        setFeedbackMessage(`Não foi possível enviar o email: ${res.message}`);
+      }
+      setTimeout(() => setFeedbackMessage(null), 8000);
+    } catch (err: any) {
+      setFeedbackMessage(`Erro ao enviar email: ${err?.message || err}`);
+      setTimeout(() => setFeedbackMessage(null), 6000);
+    } finally {
+      setSendingEmailForId(null);
+    }
+  };
 
   // Searchable Company Combobox in Modal
   const [empresaQuery, setEmpresaQuery] = useState('');
@@ -178,10 +206,31 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
         window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.CLIENTES } }));
       }
 
+      const targetEmpresa = (empresas || []).find(e => e.id === clientToSave.empresaId);
+      const isEdit = existingIndex >= 0;
+
+      // Disparo automático de email para o utilizador, hugo@grau-maquinaria.com e pinto@grau-maquinaria.com
+      sendNovoContactoEmail({
+        cliente: clientToSave,
+        empresa: targetEmpresa,
+        currentUser,
+        isEdit
+      })
+        .then(res => {
+          if (res.success) {
+            setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada e email enviado para: ${res.recipients.join(', ')}`);
+          } else {
+            setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
+          }
+          setTimeout(() => setFeedbackMessage(null), 8000);
+        })
+        .catch(err => {
+          console.warn('[EmailService] Erro ao enviar email de contacto:', err);
+        });
+
       setIsModalOpen(false);
-      setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
+      setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada! A enviar email de notificação...`);
       setTimeout(() => setFeedbackMessage(null), 5000);
-      alert(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
     } catch (err: any) {
       console.error('[Erro ao gravar cliente]', err);
       alert('Ocorreu um erro ao gravar a ficha: ' + (err?.message || err));
@@ -324,7 +373,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                 <div className="pt-3 border-t border-slate-800 flex items-center gap-2" onClick={e => e.stopPropagation()}>
                   <a
                     href={`tel:${cleanPhone}`}
-                    className="flex-1 py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
+                    className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-slate-700 transition-colors"
                   >
                     <Phone className="w-3.5 h-3.5 text-emerald-400" />
                     Ligar
@@ -334,11 +383,21 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                     href={`https://wa.me/351${cleanPhone}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 py-1.5 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border border-emerald-500/30 transition-colors"
+                    className="flex-1 py-1.5 px-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-emerald-500/30 transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                     WhatsApp
                   </a>
+
+                  <button
+                    onClick={e => handleSendContactEmail(cli, e)}
+                    disabled={sendingEmailForId === cli.id}
+                    title="Enviar dados do contacto por email (para hugo@grau-maquinaria.com, pinto@grau-maquinaria.com e para si)"
+                    className="py-1.5 px-2.5 bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-hp-500/30 transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-hp-400" />
+                    <span>{sendingEmailForId === cli.id ? 'A enviar...' : 'Email'}</span>
+                  </button>
                 </div>
               </GlassCard>
             );
@@ -395,6 +454,14 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
                         </a>
+                        <button
+                          onClick={e => handleSendContactEmail(cli, e)}
+                          disabled={sendingEmailForId === cli.id}
+                          title="Enviar dados do contacto por email para hugo@grau-maquinaria.com, pinto@grau-maquinaria.com e para si"
+                          className="p-1.5 bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-hp-400" />
+                        </button>
                       </div>
                     </td>
                   </tr>
