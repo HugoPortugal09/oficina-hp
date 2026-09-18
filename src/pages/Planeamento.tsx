@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Plus,
   Clock,
   MapPin,
@@ -223,6 +224,33 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     notas: ''
   });
 
+  // Searchable Empresa Combobox for Visita
+  const [visitaEmpresaQuery, setVisitaEmpresaQuery] = useState('');
+  const [isVisitaEmpresaDropdownOpen, setIsVisitaEmpresaDropdownOpen] = useState(false);
+  const visitaEmpresaContainerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (visitaEmpresaContainerRef.current && !visitaEmpresaContainerRef.current.contains(e.target as Node)) {
+        setIsVisitaEmpresaDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter matching empresas
+  const matchingVisitaEmpresas = useMemo(() => {
+    if (!visitaEmpresaQuery.trim()) return empresas;
+    const q = visitaEmpresaQuery.toLowerCase();
+    return empresas.filter(emp =>
+      emp.nome.toLowerCase().includes(q) ||
+      (emp.nif && emp.nif.toLowerCase().includes(q)) ||
+      (emp.moradaSede && emp.moradaSede.toLowerCase().includes(q))
+    );
+  }, [empresas, visitaEmpresaQuery]);
+
   // Week navigation
   const handlePrevWeek = () => setCurrentMonday(prev => addDays(prev, -7));
   const handleNextWeek = () => setCurrentMonday(prev => addDays(prev, 7));
@@ -264,13 +292,14 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     if (visita) {
       setEditingVisita(visita);
       setVisitaForm({ ...visita });
+      setVisitaEmpresaQuery(visita.nomeEmpresa || '');
     } else {
       setEditingVisita(null);
       setVisitaForm({
         data: formatDateISO(new Date()),
         hora: '09:30',
-        empresaId: empresas[0]?.id || '',
-        nomeEmpresa: empresas[0]?.nome || '',
+        empresaId: '',
+        nomeEmpresa: '',
         nomeContacto: '',
         telefone: '',
         morada: '',
@@ -279,38 +308,85 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
         status: 'Agendada',
         notas: ''
       });
+      setVisitaEmpresaQuery('');
     }
+    setIsVisitaEmpresaDropdownOpen(false);
     setIsVisitaModalOpen(true);
   };
 
-  // Handle Empresa change in Visita Form
-  const handleEmpresaChange = (empId: string) => {
-    const emp = empresas.find(e => e.id === empId);
-    if (!emp) return;
+  // Handle typing freely in Empresa input
+  const handleVisitaEmpresaInputChange = (val: string) => {
+    setVisitaEmpresaQuery(val);
+    setIsVisitaEmpresaDropdownOpen(true);
 
-    const contact = clientes.find(c => c.empresaId === empId);
+    const matchedEmp = empresas.find(e => e.nome.trim().toLowerCase() === val.trim().toLowerCase());
+    if (matchedEmp) {
+      const contact = clientes.find(c => c.empresaId === matchedEmp.id);
+      setVisitaForm(prev => ({
+        ...prev,
+        empresaId: matchedEmp.id,
+        nomeEmpresa: matchedEmp.nome,
+        nomeContacto: prev.nomeContacto || (contact ? contact.nome : ''),
+        telefone: prev.telefone || (contact ? contact.telemovel : (matchedEmp.telefone || '')),
+        morada: prev.morada || (matchedEmp.moradaSede || '')
+      }));
+    } else {
+      setVisitaForm(prev => ({
+        ...prev,
+        empresaId: '',
+        nomeEmpresa: val
+      }));
+    }
+  };
+
+  // Select Empresa from dropdown suggestions
+  const handleSelectVisitaEmpresa = (emp: Empresa) => {
+    const contact = clientes.find(c => c.empresaId === emp.id);
+    setVisitaEmpresaQuery(emp.nome);
     setVisitaForm(prev => ({
       ...prev,
       empresaId: emp.id,
       nomeEmpresa: emp.nome,
-      nomeContacto: contact ? contact.nome : '',
-      telefone: contact ? contact.telemovel : (emp.telefone || ''),
-      morada: emp.moradaSede || ''
+      nomeContacto: contact ? contact.nome : (prev.nomeContacto || ''),
+      telefone: contact ? contact.telemovel : (emp.telefone || prev.telefone || ''),
+      morada: emp.moradaSede || prev.morada || ''
     }));
+    setIsVisitaEmpresaDropdownOpen(false);
+  };
+
+  // Clear Empresa input
+  const handleClearVisitaEmpresa = () => {
+    setVisitaEmpresaQuery('');
+    setVisitaForm(prev => ({
+      ...prev,
+      empresaId: '',
+      nomeEmpresa: '',
+      nomeContacto: '',
+      telefone: '',
+      morada: ''
+    }));
+    setIsVisitaEmpresaDropdownOpen(false);
   };
 
   // Save Visita
   const handleSaveVisitaSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!visitaForm.nomeEmpresa || !visitaForm.data) return;
+    const cleanNomeEmpresa = (visitaEmpresaQuery || visitaForm.nomeEmpresa || '').trim();
+    if (!cleanNomeEmpresa || !visitaForm.data) return;
+
+    let targetEmpresaId = visitaForm.empresaId;
+    if (!targetEmpresaId) {
+      const matched = empresas.find(e => e.nome.trim().toLowerCase() === cleanNomeEmpresa.toLowerCase());
+      if (matched) targetEmpresaId = matched.id;
+    }
 
     const savedVisita: VisitaCliente = {
       id: editingVisita?.id || db.generateId('vis'),
       numero: editingVisita?.numero || db.generateSequenceNumber(STORAGE_KEYS.VISITAS, 'VIS'),
       data: visitaForm.data || formatDateISO(new Date()),
       hora: visitaForm.hora || '09:30',
-      empresaId: visitaForm.empresaId || '',
-      nomeEmpresa: visitaForm.nomeEmpresa || 'Empresa',
+      empresaId: targetEmpresaId || '',
+      nomeEmpresa: cleanNomeEmpresa,
       clienteId: visitaForm.clienteId,
       nomeContacto: visitaForm.nomeContacto,
       telefone: visitaForm.telefone,
@@ -850,21 +926,91 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
             </div>
 
             <form onSubmit={handleSaveVisitaSubmit} className="p-4 space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Empresa / Cliente *
-                </label>
-                <select
-                  value={visitaForm.empresaId || ''}
-                  onChange={e => handleEmpresaChange(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="">Selecione a Empresa...</option>
-                  {empresas.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.nome}</option>
-                  ))}
-                </select>
+              <div className="relative" ref={visitaEmpresaContainerRef}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-400">
+                    Empresa / Cliente *
+                  </label>
+                  {visitaEmpresaQuery && (
+                    <span className="text-[10px] text-emerald-400 font-medium">
+                      {matchingVisitaEmpresas.length} encontrada{matchingVisitaEmpresas.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Escreva para pesquisar ou introduzir cliente..."
+                    value={visitaEmpresaQuery}
+                    onChange={e => handleVisitaEmpresaInputChange(e.target.value)}
+                    onFocus={() => setIsVisitaEmpresaDropdownOpen(true)}
+                    className="w-full pl-3 pr-16 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 placeholder-slate-500 transition-colors"
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {visitaEmpresaQuery && (
+                      <button
+                        type="button"
+                        onClick={handleClearVisitaEmpresa}
+                        title="Limpar campo"
+                        className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsVisitaEmpresaDropdownOpen(prev => !prev)}
+                      title="Ver lista de empresas"
+                      className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isVisitaEmpresaDropdownOpen ? 'rotate-180 text-emerald-400' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {isVisitaEmpresaDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-slate-900 border border-slate-700/90 rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-100">
+                    {matchingVisitaEmpresas.length === 0 ? (
+                      <div className="p-3 text-center text-xs space-y-1">
+                        <p className="text-slate-300 font-semibold">"{visitaEmpresaQuery}"</p>
+                        <p className="text-[11px] text-emerald-400/90">Empresa não registada. Será gravada com este nome.</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-800/60">
+                        {matchingVisitaEmpresas.map(emp => {
+                          const isSelected = visitaForm.empresaId === emp.id || visitaEmpresaQuery.toLowerCase() === emp.nome.toLowerCase();
+                          return (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onClick={() => handleSelectVisitaEmpresa(emp)}
+                              className={`w-full text-left p-2.5 hover:bg-emerald-600/20 text-xs flex items-center justify-between group transition-colors ${
+                                isSelected ? 'bg-emerald-950/40 text-emerald-300' : 'text-white'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <div className="font-bold truncate group-hover:text-emerald-300 transition-colors">
+                                  {emp.nome}
+                                </div>
+                                {(emp.moradaSede || emp.telefone) && (
+                                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                                    {[emp.moradaSede, emp.telefone].filter(Boolean).join(' • ')}
+                                  </div>
+                                )}
+                              </div>
+                              {emp.nif && (
+                                <span className="text-[10px] text-slate-400 font-mono shrink-0 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
+                                  NIF: {emp.nif}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
