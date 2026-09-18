@@ -724,23 +724,43 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   const handleSaveNewCliente = () => {
-    if (!newCliente.nome || !newCliente.empresaId) {
-      alert('Por favor preencha o Nome do Cliente e selecione a Empresa.');
+    const nomeLimpo = (newCliente.nome || '').trim();
+    if (!nomeLimpo) {
+      alert('Por favor preencha o Nome do Contacto / Cliente.');
       return;
+    }
+
+    let targetEmpresaId = newCliente.empresaId;
+    if (!targetEmpresaId || targetEmpresaId === 'particular') {
+      let particularEmp = empresas.find(e => 
+        e.nome.toLowerCase().includes('particular') || 
+        e.nome.toLowerCase().includes('cliente geral')
+      );
+      if (!particularEmp) {
+        particularEmp = {
+          id: db.generateId('emp'),
+          nome: 'Cliente Particular / Geral',
+          moradaSede: '',
+          distanciaKmGRAUMP: 0,
+          estaleiros: []
+        };
+        db.insert(STORAGE_KEYS.EMPRESAS, particularEmp);
+      }
+      targetEmpresaId = particularEmp.id;
     }
 
     const created: Cliente = {
       id: db.generateId('cli'),
-      nome: newCliente.nome.trim(),
-      cargo: newCliente.cargo || 'Responsável',
-      empresaId: newCliente.empresaId,
-      telemovel: newCliente.telemovel || '',
-      email: newCliente.email || '',
+      nome: nomeLimpo,
+      cargo: newCliente.cargo?.trim() || 'Responsável',
+      empresaId: targetEmpresaId,
+      telemovel: (newCliente.telemovel || '').trim(),
+      email: (newCliente.email || '').trim(),
       notas: newCliente.notas || ''
     };
 
     db.insert(STORAGE_KEYS.CLIENTES, created);
-    setSaveBanner(`Contacto "${created.nome}" acrescentado com sucesso!`);
+    setSaveBanner(`Ficha de "${created.nome}" gravada com sucesso!`);
     setTimeout(() => setSaveBanner(null), 4000);
     setIsAddClienteOpen(false);
     setNewCliente({
@@ -5101,13 +5121,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Empresa Associada *</label>
+                          <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Empresa Associada</label>
                           <select
                             value={newCliente.empresaId || ''}
                             onChange={e => setNewCliente(prev => ({ ...prev, empresaId: e.target.value }))}
                             className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold"
                           >
-                            <option value="">-- Selecione a Empresa --</option>
+                            <option value="">-- Selecione ou Deixe em Particular --</option>
+                            <option value="particular">👤 Cliente Particular / Geral</option>
                             {empresas.map(emp => (
                               <option key={emp.id} value={emp.id}>{emp.nome}</option>
                             ))}

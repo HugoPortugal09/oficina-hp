@@ -42,6 +42,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
     } catch {}
   };
 
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Partial<Cliente>>({});
 
@@ -97,25 +98,78 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
   };
 
   const handleSave = () => {
-    if (!editingCliente.nome) {
+    const nomeLimpo = (editingCliente.nome || '').trim();
+    if (!nomeLimpo) {
       alert('Por favor informe o nome do cliente / contacto.');
       return;
     }
 
-    if (!editingCliente.empresaId) {
-      alert('Por favor selecione a Empresa Associada.');
-      return;
+    let targetEmpresaId = editingCliente.empresaId;
+    const cleanEmpresaName = empresaQuery.trim();
+
+    // If no empresaId is selected, but user typed a company name:
+    if (!targetEmpresaId && cleanEmpresaName && cleanEmpresaName !== 'Cliente Particular / Sem Empresa') {
+      const matched = empresas.find(
+        e => e.nome.trim().toLowerCase() === cleanEmpresaName.toLowerCase() ||
+             (e.nif && e.nif.trim().toLowerCase() === cleanEmpresaName.toLowerCase())
+      );
+
+      if (matched) {
+        targetEmpresaId = matched.id;
+      } else {
+        // Automatically create new Empresa with this name so user is NEVER blocked!
+        const newEmp: Empresa = {
+          id: db.generateId('emp'),
+          nome: cleanEmpresaName,
+          moradaSede: '',
+          distanciaKmGRAUMP: 0,
+          estaleiros: []
+        };
+        db.insert(STORAGE_KEYS.EMPRESAS, newEmp);
+        targetEmpresaId = newEmp.id;
+      }
     }
+
+    // If still no empresaId and no company name was typed, associate with or create "Cliente Particular / Geral"
+    if (!targetEmpresaId) {
+      let particularEmp = empresas.find(e => 
+        e.nome.toLowerCase().includes('particular') || 
+        e.nome.toLowerCase().includes('cliente geral')
+      );
+      if (!particularEmp) {
+        particularEmp = {
+          id: db.generateId('emp'),
+          nome: 'Cliente Particular / Geral',
+          moradaSede: '',
+          distanciaKmGRAUMP: 0,
+          estaleiros: []
+        };
+        db.insert(STORAGE_KEYS.EMPRESAS, particularEmp);
+      }
+      targetEmpresaId = particularEmp.id;
+    }
+
+    const clientToSave: Cliente = {
+      id: editingCliente.id || db.generateId('cli'),
+      nome: nomeLimpo,
+      telemovel: (editingCliente.telemovel || '').trim(),
+      email: (editingCliente.email || '').trim(),
+      cargo: (editingCliente.cargo || '').trim() || 'Responsável',
+      empresaId: targetEmpresaId,
+      notas: editingCliente.notas || ''
+    };
 
     const currentList = db.get<Cliente>(STORAGE_KEYS.CLIENTES);
-    const existingIndex = currentList.findIndex(c => c.id === editingCliente.id);
+    const existingIndex = currentList.findIndex(c => c.id === clientToSave.id);
 
     if (existingIndex >= 0) {
-      db.update(STORAGE_KEYS.CLIENTES, editingCliente.id!, editingCliente);
+      db.update(STORAGE_KEYS.CLIENTES, clientToSave.id, clientToSave);
     } else {
-      db.insert(STORAGE_KEYS.CLIENTES, editingCliente as Cliente);
+      db.insert(STORAGE_KEYS.CLIENTES, clientToSave);
     }
 
+    setFeedbackMessage(`Ficha de "${clientToSave.nome}" gravada com sucesso!`);
+    setTimeout(() => setFeedbackMessage(null), 4000);
     setIsModalOpen(false);
   };
 
@@ -138,6 +192,13 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
 
   return (
     <div className="space-y-3.5">
+      {feedbackMessage && (
+        <div className="p-3 bg-emerald-500/20 border border-emerald-500/50 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-lg shadow-emerald-950/40 animate-in fade-in duration-200">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{feedbackMessage}</span>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
@@ -334,31 +395,32 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={editingCliente.id?.startsWith('cli_new') ? 'Novo Contacto' : `Editar: ${editingCliente.nome}`}
-          subtitle="Associação a empresa parceira, telemóvel e email"
+          title={!editingCliente.nome || !clientes.some(c => c.id === editingCliente.id) ? 'Nova Ficha de Cliente' : `Ficha de Cliente: ${editingCliente.nome}`}
+          subtitle="Associação à empresa parceira, dados de contacto e notas"
           maxWidth="md"
         >
-          <div className="space-y-4">
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-slate-400 block mb-1">Nome Completo *</label>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">Nome Completo do Contacto / Cliente *</label>
               <input
                 type="text"
+                required
                 value={editingCliente.nome || ''}
                 onChange={e => setEditingCliente(prev => ({ ...prev, nome: e.target.value }))}
                 placeholder="Ex: Eng. António Silva"
-                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
               />
             </div>
 
             {/* Searchable Empresa Associada Combobox */}
             <div className="relative" ref={empresaContainerRef}>
               <label className="text-xs font-semibold text-slate-400 block mb-1">
-                Empresa Associada * <span className="text-[10px] text-hp-400">(Escreva para pesquisar)</span>
+                Empresa Associada <span className="text-[10px] text-hp-400">(Escreva para pesquisar ou criar nova)</span>
               </label>
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Escreva o nome ou NIF da empresa..."
+                  placeholder="Escreva o nome ou selecione da lista..."
                   value={empresaQuery}
                   onChange={e => {
                     setEmpresaQuery(e.target.value);
@@ -371,9 +433,35 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
               </div>
 
               {isEmpresaDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-56 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCliente(prev => ({ ...prev, empresaId: '' }));
+                      setEmpresaQuery('Cliente Particular / Sem Empresa');
+                      setIsEmpresaDropdownOpen(false);
+                    }}
+                    className="w-full text-left p-2.5 bg-slate-900/60 hover:bg-hp-600/20 border-b border-slate-800 text-xs flex items-center justify-between text-hp-300 font-semibold transition-colors"
+                  >
+                    <span>👤 Cliente Particular / Sem Empresa</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Geral</span>
+                  </button>
+
+                  {empresaQuery.trim() && !matchingEmpresas.some(e => e.nome.toLowerCase() === empresaQuery.trim().toLowerCase()) && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEmpresaDropdownOpen(false)}
+                      className="w-full text-left p-2.5 bg-hp-950/50 hover:bg-hp-600/30 border-b border-slate-800 text-xs text-hp-300 font-bold flex items-center gap-2 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-hp-400" />
+                      <span>Associar e criar nova: <strong>"{empresaQuery.trim()}"</strong></span>
+                    </button>
+                  )}
+
                   {matchingEmpresas.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-slate-500">Nenhuma empresa encontrada.</div>
+                    <div className="p-3 text-center text-xs text-slate-400">
+                      Nenhuma empresa encontrada com este nome. Ao guardar, a empresa <strong>"{empresaQuery.trim()}"</strong> será criada automaticamente!
+                    </div>
                   ) : (
                     matchingEmpresas.map(emp => (
                       <button
@@ -428,7 +516,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
 
             {/* Actions */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-              {editingCliente.id && (
+              {editingCliente.id && clientes.some(c => c.id === editingCliente.id) && (
                 <button
                   type="button"
                   onClick={() => handleDelete(editingCliente.id!)}
@@ -448,16 +536,15 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas }) => {
                   Cancelar
                 </button>
                 <button
-                  type="button"
-                  onClick={handleSave}
+                  type="submit"
                   className="glass-btn py-2 px-5 rounded-xl text-xs font-bold text-white shadow-lg shadow-hp-600/30 flex items-center gap-1.5"
                 >
                   <Check className="w-4 h-4" />
-                  Guardar Contacto
+                  Guardar Ficha de Cliente
                 </button>
               </div>
             </div>
-          </div>
+          </form>
         </Modal>
       )}
     </div>

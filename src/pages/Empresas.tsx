@@ -72,6 +72,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
     } catch {}
   };
 
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmpresa, setEditingEmpresa] = useState<Partial<Empresa>>({});
 
@@ -230,10 +231,13 @@ export const Empresas: React.FC<EmpresasProps> = ({
 
     if (existingIndex >= 0) {
       db.update(STORAGE_KEYS.EMPRESAS, editingEmpresa.id!, editingEmpresa);
+      setFeedbackMessage(`Empresa "${editingEmpresa.nome}" atualizada com sucesso!`);
     } else {
       db.insert(STORAGE_KEYS.EMPRESAS, editingEmpresa as Empresa);
+      setFeedbackMessage(`Empresa "${editingEmpresa.nome}" registada com sucesso!`);
     }
 
+    setTimeout(() => setFeedbackMessage(null), 4000);
     setIsModalOpen(false);
   };
 
@@ -252,6 +256,13 @@ export const Empresas: React.FC<EmpresasProps> = ({
 
   return (
     <div className="space-y-3.5">
+      {feedbackMessage && (
+        <div className="p-3 bg-emerald-500/20 border border-emerald-500/50 rounded-xl text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-lg shadow-emerald-950/40 animate-in fade-in duration-200">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{feedbackMessage}</span>
+        </div>
+      )}
+
       {/* Search & New Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
@@ -565,7 +576,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={`${editingEmpresa.id ? 'Editar' : 'Registar Nova'} Empresa`}
+          title={empresas.some(e => e.id === editingEmpresa.id) ? `Editar Empresa: ${editingEmpresa.nome || ''}` : 'Registar Nova Empresa'}
           subtitle="Dados gerais, moradas multilinhas da sede e estaleiros com cálculo exato de distâncias da GRAUMP"
           maxWidth="4xl"
         >
