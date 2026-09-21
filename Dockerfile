@@ -5,6 +5,6 @@ ENV NODE_ENV=production
 COPY package.json ./
 RUN npm install --omit=dev
 COPY dist ./dist
-COPY server.mjs ./
+COPY server*.mjs ./
 EXPOSE 80
 CMD ["node", "server.mjs"]

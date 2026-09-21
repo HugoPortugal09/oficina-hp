@@ -3,7 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
-import { startServerAutomationCron, runServerAutomations, getLisbonTime } from './server-automations.mjs';
+
+let cronModule = null;
+try {
+  cronModule = await import('./server-automations.mjs');
+} catch (cronErr) {
+  console.warn('[Server] ⚠️ server-automations.mjs não disponível ou erro ao carregar:', cronErr.message);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,17 +106,24 @@ const server = http.createServer(async (req, res) => {
 
   // Cron automation endpoints
   if (req.url === '/api/cron/check' || req.url === '/api/cron/run') {
-    const isForced = req.method === 'POST';
-    const cronResult = await runServerAutomations(sendEmail, isForced);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, cronResult }));
+    if (cronModule && typeof cronModule.runServerAutomations === 'function') {
+      const isForced = req.method === 'POST';
+      const cronResult = await cronModule.runServerAutomations(sendEmail, isForced);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, cronResult }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, message: 'Cron module não carregado' }));
+    }
     return;
   }
 
   if (req.url === '/api/cron/status') {
-    const lisbon = getLisbonTime();
+    const lisbon = (cronModule && typeof cronModule.getLisbonTime === 'function')
+      ? cronModule.getLisbonTime()
+      : { timeStr: new Date().toISOString() };
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'active', lisbon }));
+    res.end(JSON.stringify({ status: cronModule ? 'active' : 'idle', lisbon }));
     return;
   }
 
@@ -148,6 +161,8 @@ const server = http.createServer(async (req, res) => {
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`🚀 Oficina HP Server a correr na porta ${PORT}`);
-    startServerAutomationCron(sendEmail);
+    if (cronModule && typeof cronModule.startServerAutomationCron === 'function') {
+      cronModule.startServerAutomationCron(sendEmail);
+    }
   });
 }
