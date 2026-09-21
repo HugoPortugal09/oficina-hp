@@ -1274,6 +1274,21 @@ export function generateEntregaFormacaoPDF(
 
 export type TemposRespostaScope = 'OFICINA' | 'ASSISTENCIA_CONTRATOS' | 'TODOS';
 
+export interface TemposRespostaPDFConfig {
+  scope?: TemposRespostaScope;
+  filterTipos?: string[];
+  filterScopeLabel?: string;
+  searchTerm?: string;
+  customRows?: Array<{
+    folha: FolhaServico;
+    empresaNome: string;
+    isConcluido: boolean;
+    imobilizacao?: { days: number; text: string };
+    diasRequisicao?: { days: number; text: string };
+    isCritico: boolean;
+  }>;
+}
+
 /**
  * Generates official A3 Landscape PDF table for Tempos de Resposta & Imobilização
  * Strictly without averages banner in the PDF file as requested by the user.
@@ -1281,7 +1296,7 @@ export type TemposRespostaScope = 'OFICINA' | 'ASSISTENCIA_CONTRATOS' | 'TODOS';
 export function generateTemposRespostaPDF(
   folhas: FolhaServico[],
   empresas: Empresa[],
-  scope: TemposRespostaScope = 'TODOS'
+  scopeOrConfig: TemposRespostaScope | TemposRespostaPDFConfig = 'TODOS'
 ): jsPDF {
   // A3 Landscape: 420mm width x 297mm height
   const doc = new jsPDF({
@@ -1300,54 +1315,88 @@ export function generateTemposRespostaPDF(
     }
   };
 
-  // 1. Filter rows by scope
-  let filteredFolhas = folhas;
+  const isConfigObj = typeof scopeOrConfig === 'object';
+  const config = isConfigObj ? scopeOrConfig : {};
+  const scope: TemposRespostaScope = isConfigObj ? (config.scope || 'TODOS') : scopeOrConfig;
+
+  let processedRows: Array<{
+    folha: FolhaServico;
+    empresaNome: string;
+    isConcluido: boolean;
+    imobilizacao?: { days: number; text: string };
+    diasRequisicao?: { days: number; text: string };
+    isCritico: boolean;
+  }> = [];
+
   let docTitle = 'QUADRO GERAL DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO';
   let scopeSubtitle = 'Relatório global diário com toda a informação operacional (Oficina, Assistência e Contratos)';
   let scopeBadge = 'ÂMBITO: GERAL (COMPLETO)';
   let accentColor = [13, 148, 136]; // Teal
 
-  if (scope === 'OFICINA') {
-    filteredFolhas = folhas.filter(f => f.tipo === 'Oficina');
-    docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — OFICINA';
-    scopeSubtitle = 'Acompanhamento diário de viaturas na oficina, tempos de imobilização e intervenção';
-    scopeBadge = 'ÂMBITO: OFICINA';
-    accentColor = [234, 88, 12]; // Orange
-  } else if (scope === 'ASSISTENCIA_CONTRATOS') {
-    filteredFolhas = folhas.filter(f => f.tipo === 'Assistência Técnica' || f.tipo === 'Contrato');
-    docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — ASSISTÊNCIA TÉCNICA E CONTRATOS';
-    scopeSubtitle = 'Acompanhamento diário de intervenções no terreno, contratos de manutenção e pedidos de assistência';
-    scopeBadge = 'ÂMBITO: ASSISTÊNCIA & CONTRATOS';
-    accentColor = [2, 132, 199]; // Sky blue
+  if (isConfigObj && config.customRows) {
+    processedRows = config.customRows;
+    docTitle = 'MAPA OPERACIONAL DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO';
+    scopeSubtitle = 'Acompanhamento detalhado de imobilização em oficina, tempos de resposta e requisições';
+    accentColor = [2, 132, 199]; // Sky blue GRAUMP
+
+    const parts: string[] = [];
+    if (config.filterTipos && config.filterTipos.length > 0) {
+      parts.push(`TIPOS: ${config.filterTipos.join(' + ')}`);
+    } else {
+      parts.push('TODOS OS TIPOS');
+    }
+    if (config.filterScopeLabel) {
+      parts.push(`ÂMBITO: ${config.filterScopeLabel.toUpperCase()}`);
+    }
+    if (config.searchTerm) {
+      parts.push(`PESQUISA: "${config.searchTerm}"`);
+    }
+    scopeBadge = parts.join('  •  ');
+  } else {
+    // 1. Filter rows by scope
+    let filteredFolhas = folhas;
+    if (scope === 'OFICINA') {
+      filteredFolhas = folhas.filter(f => f.tipo === 'Oficina');
+      docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — OFICINA';
+      scopeSubtitle = 'Acompanhamento diário de viaturas na oficina, tempos de imobilização e intervenção';
+      scopeBadge = 'ÂMBITO: OFICINA';
+      accentColor = [234, 88, 12]; // Orange
+    } else if (scope === 'ASSISTENCIA_CONTRATOS') {
+      filteredFolhas = folhas.filter(f => f.tipo === 'Assistência Técnica' || f.tipo === 'Contrato');
+      docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — ASSISTÊNCIA TÉCNICA E CONTRATOS';
+      scopeSubtitle = 'Acompanhamento diário de intervenções no terreno, contratos de manutenção e pedidos de assistência';
+      scopeBadge = 'ÂMBITO: ASSISTÊNCIA & CONTRATOS';
+      accentColor = [2, 132, 199]; // Sky blue
+    }
+
+    // 2. Augment and sort rows
+    processedRows = filteredFolhas.map(f => {
+      const emp = empresas.find(e => e.id === f.empresaId);
+      const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
+
+      const startDateImobilizacao = f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined);
+      const imobilizacao = calculateDiffDays(startDateImobilizacao, f.dataConclusao);
+      const diasRequisicao = calculateDiffDays(f.dataRequisicao, f.dataConclusao);
+      const isCritico = !isConcluido && (((imobilizacao?.days || 0) >= 10) || ((diasRequisicao?.days || 0) >= 10));
+
+      return {
+        folha: f,
+        empresaNome: emp?.nome || 'Cliente / Não especificado',
+        isConcluido,
+        imobilizacao,
+        diasRequisicao,
+        isCritico
+      };
+    }).sort((a, b) => {
+      // Open/in progress first, then critical status, then imobilizacao days desc, then date desc
+      if (a.isConcluido !== b.isConcluido) return a.isConcluido ? 1 : -1;
+      if (a.isCritico !== b.isCritico) return a.isCritico ? -1 : 1;
+      const imobA = a.imobilizacao?.days || 0;
+      const imobB = b.imobilizacao?.days || 0;
+      if (imobB !== imobA) return imobB - imobA;
+      return new Date(b.folha.data).getTime() - new Date(a.folha.data).getTime();
+    });
   }
-
-  // 2. Augment and sort rows
-  const processedRows = filteredFolhas.map(f => {
-    const emp = empresas.find(e => e.id === f.empresaId);
-    const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
-
-    const startDateImobilizacao = f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined);
-    const imobilizacao = calculateDiffDays(startDateImobilizacao, f.dataConclusao);
-    const diasRequisicao = calculateDiffDays(f.dataRequisicao, f.dataConclusao);
-    const isCritico = !isConcluido && (((imobilizacao?.days || 0) >= 10) || ((diasRequisicao?.days || 0) >= 10));
-
-    return {
-      folha: f,
-      empresaNome: emp?.nome || 'Cliente / Não especificado',
-      isConcluido,
-      imobilizacao,
-      diasRequisicao,
-      isCritico
-    };
-  }).sort((a, b) => {
-    // Open/in progress first, then critical status, then imobilizacao days desc, then date desc
-    if (a.isConcluido !== b.isConcluido) return a.isConcluido ? 1 : -1;
-    if (a.isCritico !== b.isCritico) return a.isCritico ? -1 : 1;
-    const imobA = a.imobilizacao?.days || 0;
-    const imobB = b.imobilizacao?.days || 0;
-    if (imobB !== imobA) return imobB - imobA;
-    return new Date(b.folha.data).getTime() - new Date(a.folha.data).getTime();
-  });
 
   // 3. TOP ACCENT BAR (Width 420mm)
   doc.setFillColor(30, 41, 59); // Slate 800
@@ -1381,7 +1430,7 @@ export function generateTemposRespostaPDF(
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-  doc.text(`${scopeBadge}  •  DATA DE EMISSÃO: ${dataEmissao}  •  TOTAL DE REGISTOS: ${processedRows.length}`, 406, 30, { align: 'right' });
+  doc.text(`${scopeBadge}  •  TOTAL DE REGISTOS: ${processedRows.length}  •  DATA DE EMISSÃO: ${dataEmissao}`, 406, 30, { align: 'right' });
 
   // 6. TABLE GENERATION (A3 Width ~ 392mm table)
   const tableRows = processedRows.map(r => {

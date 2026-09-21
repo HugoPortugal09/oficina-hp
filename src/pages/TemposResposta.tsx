@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Clock,
   AlertTriangle,
@@ -19,14 +19,29 @@ import {
   Mail,
   FileText,
   Send,
-  Sparkles
+  Sparkles,
+  Check,
+  Printer,
+  Loader2,
+  X,
+  ChevronDown
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
-import { formatDate, calculateDiffDays } from '../utils/dateUtils';
+import { formatDate, calculateDiffDays, getTodayFormatted } from '../utils/dateUtils';
 import { generateTemposRespostaPDF } from '../services/pdfService';
 import { sendDailyTemposRespostaEmail } from '../services/emailService';
-import type { FolhaServico, Empresa, Equipamento } from '../types';
+import { getTipoStyles } from '../utils/statusColors';
+import type { FolhaServico, Empresa, Equipamento, TipoServico } from '../types';
+
+export const ALL_TIPOS: TipoServico[] = [
+  'Oficina',
+  'Validação e Preparação',
+  'Assistência Técnica',
+  'Garantia',
+  'Entrega e Formação',
+  'Contrato'
+];
 
 interface TemposRespostaProps {
   folhas: FolhaServico[];
@@ -42,12 +57,47 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
   onSelectFolha
 }) => {
   const [filterScope, setFilterScope] = useState<'abertas' | 'todos' | 'oficina' | 'criticas'>('abertas');
-  const [filterTipo, setFilterTipo] = useState<string>('TODOS');
+  const [filterTipos, setFilterTipos] = useState<string[]>([]);
+  const [isTipoDropdownOpen, setIsTipoDropdownOpen] = useState(false);
+  const tipoDropdownRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [sortBy, setSortBy] = useState<'imobilizacao' | 'requisicao' | 'numero' | 'data'>('imobilizacao');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailFeedback, setEmailFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [isGeneratingA3Pdf, setIsGeneratingA3Pdf] = useState(false);
+  const [printFeedback, setPrintFeedback] = useState<string | null>(null);
+
+  // Close tipo dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (tipoDropdownRef.current && !tipoDropdownRef.current.contains(e.target as Node)) {
+        setIsTipoDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleToggleTipo = (tipo: string) => {
+    setFilterTipos(prev => {
+      if (prev.includes(tipo)) {
+        return prev.filter(t => t !== tipo);
+      } else {
+        return [...prev, tipo];
+      }
+    });
+  };
+
+  const tipoCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    folhas.forEach(f => {
+      if (f.tipo) {
+        counts[f.tipo] = (counts[f.tipo] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [folhas]);
 
   // Process and augment rows
   const processedRows = useMemo(() => {
@@ -87,8 +137,8 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
       if (filterScope === 'oficina' && !row.isOficina) return false;
       if (filterScope === 'criticas' && !row.isCritico) return false;
 
-      // Filter tipo
-      if (filterTipo !== 'TODOS' && row.folha.tipo !== filterTipo) return false;
+      // Filter tipo (multi-selection)
+      if (filterTipos.length > 0 && !filterTipos.includes(row.folha.tipo)) return false;
 
       // Search term
       if (searchTerm.trim()) {
@@ -122,7 +172,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
 
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     });
-  }, [processedRows, filterScope, filterTipo, searchTerm, sortBy, sortOrder]);
+  }, [processedRows, filterScope, filterTipos, searchTerm, sortBy, sortOrder]);
 
   // Overall Statistics / Metrics
   const stats = useMemo(() => {
@@ -186,6 +236,54 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
     }
   };
 
+  // Print currently filtered map in A3 Landscape
+  const handlePrintA3 = () => {
+    if (isGeneratingA3Pdf) return;
+    setIsGeneratingA3Pdf(true);
+    setPrintFeedback('A preparar mapa de tempos de resposta em formato A3 horizontal...');
+
+    try {
+      if (filteredRows.length === 0) {
+        setPrintFeedback('⚠️ Nenhum registo encontrado com os filtros selecionados.');
+        setTimeout(() => setPrintFeedback(null), 4000);
+        setIsGeneratingA3Pdf(false);
+        return;
+      }
+
+      let scopeLabel = 'Todos os Registos';
+      if (filterScope === 'abertas') scopeLabel = 'Apenas Abertos';
+      else if (filterScope === 'oficina') scopeLabel = 'Oficina';
+      else if (filterScope === 'criticas') scopeLabel = 'Críticos (≥ 10 dias)';
+
+      const doc = generateTemposRespostaPDF(folhas, empresas, {
+        filterTipos,
+        filterScopeLabel: scopeLabel,
+        searchTerm: searchTerm.trim() || undefined,
+        customRows: filteredRows
+      });
+
+      const todayStr = getTodayFormatted().replace(/\//g, '-');
+      const filename = `Tempos_Resposta_A3_${todayStr}.pdf`;
+      doc.save(filename);
+
+      try {
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        const win = window.open(url, '_blank');
+        if (win) win.focus();
+      } catch (e) {}
+
+      setPrintFeedback(`✅ Mapa A3 gerado com sucesso! (${filteredRows.length} registos)`);
+      setTimeout(() => setPrintFeedback(null), 4000);
+    } catch (err: any) {
+      console.error('[TemposResposta] Erro ao gerar PDF A3:', err);
+      setPrintFeedback(`❌ Erro ao gerar PDF A3: ${err?.message || err}`);
+      setTimeout(() => setPrintFeedback(null), 5000);
+    } finally {
+      setIsGeneratingA3Pdf(false);
+    }
+  };
+
   // Export to CSV
   const handleExportCSV = () => {
     const headers = [
@@ -245,6 +343,30 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Print A3 Map Button */}
+          <button
+            onClick={handlePrintA3}
+            disabled={isGeneratingA3Pdf}
+            title="Imprimir mapa de tempos de resposta em Folha A3 na horizontal (respeitando os filtros ativos)"
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 border ${
+              isGeneratingA3Pdf
+                ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-emerald-400/30 shadow-emerald-950/40'
+            }`}
+          >
+            {isGeneratingA3Pdf ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-200" />
+                <span>A Preparar A3...</span>
+              </>
+            ) : (
+              <>
+                <Printer className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Imprimir A3</span>
+              </>
+            )}
+          </button>
+
           {/* Email Dispatch Button */}
           <button
             onClick={handleTriggerEmail}
@@ -294,15 +416,36 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
         </div>
       </div>
 
-      {/* Feedback Banner if email sent */}
-      {emailFeedback && (
-        <div className={`p-3 rounded-2xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
-          emailFeedback.success
+      {/* Feedback Banner if email sent or print action */}
+      {(emailFeedback || printFeedback) && (
+        <div className={`p-3 rounded-2xl text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in ${
+          (printFeedback && !printFeedback.startsWith('❌') && !printFeedback.startsWith('⚠️')) || (emailFeedback && emailFeedback.success)
             ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+            : (printFeedback && printFeedback.startsWith('⚠️'))
+            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
             : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
         }`}>
-          {emailFeedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
-          <span>{emailFeedback.msg}</span>
+          <div className="flex items-center gap-2">
+            {printFeedback ? (
+              printFeedback.startsWith('❌') ? <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" /> :
+              printFeedback.startsWith('⚠️') ? <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" /> :
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : emailFeedback?.success ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{printFeedback || emailFeedback?.msg}</span>
+          </div>
+          {printFeedback && (
+            <button
+              type="button"
+              onClick={() => setPrintFeedback(null)}
+              className="text-xs hover:text-white font-bold px-1.5 cursor-pointer"
+            >
+              &times;
+            </button>
+          )}
         </div>
       )}
 
@@ -422,17 +565,162 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
             </button>
           </div>
 
-          {/* Filter by Tipo */}
-          <select
-            value={filterTipo}
-            onChange={e => setFilterTipo(e.target.value)}
-            className="py-1.5 px-2.5 bg-slate-950/80 border border-slate-700 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-hp-500"
-          >
-            <option value="TODOS">Todos os Tipos</option>
-            <option value="Oficina">Oficina</option>
-            <option value="Assistência Técnica">Assistência Técnica</option>
-            <option value="Contrato">Contrato</option>
-          </select>
+          {/* Multi-Select Type Filter */}
+          <div className="relative" ref={tipoDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsTipoDropdownOpen(prev => !prev)}
+              className={`py-1.5 px-3 rounded-xl text-xs flex items-center gap-2 border transition-all select-none cursor-pointer ${
+                filterTipos.length > 0
+                  ? 'bg-hp-500/15 border-hp-500/60 text-white shadow-sm shadow-hp-500/10'
+                  : 'bg-slate-950/80 border-slate-700/80 text-slate-300 hover:border-slate-600'
+              }`}
+              title="Filtrar por múltiplos Tipos de Serviço"
+            >
+              <Filter className={`w-3.5 h-3.5 ${filterTipos.length > 0 ? 'text-hp-400' : 'text-slate-400'}`} />
+
+              {filterTipos.length === 0 ? (
+                <span>Todos os Tipos</span>
+              ) : filterTipos.length === 1 ? (
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${getTipoStyles(filterTipos[0]).dot}`} />
+                  <span className="font-semibold text-white">{filterTipos[0]}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white truncate max-w-[140px]">
+                    {filterTipos.join(', ')}
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-hp-500 text-white text-[10px] font-black">
+                    {filterTipos.length}
+                  </span>
+                </div>
+              )}
+
+              {filterTipos.length > 0 && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setFilterTipos([]);
+                  }}
+                  className="p-0.5 rounded-md hover:bg-white/20 text-slate-400 hover:text-white transition-colors ml-0.5 cursor-pointer"
+                  title="Limpar seleção de tipos"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 ml-0.5 transition-transform duration-200 ${
+                  isTipoDropdownOpen ? 'rotate-180 text-hp-400' : ''
+                }`}
+              />
+            </button>
+
+            {/* Dropdown Popover */}
+            {isTipoDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1.5 z-50 w-72 bg-slate-950/95 border border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in fade-in zoom-in-95">
+                {/* Dropdown Header */}
+                <div className="p-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/70">
+                  <div className="flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-hp-400" />
+                    <span className="text-xs font-bold text-white">Tipo de Serviço</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {filterTipos.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setFilterTipos([])}
+                        className="text-[11px] font-semibold text-hp-400 hover:text-hp-300 transition-colors cursor-pointer"
+                      >
+                        Limpar ({filterTipos.length})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setFilterTipos([...ALL_TIPOS])}
+                        className="text-[11px] font-medium text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                      >
+                        Selecionar Todos
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dropdown Option List */}
+                <div className="p-1.5 space-y-0.5 max-h-64 overflow-y-auto">
+                  {ALL_TIPOS.map(tipo => {
+                    const isSelected = filterTipos.includes(tipo);
+                    const style = getTipoStyles(tipo);
+                    const count = tipoCounts[tipo] || 0;
+
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => handleToggleTipo(tipo)}
+                        className={`w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-hp-500/15 text-white border border-hp-500/30 font-semibold'
+                            : 'text-slate-300 hover:bg-slate-800/70 border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {/* Checkbox Box */}
+                          <div
+                            className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                              isSelected
+                                ? 'bg-hp-500 border-hp-500 text-white'
+                                : 'border-slate-600 bg-slate-900'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+
+                          {/* Color Dot & Name */}
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${style.dot}`} />
+                            <span className={isSelected ? 'text-white font-semibold' : 'text-slate-200'}>
+                              {tipo}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Count Badge */}
+                        <span
+                          className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${
+                            isSelected
+                              ? 'bg-hp-500/30 text-hp-200 font-bold'
+                              : 'bg-slate-800/80 text-slate-400'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Dropdown Footer */}
+                <div className="p-2 border-t border-slate-800/80 bg-slate-900/50 flex items-center justify-between text-[11px] text-slate-400 px-3">
+                  <span>
+                    {filterTipos.length === 0
+                      ? 'Todos os tipos visíveis'
+                      : `${filterTipos.length} de ${ALL_TIPOS.length} selecionados`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTipoDropdownOpen(false)}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold text-[10px] transition-colors cursor-pointer"
+                  >
+                    Concluir
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sort Controls */}
@@ -451,12 +739,63 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
           <button
             onClick={() => setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'))}
             title="Inverter Ordem"
-            className="p-1 rounded-lg bg-slate-950 border border-slate-700 text-slate-300 hover:text-white"
+            className="p-1 rounded-lg bg-slate-950 border border-slate-700 text-slate-300 hover:text-white cursor-pointer"
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
           </button>
+
+          <button
+            onClick={handlePrintA3}
+            disabled={isGeneratingA3Pdf}
+            title="Imprimir dados deste mapa em Folha A3 na horizontal"
+            className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ml-1"
+          >
+            {isGeneratingA3Pdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+            ) : (
+              <Printer className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+            <span>Imprimir A3</span>
+          </button>
         </div>
       </div>
+
+      {/* Active Multi-Type Filter Pills */}
+      {filterTipos.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-1 py-0.5 animate-in fade-in">
+          <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+            <Filter className="w-3 h-3 text-hp-400" />
+            Tipos Ativos:
+          </span>
+          {filterTipos.map(t => {
+            const style = getTipoStyles(t);
+            return (
+              <span
+                key={t}
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${style.badge}`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                {t}
+                <button
+                  type="button"
+                  onClick={() => handleToggleTipo(t)}
+                  className="ml-0.5 hover:text-white rounded-full p-0.5 hover:bg-white/10 transition-colors cursor-pointer"
+                  title={`Remover ${t}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setFilterTipos([])}
+            className="text-[11px] text-slate-400 hover:text-slate-200 underline ml-1 cursor-pointer"
+          >
+            Limpar todos
+          </button>
+        </div>
+      )}
 
       {/* Main Table Container */}
       <div className="bg-slate-950/80 border border-slate-800/90 rounded-2xl overflow-hidden shadow-xl">
