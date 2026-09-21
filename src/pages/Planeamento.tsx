@@ -30,6 +30,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import type {
   FolhaServico,
+  StatusFolhaServico,
   Empresa,
   Cliente,
   Equipamento,
@@ -197,10 +198,12 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     } else if (item.type === 'folha') {
       const f = folhas.find(fol => fol.id === item!.id);
       if (f) {
-        let newStatus = f.status;
-        if (f.tipo === 'Entrega e Formação') {
-          newStatus = (f.dataFormacao && f.dataFormacao.trim() !== '' && f.dataFormacao !== '-') ? 'Feito' : 'Agendado';
+        // Ao colocar a folha numa data no planeamento, passa automaticamente para estado "Agendado"
+        let newStatus: StatusFolhaServico = 'Agendado';
+        if (f.tipo === 'Entrega e Formação' && f.dataFormacao && f.dataFormacao.trim() !== '' && f.dataFormacao !== '-') {
+          newStatus = 'Feito';
         }
+
         onUpdateFolha({
           ...f,
           dataPlaneada: targetDayIso,
@@ -209,6 +212,9 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           status: newStatus,
           atualizadoEm: new Date().toISOString()
         });
+
+        setFeedbackMessage(`Folha ${f.numero} colocada em ${formatDate(targetDayIso)} com estado atualizado para "Agendado".`);
+        setTimeout(() => setFeedbackMessage(null), 4000);
       }
     }
   };
@@ -440,9 +446,10 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     e.preventDefault();
     if (!selectedFolhaToSchedule) return;
 
-    let newStatus = selectedFolhaToSchedule.status;
-    if (selectedFolhaToSchedule.tipo === 'Entrega e Formação') {
-      newStatus = (selectedFolhaToSchedule.dataFormacao && selectedFolhaToSchedule.dataFormacao.trim() !== '' && selectedFolhaToSchedule.dataFormacao !== '-') ? 'Feito' : 'Agendado';
+    // Ao colocar a folha numa data no planeamento, passa automaticamente para estado "Agendado"
+    let newStatus: StatusFolhaServico = 'Agendado';
+    if (selectedFolhaToSchedule.tipo === 'Entrega e Formação' && selectedFolhaToSchedule.dataFormacao && selectedFolhaToSchedule.dataFormacao.trim() !== '' && selectedFolhaToSchedule.dataFormacao !== '-') {
+      newStatus = 'Feito';
     }
 
     const updated: FolhaServico = {
@@ -457,6 +464,34 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     onUpdateFolha(updated);
     setIsScheduleFolhaModalOpen(false);
     setSelectedFolhaToSchedule(null);
+
+    setFeedbackMessage(`Folha ${selectedFolhaToSchedule.numero} agendada para ${formatDate(scheduleData.data)} com estado atualizado para "Agendado".`);
+    setTimeout(() => setFeedbackMessage(null), 4000);
+  };
+
+  // Remove / Desagendar Folha
+  const handleRemoveScheduleFolha = () => {
+    if (!selectedFolhaToSchedule) return;
+
+    let revertStatus: StatusFolhaServico = 'Aguardar agenda';
+    if (selectedFolhaToSchedule.tipo === 'Entrega e Formação') {
+      revertStatus = 'A Agendar';
+    }
+
+    const updated: FolhaServico = {
+      ...selectedFolhaToSchedule,
+      dataPlaneada: undefined,
+      horaPlaneada: undefined,
+      status: revertStatus,
+      atualizadoEm: new Date().toISOString()
+    };
+
+    onUpdateFolha(updated);
+    setIsScheduleFolhaModalOpen(false);
+    setSelectedFolhaToSchedule(null);
+
+    setFeedbackMessage(`Folha ${selectedFolhaToSchedule.numero} desmarcada do planeamento (estado revertido para "${revertStatus}").`);
+    setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
   // Filtered Visitas & Folhas for current week
@@ -1189,9 +1224,14 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
             </div>
 
             <form onSubmit={handleSaveScheduleFolha} className="p-4 space-y-3">
-              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5">
                 <div className="text-white font-bold">{selectedFolhaToSchedule.matricula} - {selectedFolhaToSchedule.marca} {selectedFolhaToSchedule.modelo}</div>
-                <div className="text-slate-400">Tipo: <span className="text-hp-300 font-semibold">{selectedFolhaToSchedule.tipo}</span></div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Tipo: <span className="text-hp-300 font-semibold">{selectedFolhaToSchedule.tipo}</span></span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                    Novo estado: Agendado
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1235,20 +1275,34 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
                 </select>
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsScheduleFolhaModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-hp-600 hover:bg-hp-500 text-white text-xs font-bold shadow-lg shadow-hp-600/30"
-                >
-                  Guardar Agendamento
-                </button>
+              <div className="pt-3 flex items-center justify-between gap-2 border-t border-slate-800">
+                {selectedFolhaToSchedule.dataPlaneada ? (
+                  <button
+                    type="button"
+                    onClick={handleRemoveScheduleFolha}
+                    className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold transition-colors flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Desagendar
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsScheduleFolhaModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-hp-600 hover:bg-hp-500 text-white text-xs font-bold shadow-lg shadow-hp-600/30"
+                  >
+                    Guardar Agendamento
+                  </button>
+                </div>
               </div>
             </form>
           </div>
