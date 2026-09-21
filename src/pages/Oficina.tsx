@@ -342,12 +342,18 @@ export const Oficina: React.FC<OficinaProps> = ({
     return true;
   });
 
-  // Matching plate suggestions
-  const matchingPlates = allowedEquipamentos.filter(eq =>
-    eq.matricula.toLowerCase().includes(plateQuery.toLowerCase()) ||
-    eq.marca.toLowerCase().includes(plateQuery.toLowerCase()) ||
-    eq.modelo.toLowerCase().includes(plateQuery.toLowerCase())
-  );
+  // Matching plate suggestions (com suporte a comparação flexível com ou sem traços/espaços)
+  const matchingPlates = allowedEquipamentos.filter(eq => {
+    const q = plateQuery.trim().toLowerCase();
+    if (!q) return true;
+    const qNorm = q.replace(/[^a-z0-9]/gi, '');
+    const eqPlate = (eq.matricula || '').toLowerCase();
+    const eqNorm = eqPlate.replace(/[^a-z0-9]/gi, '');
+    return eqPlate.includes(q) ||
+           (qNorm.length >= 2 && eqNorm.includes(qNorm)) ||
+           (eq.marca || '').toLowerCase().includes(q) ||
+           (eq.modelo || '').toLowerCase().includes(q);
+  });
 
   // Selected company object
   const selectedCompany = empresas.find(e => e.id === editingFolha.empresaId);
@@ -421,14 +427,56 @@ export const Oficina: React.FC<OficinaProps> = ({
     return counts;
   }, [folhas]);
 
+  /**
+   * Abre o modal de edição de folha resolvendo automaticamente dados do equipamento
+   * (mesmo que a folha seja importada ou não tenha equipamentoId associado originalmente)
+   */
+  const handleOpenFolhaModal = (fs: FolhaServico) => {
+    let resolvedEquipId = fs.equipamentoId;
+    let resolvedEmpresaId = fs.empresaId;
+    let resolvedMarca = fs.marca;
+    let resolvedModelo = fs.modelo;
+    let resolvedKms = fs.kmsAtuais;
+    let resolvedHoras = fs.horasAtuais;
+
+    if (fs.matricula) {
+      const cleanPlate = fs.matricula.trim().toUpperCase();
+      const normPlate = cleanPlate.replace(/[^A-Z0-9]/gi, '');
+      const match = equipamentos.find(
+        e => (fs.equipamentoId && e.id === fs.equipamentoId) ||
+             (e.matricula && e.matricula.trim().toUpperCase() === cleanPlate) ||
+             (e.matricula && normPlate && e.matricula.replace(/[^A-Z0-9]/gi, '') === normPlate)
+      );
+
+      if (match) {
+        resolvedEquipId = match.id;
+        if (!resolvedEmpresaId && match.empresaId) resolvedEmpresaId = match.empresaId;
+        if (!resolvedMarca && match.marca) resolvedMarca = match.marca;
+        if (!resolvedModelo && match.modelo) resolvedModelo = match.modelo;
+        if (!resolvedKms && match.kmsAtuais) resolvedKms = match.kmsAtuais;
+        if (!resolvedHoras && match.horasAtuais) resolvedHoras = match.horasAtuais;
+      }
+    }
+
+    setEditingFolha({
+      ...fs,
+      equipamentoId: resolvedEquipId,
+      empresaId: resolvedEmpresaId,
+      marca: resolvedMarca,
+      modelo: resolvedModelo,
+      kmsAtuais: resolvedKms,
+      horasAtuais: resolvedHoras
+    });
+    setPlateQuery(fs.matricula || '');
+    setAiNoteSuggestion(null);
+    setTaskCreatedFeedback(null);
+    setIsModalOpen(true);
+  };
+
   // Open modal if prop passed
   useEffect(() => {
     if (selectedFolhaToOpen) {
-      setEditingFolha(selectedFolhaToOpen);
-      setPlateQuery(selectedFolhaToOpen.matricula || '');
-      setAiNoteSuggestion(null);
-      setTaskCreatedFeedback(null);
-      setIsModalOpen(true);
+      handleOpenFolhaModal(selectedFolhaToOpen);
       if (onClearSelectedFolha) onClearSelectedFolha();
     }
   }, [selectedFolhaToOpen]);
@@ -695,13 +743,20 @@ export const Oficina: React.FC<OficinaProps> = ({
   // Process the result of the scanner directly into editingFolha
   const handleInlineScanComplete = (res: VisionScanResult) => {
     if (scannerContext === 'matricula' && res.matricula) {
+      const cleanPlate = res.matricula.trim().toUpperCase();
+      const normPlate = cleanPlate.replace(/[^A-Z0-9]/gi, '');
       const existing = allowedEquipamentos.find(
-        e => e.matricula.toUpperCase() === res.matricula?.toUpperCase()
+        e => (e.matricula || '').toUpperCase() === cleanPlate ||
+             (normPlate && (e.matricula || '').replace(/[^A-Z0-9]/gi, '') === normPlate)
       );
       if (existing) {
         handleSelectPlateItem(existing);
       } else {
-        alert(`Matrícula ${res.matricula} reconhecida, mas não está registada na frota do sistema.`);
+        setPlateQuery(cleanPlate);
+        setEditingFolha(prev => ({
+          ...prev,
+          matricula: cleanPlate
+        }));
       }
     } else if (scannerContext === 'odometro') {
       setEditingFolha(prev => ({
@@ -898,9 +953,42 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleSaveFolha = () => {
-    if (!editingFolha.matricula || !editingFolha.equipamentoId) {
-      alert('Por favor, selecione uma matrícula registada no sistema.');
+    const rawPlate = (editingFolha.matricula || plateQuery || '').trim().toUpperCase();
+    if (!rawPlate) {
+      alert('Por favor, introduza a matrícula da viatura ou equipamento.');
       return;
+    }
+
+    // Normalização da matrícula (sem traços nem espaços para pesquisa flexível)
+    const normPlate = rawPlate.replace(/[^A-Z0-9]/gi, '');
+    let targetEquip = equipamentos.find(
+      e => (editingFolha.equipamentoId && e.id === editingFolha.equipamentoId) ||
+           (e.matricula && e.matricula.trim().toUpperCase() === rawPlate) ||
+           (e.matricula && normPlate && e.matricula.replace(/[^A-Z0-9]/gi, '') === normPlate)
+    );
+
+    let resolvedEquipId = targetEquip?.id || editingFolha.equipamentoId;
+
+    // Se a viatura/máquina ainda não estiver na frota de equipamentos (muito comum em serviços importados do programa antigo),
+    // cria automaticamente o equipamento para que fique registado na frota com histórico e dados técnicos.
+    if (!targetEquip) {
+      resolvedEquipId = db.generateId('eq');
+      const newEquip: Equipamento = {
+        id: resolvedEquipId,
+        matricula: rawPlate,
+        marca: editingFolha.marca || 'Viatura',
+        modelo: editingFolha.modelo || 'Frota',
+        nSerie: editingFolha.nSerie || '',
+        empresaId: editingFolha.empresaId || '',
+        kmsAtuais: editingFolha.kmsAtuais || 0,
+        horasAtuais: editingFolha.horasAtuais || 0,
+        ano: new Date().getFullYear(),
+        tipo: 'Viatura',
+        estado: 'Operacional',
+        ativo: true
+      };
+      db.insert(STORAGE_KEYS.EQUIPAMENTOS, newEquip);
+      targetEquip = newEquip;
     }
 
     // Update history end for the active status to keep durations fresh
@@ -913,6 +1001,11 @@ export const Oficina: React.FC<OficinaProps> = ({
 
     const folhaToSave: FolhaServico = {
       ...editingFolha,
+      matricula: rawPlate,
+      equipamentoId: resolvedEquipId,
+      empresaId: editingFolha.empresaId || targetEquip.empresaId || '',
+      marca: editingFolha.marca || targetEquip.marca || '',
+      modelo: editingFolha.modelo || targetEquip.modelo || '',
       historicoEstados: history
     } as FolhaServico;
 
@@ -936,11 +1029,6 @@ export const Oficina: React.FC<OficinaProps> = ({
     }
 
     // Update equipment mileage / hours and delivery/training in fleet
-    const targetEquip = equipamentos.find(
-      e => (folhaToSave.equipamentoId && e.id === folhaToSave.equipamentoId) ||
-           (folhaToSave.matricula && e.matricula && e.matricula.trim().toUpperCase() === folhaToSave.matricula.trim().toUpperCase())
-    );
-
     if (targetEquip) {
       const equipUpdate: Partial<Equipamento> = {
         kmsAtuais: folhaToSave.kmsAtuais || targetEquip.kmsAtuais,
@@ -960,6 +1048,9 @@ export const Oficina: React.FC<OficinaProps> = ({
       }
       if (folhaToSave.nSerie && !targetEquip.nSerie) {
         equipUpdate.nSerie = folhaToSave.nSerie;
+      }
+      if (folhaToSave.empresaId && !targetEquip.empresaId) {
+        equipUpdate.empresaId = folhaToSave.empresaId;
       }
       db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, targetEquip.id, equipUpdate);
     }
@@ -1774,11 +1865,7 @@ export const Oficina: React.FC<OficinaProps> = ({
             return (
               <GlassCard
                 key={fs.id}
-                onClick={() => {
-                  setEditingFolha(fs);
-                  setPlateQuery(fs.matricula || '');
-                  setIsModalOpen(true);
-                }}
+                onClick={() => handleOpenFolhaModal(fs)}
                 className="flex flex-col justify-between space-y-4 hover:border-hp-500/50 cursor-pointer group"
               >
                 {/* Header */}
@@ -1898,11 +1985,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                     </button>
 
                     <button
-                      onClick={() => {
-                        setEditingFolha(fs);
-                        setPlateQuery(fs.matricula || '');
-                        setIsModalOpen(true);
-                      }}
+                      onClick={() => handleOpenFolhaModal(fs)}
                       title="Editar Folha"
                       className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
                     >
@@ -1939,11 +2022,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                   return (
                     <tr
                       key={fs.id}
-                      onClick={() => {
-                        setEditingFolha(fs);
-                        setPlateQuery(fs.matricula || '');
-                        setIsModalOpen(true);
-                      }}
+                      onClick={() => handleOpenFolhaModal(fs)}
                       className="hover:bg-slate-900/60 cursor-pointer transition-colors"
                     >
                       <td className={`py-3 px-4 font-mono font-bold ${getTipoStyles(fs.tipo).text}`}>{fs.numero}</td>
@@ -2007,11 +2086,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingFolha(fs);
-                              setPlateQuery(fs.matricula || '');
-                              setIsModalOpen(true);
-                            }}
+                            onClick={() => handleOpenFolhaModal(fs)}
                             title="Editar"
                             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
                           >
@@ -2236,7 +2311,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                 {/* Searchable Matrícula Input */}
                 <div className="relative" ref={plateContainerRef}>
                   <label className="text-xs text-slate-400 block mb-1">
-                    Matrícula <span className="text-[10px] text-hp-400">(Apenas viaturas registadas)</span>
+                    Matrícula <span className="text-[10px] text-hp-400">(Viatura / Equipamento)</span>
                   </label>
                   <div className="relative">
                     <input
@@ -2244,8 +2319,31 @@ export const Oficina: React.FC<OficinaProps> = ({
                       placeholder="Escreva a matrícula para pesquisar..."
                       value={plateQuery}
                       onChange={e => {
-                        setPlateQuery(e.target.value.toUpperCase());
+                        const val = e.target.value.toUpperCase();
+                        setPlateQuery(val);
                         setIsPlateDropdownOpen(true);
+                        setEditingFolha(prev => ({ ...prev, matricula: val }));
+
+                        const norm = val.replace(/[^A-Z0-9]/gi, '');
+                        const directMatch = allowedEquipamentos.find(
+                          eq => (eq.matricula || '').toUpperCase() === val || (norm.length >= 4 && (eq.matricula || '').replace(/[^A-Z0-9]/gi, '') === norm)
+                        );
+                        if (directMatch) {
+                          setEditingFolha(prev => ({
+                            ...prev,
+                            matricula: directMatch.matricula,
+                            equipamentoId: directMatch.id,
+                            empresaId: prev.empresaId || directMatch.empresaId,
+                            marca: directMatch.marca,
+                            modelo: directMatch.modelo
+                          }));
+                        }
+                      }}
+                      onBlur={() => {
+                        if (plateQuery) {
+                          const val = plateQuery.trim().toUpperCase();
+                          setEditingFolha(prev => ({ ...prev, matricula: val }));
+                        }
                       }}
                       onFocus={() => setIsPlateDropdownOpen(true)}
                       className="w-full py-2 px-3 bg-slate-900 border border-slate-700 focus:border-hp-500 rounded-xl text-xs text-white font-mono font-bold tracking-wider"
@@ -2256,7 +2354,29 @@ export const Oficina: React.FC<OficinaProps> = ({
                   {/* Dropdown with filtered plates */}
                   {isPlateDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
-                      {matchingPlates.length === 0 ? (
+                      {plateQuery.trim() && !matchingPlates.some(eq => (eq.matricula || '').toUpperCase() === plateQuery.trim().toUpperCase()) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = plateQuery.trim().toUpperCase();
+                            setEditingFolha(prev => ({
+                              ...prev,
+                              matricula: val
+                            }));
+                            setIsPlateDropdownOpen(false);
+                          }}
+                          className="w-full text-left p-2.5 hover:bg-hp-600/20 bg-slate-900 border-b border-slate-800 text-xs flex items-center justify-between group transition-colors text-hp-400 font-semibold"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-extrabold text-hp-300 bg-slate-950 px-2 py-0.5 rounded border border-hp-500/40 text-xs">
+                              {plateQuery.trim().toUpperCase()}
+                            </span>
+                            <span>Usar esta matrícula</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">Viatura</span>
+                        </button>
+                      )}
+                      {matchingPlates.length === 0 && !plateQuery.trim() ? (
                         <div className="p-3 text-center text-xs text-slate-500">
                           {editingFolha.tipo === 'Contrato'
                             ? 'Nenhuma viatura sob contrato ativo encontrada.'
@@ -2287,14 +2407,30 @@ export const Oficina: React.FC<OficinaProps> = ({
                   )}
                 </div>
 
-                {/* Auto-filled Brand / Model */}
+                {/* Brand / Model */}
                 <div>
-                  <label className="text-[11px] text-slate-400 block mb-1">Marca / Modelo (Preenchido Automaticamente)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] text-slate-400">Marca / Modelo</label>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {editingFolha.equipamentoId ? 'Identificado' : 'Manual / Auto'}
+                    </span>
+                  </div>
                   <input
                     type="text"
-                    readOnly
-                    value={`${editingFolha.marca || ''} ${editingFolha.modelo || ''}`.trim() || 'Selecione uma matrícula'}
-                    className="w-full py-1.5 px-3 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-slate-300 font-semibold"
+                    placeholder="Marca e Modelo da Viatura..."
+                    value={`${editingFolha.marca || ''} ${editingFolha.modelo || ''}`.trim()}
+                    onChange={e => {
+                      const val = e.target.value;
+                      const parts = val.split(' ');
+                      const marca = parts[0] || '';
+                      const modelo = parts.slice(1).join(' ') || '';
+                      setEditingFolha(prev => ({
+                        ...prev,
+                        marca,
+                        modelo
+                      }));
+                    }}
+                    className="w-full py-1.5 px-3 bg-slate-900/60 border border-slate-800 focus:border-slate-700 rounded-xl text-xs text-slate-200 font-semibold"
                   />
                 </div>
 
