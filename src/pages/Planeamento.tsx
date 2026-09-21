@@ -827,7 +827,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
                       {f.dataPlaneada && (
                         <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono pt-1 border-t border-slate-800/60">
                           <CalendarIcon className="w-3 h-3" />
-                          <span>Planeado: {f.dataPlaneada} {f.horaPlaneada ? `às ${f.horaPlaneada}` : ''}</span>
+                          <span>Planeado: {formatDate(f.dataPlaneada)} {f.horaPlaneada ? `às ${f.horaPlaneada}` : ''}</span>
                         </div>
                       )}
 

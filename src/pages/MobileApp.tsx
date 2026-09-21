@@ -430,7 +430,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     setIsSaving(true);
     const newNum = folhaData.numero || db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
-    const now = new Date().toISOString().split('T')[0];
+    const now = getTodayFormatted();
 
     const matchedEq = equipamentos.find(
       e => e.matricula.toUpperCase() === folhaData.matricula?.toUpperCase()
@@ -440,8 +440,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       id: folhaData.id || db.generateId('fs'),
       numero: newNum,
       tipo: folhaData.tipo || 'Oficina',
-      data: folhaData.data || now,
-      dataEntradaOficina: folhaData.dataEntradaOficina || now,
+      data: folhaData.data ? formatDate(folhaData.data) : now,
+      dataEntradaOficina: folhaData.dataEntradaOficina ? formatDate(folhaData.dataEntradaOficina) : now,
+      dataRequisicao: folhaData.dataRequisicao ? formatDate(folhaData.dataRequisicao) : undefined,
+      dataConclusao: folhaData.dataConclusao ? formatDate(folhaData.dataConclusao) : undefined,
+      dataEntrega: folhaData.dataEntrega ? formatDate(folhaData.dataEntrega) : undefined,
+      dataFormacao: folhaData.dataFormacao ? formatDate(folhaData.dataFormacao) : undefined,
+      dataPlaneada: folhaData.dataPlaneada ? formatDate(folhaData.dataPlaneada) : undefined,
       status: folhaData.status || 'OF - Com requisição - Aguardar agenda',
       empresaId: folhaData.empresaId || matchedEq?.empresaId || empresas[0]?.id || '',
       clienteId: folhaData.clienteId || clientes.find(c => c.empresaId === (folhaData.empresaId || matchedEq?.empresaId))?.id,
@@ -555,12 +560,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         horasAtuais: folhaToSave.horasAtuais || targetEq.horasAtuais
       };
       if (folhaToSave.tipo === 'Entrega e Formação' || folhaToSave.dataEntrega || folhaToSave.dataFormacao) {
-        if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') eqUpdate.dataEntrega = folhaToSave.dataEntrega;
+        if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') eqUpdate.dataEntrega = formatDate(folhaToSave.dataEntrega);
         if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') {
           folhaToSave.entregaPor = cleanPersonName(folhaToSave.entregaPor);
           eqUpdate.entregaPor = folhaToSave.entregaPor;
         }
-        if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') eqUpdate.dataFormacao = folhaToSave.dataFormacao;
+        if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') eqUpdate.dataFormacao = formatDate(folhaToSave.dataFormacao);
         if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') {
           folhaToSave.formacaoPor = cleanPersonName(folhaToSave.formacaoPor);
           eqUpdate.formacaoPor = folhaToSave.formacaoPor;
@@ -1109,9 +1114,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleRegisterEntregaSelected = () => {
     if (!selectedFolha) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayFormatted();
     const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
-    const newDate = selectedFolha.dataEntrega || today;
+    const newDate = selectedFolha.dataEntrega ? formatDate(selectedFolha.dataEntrega) : today;
     const newPerson = cleanPersonName(selectedFolha.entregaPor) || person;
     const updated = {
       ...selectedFolha,
@@ -1131,9 +1136,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleRegisterFormacaoSelected = () => {
     if (!selectedFolha) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayFormatted();
     const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
-    const newDate = selectedFolha.dataFormacao || today;
+    const newDate = selectedFolha.dataFormacao ? formatDate(selectedFolha.dataFormacao) : today;
     const newPerson = cleanPersonName(selectedFolha.formacaoPor) || person;
     const newStatus = selectedFolha.tipo === 'Entrega e Formação' ? 'Feito' : selectedFolha.status;
     const updated: FolhaServico = {
@@ -1155,11 +1160,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleDateEntregaSelectedChange = (val: string) => {
     if (!selectedFolha) return;
-    const updated = { ...selectedFolha, dataEntrega: val };
+    const formattedVal = val ? formatDate(val) : '';
+    const updated = { ...selectedFolha, dataEntrega: formattedVal };
     setSelectedFolha(updated);
-    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataEntrega: val });
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataEntrega: formattedVal });
     if (selectedFolha.equipamentoId) {
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataEntrega: val });
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataEntrega: formattedVal });
       setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     }
   };
@@ -1177,12 +1183,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleDateFormacaoSelectedChange = (val: string) => {
     if (!selectedFolha) return;
-    const newStatus = (selectedFolha.tipo === 'Entrega e Formação' && val && val.trim() !== '' && val !== '-') ? 'Feito' : selectedFolha.status;
-    const updated: FolhaServico = { ...selectedFolha, dataFormacao: val, status: newStatus };
+    const formattedVal = val ? formatDate(val) : '';
+    const newStatus = (selectedFolha.tipo === 'Entrega e Formação' && formattedVal && formattedVal.trim() !== '' && formattedVal !== '-') ? 'Feito' : selectedFolha.status;
+    const updated: FolhaServico = { ...selectedFolha, dataFormacao: formattedVal, status: newStatus };
     setSelectedFolha(updated);
-    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataFormacao: val, status: newStatus });
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { dataFormacao: formattedVal, status: newStatus });
     if (selectedFolha.equipamentoId) {
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataFormacao: val });
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, selectedFolha.equipamentoId, { dataFormacao: formattedVal });
       setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     }
   };
@@ -1199,21 +1206,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   const handleRegisterEntregaManual = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayFormatted();
     const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     setManualFolha(prev => ({
       ...prev,
-      dataEntrega: prev.dataEntrega || today,
+      dataEntrega: prev.dataEntrega ? formatDate(prev.dataEntrega) : today,
       entregaPor: cleanPersonName(prev.entregaPor) || person
     }));
   };
 
   const handleRegisterFormacaoManual = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayFormatted();
     const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
     setManualFolha(prev => ({
       ...prev,
-      dataFormacao: prev.dataFormacao || today,
+      dataFormacao: prev.dataFormacao ? formatDate(prev.dataFormacao) : today,
       formacaoPor: cleanPersonName(prev.formacaoPor) || person,
       status: prev.tipo === 'Entrega e Formação' ? 'Feito' : prev.status
     }));
@@ -2021,8 +2028,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={selectedFolha.dataEntrega || ''}
-                          onChange={e => handleDateEntregaSelectedChange(e.target.value)}
+                          value={formatDateToInput(selectedFolha.dataEntrega)}
+                          onChange={e => handleDateEntregaSelectedChange(formatDate(e.target.value))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
                         />
                       </div>
@@ -2070,8 +2077,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={selectedFolha.dataFormacao || ''}
-                          onChange={e => handleDateFormacaoSelectedChange(e.target.value)}
+                          value={formatDateToInput(selectedFolha.dataFormacao)}
+                          onChange={e => handleDateFormacaoSelectedChange(formatDate(e.target.value))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
                         />
                       </div>
@@ -3975,8 +3982,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={manualFolha.dataEntrega || ''}
-                          onChange={e => setManualFolha(prev => ({ ...prev, dataEntrega: e.target.value }))}
+                          value={formatDateToInput(manualFolha.dataEntrega)}
+                          onChange={e => setManualFolha(prev => ({ ...prev, dataEntrega: formatDate(e.target.value) }))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
                         />
                       </div>
@@ -4024,10 +4031,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={manualFolha.dataFormacao || ''}
+                          value={formatDateToInput(manualFolha.dataFormacao)}
                           onChange={e => setManualFolha(prev => ({
                             ...prev,
-                            dataFormacao: e.target.value,
+                            dataFormacao: formatDate(e.target.value),
                             status: (prev.tipo === 'Entrega e Formação' && e.target.value && e.target.value.trim() !== '' && e.target.value !== '-') ? 'Feito' : prev.status
                           }))}
                           className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-sky-500"
@@ -4699,8 +4706,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Data de Entrega</label>
                           <input
                             type="date"
-                            value={newEquipamento.dataEntrega || ''}
-                            onChange={e => setNewEquipamento(prev => ({ ...prev, dataEntrega: e.target.value }))}
+                            value={formatDateToInput(newEquipamento.dataEntrega)}
+                            onChange={e => setNewEquipamento(prev => ({ ...prev, dataEntrega: formatDate(e.target.value) }))}
                             className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs"
                           />
                         </div>
@@ -4708,8 +4715,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           <label className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Data de Formação</label>
                           <input
                             type="date"
-                            value={newEquipamento.dataFormacao || ''}
-                            onChange={e => setNewEquipamento(prev => ({ ...prev, dataFormacao: e.target.value }))}
+                            value={formatDateToInput(newEquipamento.dataFormacao)}
+                            onChange={e => setNewEquipamento(prev => ({ ...prev, dataFormacao: formatDate(e.target.value) }))}
                             className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs"
                           />
                         </div>
@@ -4817,7 +4824,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                         <div className="text-xs text-slate-400 flex items-center justify-between pt-1">
                           <span>Tipo: <b className="text-slate-200">{eq.tipo || 'Viatura'}</b></span>
                           {eq.dataEntrega && (
-                            <span className="text-[11px] font-mono">Entregue: {eq.dataEntrega}</span>
+                            <span className="text-[11px] font-mono">Entregue: {formatDate(eq.dataEntrega)}</span>
                           )}
                         </div>
                       </div>

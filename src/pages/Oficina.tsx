@@ -590,13 +590,13 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const handleEquipamentoFinalizadoChange = (finalizado: 'Sim' | 'Não') => {
     if (finalizado === 'Sim') {
-      const now = new Date().toISOString().split('T')[0];
+      const now = getTodayFormatted();
       setEditingFolha(prev => ({
         ...prev,
         equipamentoFinalizado: 'Sim',
         status: prev.tipo === 'Entrega e Formação' ? 'Feito' : 'Concluído',
         faturacao: prev.faturacao && prev.faturacao !== 'Pendente' ? prev.faturacao : 'Faturar',
-        dataConclusao: prev.dataConclusao || now
+        dataConclusao: prev.dataConclusao ? formatDate(prev.dataConclusao) : now
       }));
     } else {
       setEditingFolha(prev => ({
@@ -647,9 +647,9 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleRegisterEntrega = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayFormatted();
     const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
-    const newDate = editingFolha.dataEntrega || today;
+    const newDate = editingFolha.dataEntrega ? formatDate(editingFolha.dataEntrega) : today;
     const newPerson = cleanPersonName(editingFolha.entregaPor) || person;
     setEditingFolha(prev => ({
       ...prev,
@@ -665,9 +665,9 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleRegisterFormacao = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayFormatted();
     const person = cleanPersonName(currentUser?.nome) || 'Hugo Portugal';
-    const newDate = editingFolha.dataFormacao || today;
+    const newDate = editingFolha.dataFormacao ? formatDate(editingFolha.dataFormacao) : today;
     const newPerson = cleanPersonName(editingFolha.formacaoPor) || person;
     setEditingFolha(prev => ({
       ...prev,
@@ -684,9 +684,10 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleDateEntregaChange = (val: string) => {
-    setEditingFolha(prev => ({ ...prev, dataEntrega: val }));
+    const formattedVal = val ? formatDate(val) : '';
+    setEditingFolha(prev => ({ ...prev, dataEntrega: formattedVal }));
     if (editingFolha.equipamentoId) {
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataEntrega: val });
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataEntrega: formattedVal });
     }
   };
 
@@ -698,13 +699,14 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleDateFormacaoChange = (val: string) => {
+    const formattedVal = val ? formatDate(val) : '';
     setEditingFolha(prev => ({
       ...prev,
-      dataFormacao: val,
-      status: (prev.tipo === 'Entrega e Formação' && val && val.trim() !== '' && val !== '-') ? 'Feito' : prev.status
+      dataFormacao: formattedVal,
+      status: (prev.tipo === 'Entrega e Formação' && formattedVal && formattedVal.trim() !== '' && formattedVal !== '-') ? 'Feito' : prev.status
     }));
     if (editingFolha.equipamentoId) {
-      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataFormacao: val });
+      db.update<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS, editingFolha.equipamentoId, { dataFormacao: formattedVal });
     }
   };
 
@@ -881,7 +883,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       ...prev,
       status: newStatus,
       equipamentoFinalizado: isConcluido ? 'Sim' : prev.equipamentoFinalizado,
-      dataConclusao: isConcluido ? (prev.dataConclusao || now.split('T')[0]) : prev.dataConclusao,
+      dataConclusao: isConcluido ? (prev.dataConclusao ? formatDate(prev.dataConclusao) : getTodayFormatted()) : prev.dataConclusao,
       faturacao: (isConcluido && (!prev.faturacao || prev.faturacao === 'Pendente')) ? 'Faturar' : prev.faturacao,
       historicoEstados: history
     }));
@@ -1001,6 +1003,13 @@ export const Oficina: React.FC<OficinaProps> = ({
 
     const folhaToSave: FolhaServico = {
       ...editingFolha,
+      data: editingFolha.data ? formatDate(editingFolha.data) : getTodayFormatted(),
+      dataEntradaOficina: editingFolha.dataEntradaOficina ? formatDate(editingFolha.dataEntradaOficina) : editingFolha.dataEntradaOficina,
+      dataRequisicao: editingFolha.dataRequisicao ? formatDate(editingFolha.dataRequisicao) : editingFolha.dataRequisicao,
+      dataConclusao: editingFolha.dataConclusao ? formatDate(editingFolha.dataConclusao) : editingFolha.dataConclusao,
+      dataEntrega: editingFolha.dataEntrega ? formatDate(editingFolha.dataEntrega) : editingFolha.dataEntrega,
+      dataFormacao: editingFolha.dataFormacao ? formatDate(editingFolha.dataFormacao) : editingFolha.dataFormacao,
+      dataPlaneada: editingFolha.dataPlaneada ? formatDate(editingFolha.dataPlaneada) : editingFolha.dataPlaneada,
       matricula: rawPlate,
       equipamentoId: resolvedEquipId,
       empresaId: editingFolha.empresaId || targetEquip.empresaId || '',
@@ -1035,12 +1044,12 @@ export const Oficina: React.FC<OficinaProps> = ({
         horasAtuais: folhaToSave.horasAtuais || targetEquip.horasAtuais
       };
       if (folhaToSave.tipo === 'Entrega e Formação' || folhaToSave.dataEntrega || folhaToSave.dataFormacao) {
-        if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') equipUpdate.dataEntrega = folhaToSave.dataEntrega;
+        if (folhaToSave.dataEntrega !== undefined && folhaToSave.dataEntrega !== '') equipUpdate.dataEntrega = formatDate(folhaToSave.dataEntrega);
         if (folhaToSave.entregaPor !== undefined && folhaToSave.entregaPor !== '') {
           folhaToSave.entregaPor = cleanPersonName(folhaToSave.entregaPor);
           equipUpdate.entregaPor = folhaToSave.entregaPor;
         }
-        if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') equipUpdate.dataFormacao = folhaToSave.dataFormacao;
+        if (folhaToSave.dataFormacao !== undefined && folhaToSave.dataFormacao !== '') equipUpdate.dataFormacao = formatDate(folhaToSave.dataFormacao);
         if (folhaToSave.formacaoPor !== undefined && folhaToSave.formacaoPor !== '') {
           folhaToSave.formacaoPor = cleanPersonName(folhaToSave.formacaoPor);
           equipUpdate.formacaoPor = folhaToSave.formacaoPor;
@@ -3532,7 +3541,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
                   <div className="pt-2 border-t border-indigo-900/60 flex items-center justify-between gap-2">
                     <span className="text-[11px] text-slate-400">
-                      Responsável: <b className="text-white">{aiNoteSuggestion.tarefa.responsavel}</b> • Limite: <b className="text-slate-200">{aiNoteSuggestion.tarefa.dataLimite}</b>
+                      Responsável: <b className="text-white">{aiNoteSuggestion.tarefa.responsavel}</b> • Limite: <b className="text-slate-200">{formatDate(aiNoteSuggestion.tarefa.dataLimite)}</b>
                     </span>
 
                     <button

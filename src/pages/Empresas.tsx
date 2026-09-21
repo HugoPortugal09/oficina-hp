@@ -28,6 +28,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { formatDate } from '../utils/dateUtils';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type { Empresa, Estaleiro, Equipamento, Cliente, FolhaServico } from '../types';
 
@@ -1041,7 +1042,7 @@ export const Empresas: React.FC<EmpresasProps> = ({
                         <Badge variant={getStatusBadgeVariant(fs.status)}>
                           {getStatusLabel(fs.status)}
                         </Badge>
-                        <p className="text-[10px] text-slate-500 font-mono mt-1">{fs.data}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-1">{formatDate(fs.data)}</p>
                       </div>
                     </div>
                   ))

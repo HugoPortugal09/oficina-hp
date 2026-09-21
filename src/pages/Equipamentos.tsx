@@ -467,7 +467,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                               <PackageCheck className="w-3 h-3" /> Data Entrega:
                             </span>
                             <span className="font-mono font-bold">
-                              {eq.dataEntrega} {eq.entregaPor && <span className="text-[10px] text-emerald-400 font-sans font-normal">({eq.entregaPor})</span>}
+                              {formatDate(eq.dataEntrega)} {eq.entregaPor && <span className="text-[10px] text-emerald-400 font-sans font-normal">({eq.entregaPor})</span>}
                             </span>
                           </div>
                         )}
@@ -477,7 +477,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                               <GraduationCap className="w-3 h-3" /> Data Formação:
                             </span>
                             <span className="font-mono font-bold">
-                              {eq.dataFormacao} {eq.formacaoPor && <span className="text-[10px] text-sky-400 font-sans font-normal">({eq.formacaoPor})</span>}
+                              {formatDate(eq.dataFormacao)} {eq.formacaoPor && <span className="text-[10px] text-sky-400 font-sans font-normal">({eq.formacaoPor})</span>}
                             </span>
                           </div>
                         )}
@@ -509,7 +509,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                             className="text-xs p-1.5 rounded-lg bg-slate-950/40 border border-slate-800/60 flex items-center justify-between hover:border-hp-500/40 cursor-pointer"
                           >
                             <span className="font-mono text-hp-400 font-bold">{h.numero}</span>
-                            <span className="text-[10px] text-slate-400">{h.data}</span>
+                            <span className="text-[10px] text-slate-400">{formatDate(h.data)}</span>
                           </div>
                         ))}
                       </div>
@@ -585,8 +585,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                     <td className="py-3 px-4 font-mono text-amber-400 text-right">
                       {latestData.latestHoras} h
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-400">{eq.dataEntrega || '-'}</td>
-                    <td className="py-3 px-4 font-mono text-slate-400">{eq.dataFormacao || '-'}</td>
+                    <td className="py-3 px-4 font-mono text-slate-400">{formatDate(eq.dataEntrega)}</td>
+                    <td className="py-3 px-4 font-mono text-slate-400">{formatDate(eq.dataFormacao)}</td>
                     <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
                       <button
                         type="button"
