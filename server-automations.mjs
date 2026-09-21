@@ -106,6 +106,27 @@ async function setAppData(pb, key, data) {
 }
 
 /**
+ * Normalizes any date string (ISO YYYY-MM-DD or DD/MM/YYYY) to YYYY-MM-DD
+ */
+function normalizeToIso(d) {
+  if (!d) return '';
+  const str = String(d).trim();
+  if (!str) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const ymdMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (ymdMatch) {
+    const [, y, m, day] = ymdMatch;
+    return `${y}-${m.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmyMatch) {
+    const [, day, m, y] = dmyMatch;
+    return `${y}-${m.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  return str.slice(0, 10);
+}
+
+/**
  * Generates Weekly Planeamento PDF A4 Landscape in Node
  */
 function generateServerPlaneamentoPDF({ days, startDateStr, endDateStr, totalFolhas, totalVisitas }) {
@@ -326,13 +347,13 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
 
             // Filter items
             const weekIsoSet = new Set(weekDays.map(w => w.isoStr));
-            const weekFolhas = rawFolhas.filter(f => weekIsoSet.has((f.dataPlaneada || f.data || '').slice(0, 10)));
-            const weekVisitas = rawVisitas.filter(v => weekIsoSet.has((v.data || '').slice(0, 10)));
+            const weekFolhas = rawFolhas.filter(f => weekIsoSet.has(normalizeToIso(f.dataPlaneada || f.data)));
+            const weekVisitas = rawVisitas.filter(v => weekIsoSet.has(normalizeToIso(v.data)));
 
-            const hasSab = weekFolhas.some(f => (f.dataPlaneada || f.data || '').slice(0, 10) === weekDays[5].isoStr) ||
-                           weekVisitas.some(v => (v.data || '').slice(0, 10) === weekDays[5].isoStr);
-            const hasDom = weekFolhas.some(f => (f.dataPlaneada || f.data || '').slice(0, 10) === weekDays[6].isoStr) ||
-                           weekVisitas.some(v => (v.data || '').slice(0, 10) === weekDays[6].isoStr);
+            const hasSab = weekFolhas.some(f => normalizeToIso(f.dataPlaneada || f.data) === weekDays[5].isoStr) ||
+                           weekVisitas.some(v => normalizeToIso(v.data) === weekDays[5].isoStr);
+            const hasDom = weekFolhas.some(f => normalizeToIso(f.dataPlaneada || f.data) === weekDays[6].isoStr) ||
+                           weekVisitas.some(v => normalizeToIso(v.data) === weekDays[6].isoStr);
 
             const activeDays = weekDays.filter(d => {
               if (d.index <= 4) return true;
@@ -342,8 +363,8 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
             });
 
             const dayCols = activeDays.map(d => {
-              const dayFolhas = weekFolhas.filter(f => (f.dataPlaneada || f.data || '').slice(0, 10) === d.isoStr);
-              const dayVisitas = weekVisitas.filter(v => (v.data || '').slice(0, 10) === d.isoStr);
+              const dayFolhas = weekFolhas.filter(f => normalizeToIso(f.dataPlaneada || f.data) === d.isoStr);
+              const dayVisitas = weekVisitas.filter(v => normalizeToIso(v.data) === d.isoStr);
 
               const items = [
                 ...dayFolhas.map(f => {

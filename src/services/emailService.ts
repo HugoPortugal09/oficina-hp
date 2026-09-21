@@ -2501,7 +2501,7 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
 }> {
   try {
     const rawFolhas = payload?.folhas || db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || [];
-    const rawVisitas = payload?.visitas || db.get<VisitaCliente>(STORAGE_KEYS.VISITAS_CLIENTE) || [];
+    const rawVisitas = payload?.visitas || db.get<VisitaCliente>(STORAGE_KEYS.VISITAS) || [];
     const empresas = payload?.empresas || db.get<Empresa>(STORAGE_KEYS.EMPRESAS) || [];
 
     // Calculate Week Days: Monday to Sunday

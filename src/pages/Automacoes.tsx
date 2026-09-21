@@ -26,7 +26,7 @@ import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail } from '../services/emailService';
-import type { AutomacaoItem, TipoAutomacao } from '../types';
+import type { AutomacaoItem, TipoAutomacao, FolhaServico, VisitaCliente, Empresa } from '../types';
 
 export const Automacoes: React.FC = () => {
   const [automacoes, setAutomacoes] = useState<AutomacaoItem[]>(() => {
@@ -64,16 +64,28 @@ export const Automacoes: React.FC = () => {
   };
 
   const handleAddEmail = (autoId: string) => {
-    const emailToAdd = (newEmailInputs[autoId] || '').trim().toLowerCase();
-    if (!emailToAdd) return;
+    let emailToAdd = (newEmailInputs[autoId] || '').trim().toLowerCase();
+
+    // Se o utilizador clicou no botão [+] sem preencher o campo, abrir prompt interativo
+    if (!emailToAdd) {
+      const inputPrompt = window.prompt('Introduza o endereço de email para adicionar aos destinatários:');
+      if (!inputPrompt || !inputPrompt.trim()) return;
+      emailToAdd = inputPrompt.trim().toLowerCase();
+    }
+
     if (!emailToAdd.includes('@') || !emailToAdd.includes('.')) {
-      alert('Por favor insira um endereço de email válido.');
+      alert('Por favor insira um endereço de email válido (exemplo: nome@empresa.com).');
+      return;
+    }
+
+    const autoTarget = automacoes.find(a => a.id === autoId);
+    if (autoTarget && autoTarget.destinatarios.some(e => e.toLowerCase() === emailToAdd)) {
+      alert(`O email "${emailToAdd}" já se encontra na lista de destinatários.`);
       return;
     }
 
     const updated = automacoes.map(a => {
       if (a.id === autoId) {
-        if (a.destinatarios.includes(emailToAdd)) return a;
         return { ...a, destinatarios: [...a.destinatarios, emailToAdd] };
       }
       return a;
@@ -81,6 +93,13 @@ export const Automacoes: React.FC = () => {
 
     saveList(updated);
     setNewEmailInputs(prev => ({ ...prev, [autoId]: '' }));
+
+    setStatusFeedback({
+      id: autoId,
+      success: true,
+      msg: `Email ${emailToAdd} adicionado com sucesso aos destinatários!`
+    });
+    setTimeout(() => setStatusFeedback(null), 5000);
   };
 
   const handleRemoveEmail = (autoId: string, emailToRemove: string) => {
@@ -113,8 +132,15 @@ export const Automacoes: React.FC = () => {
           msg: result.message
         });
       } else if (auto.tipo === 'email_planeamento') {
+        const rawFolhas = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
+        const rawVisitas = db.get<VisitaCliente>(STORAGE_KEYS.VISITAS);
+        const empresas = db.get<Empresa>(STORAGE_KEYS.EMPRESAS);
+
         const result = await sendWeeklyPlaneamentoEmail({
-          destinatarios: auto.destinatarios
+          destinatarios: auto.destinatarios,
+          folhas: rawFolhas,
+          visitas: rawVisitas,
+          empresas
         });
         
         const nowStr = `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;

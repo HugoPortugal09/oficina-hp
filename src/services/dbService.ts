@@ -31,6 +31,7 @@ const STORAGE_KEYS = {
   CONTRATOS: 'oficina_hp_contratos',
   TAREFAS: 'oficina_hp_tarefas',
   VISITAS: 'oficina_hp_visitas',
+  VISITAS_CLIENTE: 'oficina_hp_visitas',
   UTILIZADORES: 'oficina_hp_utilizadores',
   AUTOMACOES: 'oficina_hp_automacoes',
   CONFIGURACAO: 'oficina_hp_configuracao',
