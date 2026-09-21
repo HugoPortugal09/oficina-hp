@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, ConfiguracaoOficina } from '../types';
+import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, Cliente, ConfiguracaoOficina } from '../types';
 import { db, STORAGE_KEYS } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
@@ -1906,6 +1906,226 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
     // Numeração de página à direita
     doc.setTextColor(255, 255, 255);
     doc.text(`Página ${i} de ${pageCount}`, rightMargin, textY, { align: 'right' });
+  }
+
+  return doc;
+}
+
+export interface FolhasServicoA3Row {
+  folha: FolhaServico;
+  empresa?: Empresa;
+  cliente?: Cliente;
+  equipamento?: Equipamento;
+  localidade: string;
+  distritoRegiao: string;
+  distKm: string;
+  contacto: string;
+}
+
+export interface FolhasServicoA3Options {
+  items: FolhasServicoA3Row[];
+  filterTipos: string[];
+  filterDescription?: string;
+}
+
+/**
+ * Generates an executive A3 Landscape (420mm x 297mm) document:
+ * Detailed structured summary table of all open service sheets in the workshop/field,
+ * filtered by the selected service types (e.g. Oficina, Validação e Preparação).
+ */
+export function generateFolhasServicoA3PDF(options: FolhasServicoA3Options): jsPDF {
+  const { items, filterTipos, filterDescription } = options;
+
+  // A3 Landscape: 420mm width x 297mm height
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a3',
+    compress: true
+  });
+
+  const runAutoTable = (opts: any) => {
+    const fn = (autoTable as any)?.default?.default || (autoTable as any)?.default || autoTable;
+    if (typeof fn === 'function') {
+      fn(doc, opts);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(opts);
+    }
+  };
+
+  const accentColor = [2, 132, 199]; // Sky blue GRAUMP
+  const dataEmissao = getTodayFormatted();
+
+  // 1. TOP HEADER ACCENT BARS (Largura 420mm)
+  doc.setFillColor(30, 41, 59); // Slate 800
+  doc.rect(0, 0, 420, 6, 'F');
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(290, 0, 130, 6, 'F');
+
+  // 2. GRAUMP LOGO
+  try {
+    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 14, 10, 32, 21, undefined, 'FAST');
+  } catch (err) {
+    doc.setFillColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('GRAUMP', 14, 23);
+  }
+
+  // 3. HEADER TITLES (Alinhados à direita a 406mm)
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('MAPA OPERACIONAL DE FOLHAS DE SERVIÇO EM ABERTO', 406, 17, { align: 'right' });
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Listagem estruturada de pedidos operacionais em curso (Oficina, Validação e Preparação, Assistência, etc.)', 406, 23, { align: 'right' });
+
+  // Metadata Row
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+  const tiposStr = filterTipos.length > 0 ? `TIPOS: ${filterTipos.join(' + ')}` : 'TODOS OS TIPOS';
+  doc.text(
+    `TOTAL EM ABERTO: ${items.length} FOLHAS  •  ${tiposStr}${filterDescription ? `  •  ${filterDescription}` : ''}  •  EMISSÃO: ${dataEmissao}`,
+    406,
+    29,
+    { align: 'right' }
+  );
+
+  // Linha divisória horizontal
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.line(14, 33, 406, 33);
+
+  // 4. TABELA DE SERVIÇOS EM A3 HORIZONTAL
+  const tableRows = items.map(item => {
+    const f = item.folha;
+    const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim() || '-';
+    const dataPed = formatDate(f.data);
+    const clienteNome = item.empresa?.nome || item.cliente?.nome || 'Cliente Geral';
+    const anomalia = (f.anomalias || f.notasInternas || f.notasCliente || '-').replace(/\n/g, ' ');
+
+    return [
+      f.numero || f.id,
+      f.tipo,
+      f.matricula || '---',
+      marcaModelo,
+      clienteNome,
+      item.localidade,
+      item.distritoRegiao,
+      item.distKm,
+      dataPed,
+      f.status,
+      item.contacto,
+      anomalia
+    ];
+  });
+
+  runAutoTable({
+    startY: 36,
+    head: [[
+      'Folha',
+      'Tipo',
+      'Matrícula',
+      'Marca / Modelo',
+      'Cliente / Entidade',
+      'Localização / Morada',
+      'Distrito / Região',
+      'Dist. Sede',
+      'Data Pedido',
+      'Estado Atual',
+      'Contacto',
+      'Anomalia / Resumo da Intervenção'
+    ]],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59], // Dark slate
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      cellPadding: 3
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2.4,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2,
+      overflow: 'linebreak'
+    },
+    columnStyles: {
+      0: { cellWidth: 18, fontStyle: 'bold', textColor: [2, 132, 199] }, // Folha
+      1: { cellWidth: 26, fontStyle: 'bold' }, // Tipo
+      2: { cellWidth: 20, fontStyle: 'bold' }, // Matrícula
+      3: { cellWidth: 28 }, // Marca/Modelo
+      4: { cellWidth: 44 }, // Cliente
+      5: { cellWidth: 54 }, // Morada
+      6: { cellWidth: 28 }, // Região
+      7: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }, // Dist Km
+      8: { cellWidth: 18, halign: 'center' }, // Data
+      9: { cellWidth: 32 }, // Estado
+      10: { cellWidth: 22 }, // Contacto
+      11: { cellWidth: 84 }  // Anomalia
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
+    margin: { left: 14, right: 14, top: 12, bottom: 16 },
+    pageBreak: 'auto',
+    willDrawPage: (data: any) => {
+      if (data.pageNumber > 1) {
+        doc.setFillColor(30, 41, 59);
+        doc.rect(0, 0, 420, 5, 'F');
+        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+        doc.rect(320, 0, 100, 5, 'F');
+      }
+    }
+  });
+
+  // 5. RODAPÉS DINÂMICOS
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const footerY = 287;
+    const textY = 293.5;
+
+    // Barra base do rodapé
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(0, footerY, 420, 10, 'F');
+
+    // Acento visual no rodapé
+    doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+    try {
+      doc.triangle(0, 297, 45, 297, 0, footerY - 9, 'F');
+    } catch (e) {}
+    doc.rect(0, footerY + 3, 32, 7, 'F');
+
+    // Texto de marca à esquerda
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRAUMP', 15, textY);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(203, 213, 225);
+    doc.text(' • Oficina HP Gestão & Frotas', 29, textY);
+
+    // Texto central informativo
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      'Mapa Operacional de Folhas de Serviço em Aberto • Formato A3 Horizontal • Documento Processado por Computador',
+      210,
+      textY,
+      { align: 'center' }
+    );
+
+    // Numeração de página à direita
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Página ${i} de ${pageCount}`, 406, textY, { align: 'right' });
   }
 
   return doc;

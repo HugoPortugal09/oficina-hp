@@ -40,7 +40,8 @@ import {
   Handshake,
   Mail,
   Loader2,
-  X
+  X,
+  Printer
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -49,7 +50,8 @@ import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
-import { generateFolhaServicoPDF, generatePropostaPDF } from '../services/pdfService';
+import { generateFolhaServicoPDF, generatePropostaPDF, generateFolhasServicoA3PDF, type FolhasServicoA3Row } from '../services/pdfService';
+import { resolvePortugalCoordinates, calculateDistanceKm, OFICINA_HP_BASE } from '../services/portugalGeoService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendFolhaServicoEmail } from '../services/emailService';
 import { estimateDistanceKm } from '../services/distanceService';
@@ -319,6 +321,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [aiNoteSuggestion, setAiNoteSuggestion] = useState<TaskSuggestionFromNotes | null>(null);
   const [taskCreatedFeedback, setTaskCreatedFeedback] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [isGeneratingA3Pdf, setIsGeneratingA3Pdf] = useState(false);
   const [sendingEmailFolhaId, setSendingEmailFolhaId] = useState<string | null>(null);
 
   const filePhotoInputRef = useRef<HTMLInputElement>(null);
@@ -1321,6 +1324,108 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const hasAdicionais = ((editingFolha.servicosAdicionais?.length || 0) > 0) || ((editingFolha.pecasAdicionais?.length || 0) > 0);
 
+  // Print open service sheets filtered by selected types in A3 Landscape
+  const handlePrintA3Folhas = () => {
+    if (isGeneratingA3Pdf) return;
+    setIsGeneratingA3Pdf(true);
+    setSaveFeedback('A preparar mapa de folhas de serviço em aberto em formato A3...');
+
+    try {
+      // Filter open service sheets: not finished/completed
+      const openFolhas = filteredFolhas.filter(
+        f => f.status !== 'Concluído' && f.status !== 'Feito' && !f.status.startsWith('FEITO')
+      );
+
+      if (openFolhas.length === 0) {
+        setSaveFeedback('⚠️ Nenhuma folha de serviço em aberto encontrada com os filtros selecionados.');
+        setTimeout(() => setSaveFeedback(null), 4000);
+        setIsGeneratingA3Pdf(false);
+        return;
+      }
+
+      const items: FolhasServicoA3Row[] = openFolhas.map(f => {
+        const emp = empresas.find(e => e.id === f.empresaId);
+        const cli = clientes.find(c => c.id === f.clienteId || c.empresaId === f.empresaId);
+        const eq = equipamentos.find(
+          e => e.id === f.equipamentoId || e.matricula.toUpperCase() === f.matricula.toUpperCase()
+        );
+
+        let targetAddress = f.localizacao?.trim() || f.moradaIntervencao?.trim() || f.localIntervencao?.trim() || '';
+        if (!targetAddress) {
+          if (f.tipo === 'Oficina') {
+            targetAddress = 'Oficina Principal (Albergaria-a-Velha)';
+          } else if (emp?.estaleiros && emp.estaleiros.length > 0 && eq?.estaleiroId) {
+            const est = emp.estaleiros.find(s => s.id === eq.estaleiroId);
+            if (est?.morada) targetAddress = `${est.morada}, ${est.nome}`;
+          } else if (emp?.moradaSede) {
+            targetAddress = emp.moradaSede;
+          } else if (emp?.nome) {
+            targetAddress = emp.nome;
+          } else {
+            targetAddress = 'Sede do Cliente';
+          }
+        }
+
+        let coords = resolvePortugalCoordinates(targetAddress, f.id);
+        let distKmNum = f.distanciaKms || calculateDistanceKm(OFICINA_HP_BASE.lat, OFICINA_HP_BASE.lng, coords.lat, coords.lng);
+        if (f.tipo === 'Oficina' || targetAddress.toLowerCase().includes('oficina principal')) {
+          distKmNum = 0;
+          coords = { lat: OFICINA_HP_BASE.lat, lng: OFICINA_HP_BASE.lng, cidade: 'Albergaria-a-Velha', distrito: 'Aveiro', regiao: 'Centro' };
+        }
+
+        return {
+          folha: f,
+          empresa: emp,
+          cliente: cli,
+          equipamento: eq,
+          localidade: targetAddress || `${coords.cidade}, ${coords.distrito}`,
+          distritoRegiao: `${coords.distrito} (${coords.regiao})`,
+          distKm: `${distKmNum} Km`,
+          contacto: cli?.telemovel || cli?.telefone || emp?.telefone || emp?.email || '-'
+        };
+      });
+
+      let filterDescription = '';
+      if (filterTipos.length > 0) {
+        filterDescription = `Tipos: ${filterTipos.join(', ')}`;
+      } else {
+        filterDescription = 'Todos os Tipos';
+      }
+      if (filterStatus !== 'TODOS') {
+        filterDescription += ` • Estado: ${filterStatus}`;
+      }
+      if (searchTerm) {
+        filterDescription += ` • Pesquisa: "${searchTerm}"`;
+      }
+
+      const doc = generateFolhasServicoA3PDF({
+        items,
+        filterTipos,
+        filterDescription
+      });
+
+      const todayStr = getTodayFormatted().replace(/\//g, '-');
+      const filename = `Folhas_Servico_Abertas_A3_${todayStr}.pdf`;
+      doc.save(filename);
+
+      try {
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        const win = window.open(url, '_blank');
+        if (win) win.focus();
+      } catch (e) {}
+
+      setSaveFeedback(`✅ Relatório A3 gerado com sucesso! (${openFolhas.length} folhas em aberto)`);
+      setTimeout(() => setSaveFeedback(null), 4000);
+    } catch (err: any) {
+      console.error('[Oficina] Erro ao gerar PDF A3:', err);
+      setSaveFeedback(`❌ Erro ao gerar PDF A3: ${err?.message || err}`);
+      setTimeout(() => setSaveFeedback(null), 5000);
+    } finally {
+      setIsGeneratingA3Pdf(false);
+    }
+  };
+
   return (
     <div className="space-y-3.5">
       {saveFeedback && (
@@ -1572,6 +1677,30 @@ export const Oficina: React.FC<OficinaProps> = ({
               <TableIcon className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Print A3 Open Sheets Button */}
+          <button
+            onClick={handlePrintA3Folhas}
+            disabled={isGeneratingA3Pdf}
+            title="Imprimir lista de folhas de serviço abertas em formato A3 horizontal (filtradas por tipo de serviço)"
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 border ${
+              isGeneratingA3Pdf
+                ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-emerald-400/30 shadow-emerald-950/40'
+            }`}
+          >
+            {isGeneratingA3Pdf ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
+                <span>A Preparar A3...</span>
+              </>
+            ) : (
+              <>
+                <Printer className="w-4 h-4 text-emerald-200" />
+                <span>Imprimir A3</span>
+              </>
+            )}
+          </button>
 
           <button
             onClick={onOpenScanner}
