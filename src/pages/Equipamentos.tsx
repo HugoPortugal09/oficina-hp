@@ -20,7 +20,8 @@ import {
   GraduationCap,
   PackageCheck,
   LayoutGrid,
-  Table
+  Table,
+  ExternalLink
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -108,6 +109,7 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEquip, setEditingEquip] = useState<Partial<Equipamento>>({});
+  const [servicesModalEquip, setServicesModalEquip] = useState<Equipamento | null>(null);
 
   // Searchable Empresa Combobox state
   const [empresaQuery, setEmpresaQuery] = useState('');
@@ -517,10 +519,24 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
 
                 {/* Bottom tag */}
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
-                  <span className="flex items-center gap-1.5 text-slate-400">
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setServicesModalEquip(eq);
+                    }}
+                    className="flex items-center gap-1.5 text-slate-400 hover:text-hp-300 transition-colors cursor-pointer group/link"
+                    title="Ver folhas de serviço desta viatura"
+                  >
                     <Wrench className="w-3.5 h-3.5 text-hp-400" />
-                    {historyFolhas.length} registos no histórico
-                  </span>
+                    <span className="underline decoration-hp-500/50 underline-offset-2 font-bold text-hp-400 group-hover/link:text-hp-300">
+                      {historyFolhas.length}
+                    </span>{' '}
+                    registos no histórico
+                    {historyFolhas.length > 0 && (
+                      <ExternalLink className="w-3 h-3 text-hp-400/70 ml-0.5 opacity-60 group-hover/link:opacity-100 transition-opacity" />
+                    )}
+                  </button>
                 </div>
               </GlassCard>
             );
@@ -571,8 +587,20 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                     </td>
                     <td className="py-3 px-4 font-mono text-slate-400">{eq.dataEntrega || '-'}</td>
                     <td className="py-3 px-4 font-mono text-slate-400">{eq.dataFormacao || '-'}</td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="font-mono font-bold text-hp-400">{historyFolhas.length}</span>
+                    <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setServicesModalEquip(eq)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono font-bold text-xs transition-all cursor-pointer ${
+                          historyFolhas.length > 0
+                            ? 'bg-hp-500/15 hover:bg-hp-500/30 text-hp-300 border-hp-500/40 hover:border-hp-400 shadow-sm'
+                            : 'bg-slate-900/60 hover:bg-slate-800 text-slate-500 border-slate-800'
+                        }`}
+                        title="Ver histórico de folhas de serviço desta viatura"
+                      >
+                        <span>{historyFolhas.length}</span>
+                        {historyFolhas.length > 0 && <ExternalLink className="w-3 h-3 text-hp-400" />}
+                      </button>
                     </td>
                     <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
                       <button
@@ -937,6 +965,152 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
               </div>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Modal: Histórico de Folhas de Serviço da Viatura */}
+      {servicesModalEquip && (
+        <Modal
+          isOpen={!!servicesModalEquip}
+          onClose={() => setServicesModalEquip(null)}
+          title={`Intervenções & Folhas de Serviço • ${servicesModalEquip.matricula}`}
+          subtitle={`${servicesModalEquip.marca} ${servicesModalEquip.modelo} • ${safeEmpresas.find(e => e.id === servicesModalEquip.empresaId)?.nome || 'Cliente Geral'}`}
+          maxWidth="4xl"
+        >
+          {(() => {
+            const latestData = getEquipamentoLatestData(servicesModalEquip, safeFolhas);
+            const equipFolhas = latestData.matchingFolhas;
+
+            if (equipFolhas.length === 0) {
+              return (
+                <div className="py-12 text-center text-slate-400 space-y-3">
+                  <Wrench className="w-12 h-12 mx-auto text-slate-600" />
+                  <p className="text-sm font-medium">
+                    Ainda não existem folhas de serviço registadas para a viatura{' '}
+                    <span className="font-mono font-bold text-white">{servicesModalEquip.matricula}</span>.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-4">
+                {/* Resumo da Viatura */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Intervenções</span>
+                      <span className="font-mono font-extrabold text-hp-400 text-sm">{equipFolhas.length} Folha(s)</span>
+                    </div>
+                    <div className="h-6 w-px bg-slate-800" />
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Quilómetros Atuais</span>
+                      <span className="font-mono font-bold text-emerald-400 text-sm">{latestData.latestKms.toLocaleString()} Km</span>
+                    </div>
+                    <div className="h-6 w-px bg-slate-800" />
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Horas de Trabalho</span>
+                      <span className="font-mono font-bold text-amber-400 text-sm">{latestData.latestHoras} h</span>
+                    </div>
+                  </div>
+                  <span className="text-slate-400 text-[11px] italic">
+                    💡 Clique numa folha ou no botão "Abrir" para editar diretamente.
+                  </span>
+                </div>
+
+                {/* Tabela de Folhas de Serviço */}
+                <div className="overflow-x-auto rounded-xl border border-slate-800 max-h-[60vh] overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800 uppercase tracking-wider text-[10px] sticky top-0 z-10">
+                      <tr>
+                        <th className="py-2.5 px-3">Nº Folha</th>
+                        <th className="py-2.5 px-3">Data</th>
+                        <th className="py-2.5 px-3">Tipo</th>
+                        <th className="py-2.5 px-3">Estado</th>
+                        <th className="py-2.5 px-3 font-mono text-right">Kms / Horas</th>
+                        <th className="py-2.5 px-3">Trabalhos / Anomalias</th>
+                        <th className="py-2.5 px-3 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {equipFolhas.map(f => (
+                        <tr
+                          key={f.id}
+                          onClick={() => {
+                            setServicesModalEquip(null);
+                            onSelectFolha(f);
+                          }}
+                          className="hover:bg-hp-600/15 cursor-pointer transition-colors group"
+                        >
+                          <td className="py-3 px-3">
+                            <span className="font-mono font-extrabold text-hp-400 group-hover:underline text-xs">
+                              {f.numero}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono text-slate-300 whitespace-nowrap">
+                            {formatDate(f.dataConclusao || f.data)}
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 border border-slate-700 text-slate-300">
+                              {f.tipo || 'Oficina'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <Badge
+                              variant={
+                                f.status?.includes('Concluído') || f.status?.includes('Feito')
+                                  ? 'success'
+                                  : f.status?.includes('Em curso') || f.status?.includes('intervencionado')
+                                  ? 'primary'
+                                  : f.status?.includes('Aguardar')
+                                  ? 'warning'
+                                  : 'info'
+                              }
+                            >
+                              {f.status || 'Em aberto'}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-3 font-mono text-right whitespace-nowrap">
+                            {f.kmsAtuais ? <span className="text-emerald-400 font-bold">{Number(f.kmsAtuais).toLocaleString()} km</span> : null}
+                            {f.kmsAtuais && f.horasAtuais ? <span className="text-slate-500 mx-1">•</span> : null}
+                            {f.horasAtuais ? <span className="text-amber-400">{f.horasAtuais} h</span> : null}
+                            {!f.kmsAtuais && !f.horasAtuais && <span className="text-slate-500">-</span>}
+                          </td>
+                          <td className="py-3 px-3 text-slate-400 max-w-xs truncate">
+                            {f.anomalias || (f.servicos && f.servicos.length > 0 ? f.servicos.map(s => s.descricao).join(', ') : '-')}
+                          </td>
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setServicesModalEquip(null);
+                                onSelectFolha(f);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-hp-500 hover:bg-hp-600 text-white font-semibold text-[11px] inline-flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                            >
+                              <span>Abrir</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-end pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setServicesModalEquip(null)}
+                    className="py-1.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </Modal>
       )}
     </div>
