@@ -467,7 +467,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
   const handlePrintA3PDF = async () => {
     if (isGeneratingPdf) return;
     setIsGeneratingPdf(true);
-    setPdfToast('A capturar mapa e a preparar documento A3...');
+    setPdfToast('A capturar mapa e a preparar documento A3 (Folha 1 Vertical / Folha 2 Horizontal)...');
 
     try {
       let mapImageBase64: string | undefined;
@@ -482,10 +482,16 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
             useCORS: true,
             allowTaint: true,
             logging: false,
-            scale: 1.8,
-            backgroundColor: mapStyle === 'dark' ? '#090d16' : '#ffffff'
+            scale: 2,
+            backgroundColor: mapStyle === 'dark' ? '#090d16' : '#ffffff',
+            ignoreElements: (element: Element) => {
+              return (
+                element.classList?.contains('leaflet-control-zoom') ||
+                element.classList?.contains('leaflet-control-attribution')
+              );
+            }
           });
-          mapImageBase64 = canvas.toDataURL('image/jpeg', 0.88);
+          mapImageBase64 = canvas.toDataURL('image/jpeg', 0.9);
         } catch (captureErr) {
           console.warn('[MapaPortugal] Aviso na captura de imagem do mapa:', captureErr);
         }
@@ -522,7 +528,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
         }
       } catch (e) {}
 
-      setPdfToast(`✅ PDF A3 gerado com sucesso! (${fileName})`);
+      setPdfToast(`✅ PDF A3 gerado com sucesso! (Folha 1 Vertical + Folha 2 Horizontal)`);
       setTimeout(() => setPdfToast(null), 4000);
     } catch (err: any) {
       console.error('[MapaPortugal] Erro ao gerar PDF A3:', err);

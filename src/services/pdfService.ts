@@ -1552,12 +1552,17 @@ export interface MapaServicosA3Options {
  * 1. High-resolution visual snapshot of the interactive Portugal service map
  * 2. Complete structured summary table of all open service sheets in the field
  */
+/**
+ * Generates an executive A3 Multi-Orientation document:
+ * - Folha 1 (Vertical / Portrait - 297mm x 420mm): Clean, undistorted geographic map of Portugal with executive KPIs
+ * - Folha 2+ (Horizontal / Landscape - 420mm x 297mm): Complete 12-column structured summary table of all open service sheets
+ */
 export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF {
   const { mapImageBase64, items, stats, filterDescription } = options;
 
-  // A3 Landscape: 420mm width x 297mm height
+  // 1. FOLHA 1 (PORTRAIT / VERTICAL): 297mm width x 420mm height
   const doc = new jsPDF({
-    orientation: 'landscape',
+    orientation: 'portrait',
     unit: 'mm',
     format: 'a3',
     compress: true
@@ -1573,14 +1578,16 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
   };
 
   const accentColor = [2, 132, 199]; // Sky blue GRAUMP
+  const dataEmissao = getTodayFormatted();
 
-  // 1. TOP HEADER ACCENT BARS
+  // --- FOLHA 1: CABEÇALHO VERTICAL (Largura 297mm) ---
+  // Barra de topo
   doc.setFillColor(30, 41, 59); // Slate 800
-  doc.rect(0, 0, 420, 6, 'F');
+  doc.rect(0, 0, 297, 6, 'F');
   doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
-  doc.rect(290, 0, 130, 6, 'F');
+  doc.rect(197, 0, 100, 6, 'F');
 
-  // 2. GRAUMP LOGO
+  // Logótipo GRAUMP
   try {
     doc.addImage(GRAU_LOGO_BASE64, 'PNG', 14, 10, 32, 21, undefined, 'FAST');
   } catch (err) {
@@ -1590,70 +1597,181 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
     doc.text('GRAUMP', 14, 23);
   }
 
-  // 3. HEADER TITLES (Right-aligned on 420mm page)
+  // Títulos à direita (alinhados a x = 283)
   doc.setTextColor(30, 41, 59);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('MAPA OPERACIONAL DE SERVIÇOS EM ABERTO (PORTUGAL)', 406, 18, { align: 'right' });
+  doc.setFontSize(15);
+  doc.text('MAPA OPERACIONAL DE SERVIÇOS EM ABERTO', 283, 17, { align: 'right' });
 
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text('Localização geográfica e lista resumida de pedidos no terreno (Assistência Técnica e Contratos)', 406, 24, { align: 'right' });
+  doc.text('Localização geográfica e distribuição no terreno (Assistência Técnica e Contratos)', 283, 23, { align: 'right' });
 
-  // Metadata Row
-  const dataEmissao = getTodayFormatted();
+  // Linha de KPIs
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
   doc.text(
-    `TOTAL EM ABERTO: ${stats.total}  •  ⚡ AT: ${stats.atCount}  •  📜 CONTRATOS: ${stats.ctCount}  •  SUL: ${stats.sulCount} | LISBOA: ${stats.lisboaCount} | CENTRO: ${stats.centroCount} | NORTE: ${stats.norteCount}  •  EMISSÃO: ${dataEmissao}`,
-    406,
-    30,
+    `TOTAL EM ABERTO: ${stats.total}  •  AT: ${stats.atCount}  •  CONTRATOS: ${stats.ctCount}  •  DATA: ${dataEmissao}`,
+    283,
+    29,
     { align: 'right' }
   );
 
-  let currentY = 35;
+  // Linha Regional / Filtros
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(
+    `Sul: ${stats.sulCount}  |  Lisboa: ${stats.lisboaCount}  |  Centro: ${stats.centroCount}  |  Norte: ${stats.norteCount}${filterDescription ? `  •  Filtro: ${filterDescription}` : ''}`,
+    283,
+    34,
+    { align: 'right' }
+  );
 
-  // 4. EMBED MAP SNAPSHOT (If available)
+  // Linha divisória
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.line(14, 38, 283, 38);
+
+  // --- FOLHA 1: MAPA DE PORTUGAL (ENQUADRAMENTO VERTICAL SEM DEFORMAÇÃO) ---
+  const mapStartY = 42;
+  const maxMapW = 269; // 297 - 28
+  const maxMapH = 344; // De 42 até 386 (deixa espaço para barra de legenda em 388..402)
+
   if (mapImageBase64) {
-    const mapWidth = 392;
-    const mapHeight = 115;
-
-    // Background placeholder frame
-    doc.setFillColor(15, 23, 42); // Slate 900
-    doc.roundedRect(14, currentY, mapWidth, mapHeight, 2, 2, 'F');
-
     try {
-      doc.addImage(mapImageBase64, 'JPEG', 14, currentY, mapWidth, mapHeight, undefined, 'FAST');
+      const imgProps = doc.getImageProperties(mapImageBase64);
+      const imgRatio = imgProps.width / imgProps.height;
+
+      let renderW = maxMapW;
+      let renderH = maxMapW / imgRatio;
+
+      if (renderH > maxMapH) {
+        renderH = maxMapH;
+        renderW = maxMapH * imgRatio;
+      }
+
+      // Centralizar imagem na área útil da Folha 1
+      const renderX = 14 + (maxMapW - renderW) / 2;
+      const renderY = mapStartY + (maxMapH - renderH) / 2;
+
+      // Fundo escuro elegante de apoio
+      doc.setFillColor(15, 23, 42); // Slate 900
+      doc.roundedRect(renderX, renderY, renderW, renderH, 2.5, 2.5, 'F');
+
+      // Desenhar mapa proporcional (zero distorção / círculos perfeitamente redondos)
+      doc.addImage(mapImageBase64, 'JPEG', renderX, renderY, renderW, renderH, undefined, 'FAST');
+
+      // Moldura exterior
+      doc.setDrawColor(51, 65, 85); // Slate 700
+      doc.setLineWidth(0.4);
+      doc.roundedRect(renderX, renderY, renderW, renderH, 2.5, 2.5, 'D');
     } catch (e) {
-      console.warn('[PDF] Erro ao renderizar imagem do mapa no PDF:', e);
+      console.warn('[PDF] Erro ao renderizar imagem do mapa:', e);
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(14, mapStartY, maxMapW, 200, 2, 2, 'F');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Pré-visualização do mapa não disponível no momento da exportação.', 148.5, mapStartY + 100, { align: 'center' });
     }
-
-    // Border around map
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(14, currentY, mapWidth, mapHeight, 2, 2, 'D');
-
-    currentY += mapHeight + 6;
+  } else {
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(14, mapStartY, maxMapW, 200, 2, 2, 'F');
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Mapa não carregado. Abra o mapa antes de imprimir.', 148.5, mapStartY + 100, { align: 'center' });
   }
 
-  // 5. SECTION TITLE FOR SUMMARY TABLE
-  doc.setFontSize(9.5);
+  // --- FOLHA 1: BARRA DE LEGENDA INFORMATIVA (Fundo da Folha 1) ---
+  const legY = 390;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(14, legY, maxMapW, 14, 2, 2, 'FD');
+
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text(`📋 LISTA RESUMIDA DE FOLHAS DE SERVIÇO EM ABERTO (${items.length} REGISTOS)`, 14, currentY);
+  doc.text('LEGENDA OPERACIONAL:', 18, legY + 8.5);
 
-  if (filterDescription) {
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Filtro: ${filterDescription}`, 406, currentY, { align: 'right' });
+  // Pin AT (Laranja)
+  doc.setFillColor(234, 88, 12);
+  doc.circle(68, legY + 8, 3, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Assistência Técnica (AT)', 73, legY + 9.5);
+
+  // Pin CT (Roxo)
+  doc.setFillColor(147, 51, 234);
+  doc.circle(126, legY + 8, 3, 'F');
+  doc.text('Contratos (CT)', 131, legY + 9.5);
+
+  // Badge Múltiplos
+  doc.setFillColor(2, 132, 199);
+  doc.roundedRect(165, legY + 5.5, 9, 6, 1.5, 1.5, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.text('Nº', 169.5, legY + 9.8, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Serviços Sobrepostos no Local', 177, legY + 9.5);
+
+  // Nota de continuação na Folha 2
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(2, 132, 199);
+  doc.text('>> Ver Folha 2 para a Tabela Detalhada', 278, legY + 9.5, { align: 'right' });
+
+
+  // 2. FOLHA 2 (LANDSCAPE / HORIZONTAL): 420mm width x 297mm height
+  doc.addPage('a3', 'landscape');
+
+  // --- FOLHA 2: CABEÇALHO HORIZONTAL (Largura 420mm) ---
+  doc.setFillColor(30, 41, 59); // Slate 800
+  doc.rect(0, 0, 420, 6, 'F');
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(290, 0, 130, 6, 'F');
+
+  // Logótipo GRAUMP
+  try {
+    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 14, 10, 32, 21, undefined, 'FAST');
+  } catch (err) {
+    doc.setFillColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('GRAUMP', 14, 23);
   }
 
-  currentY += 4;
+  // Título da Tabela à direita (alinhado a x = 406)
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('LISTA RESUMIDA DE FOLHAS DE SERVIÇO EM ABERTO', 406, 17, { align: 'right' });
 
-  // 6. TABLE ROWS
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Detalhamento operacional de pedidos no terreno (Assistência Técnica e Contratos)', 406, 23, { align: 'right' });
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.text(
+    `TOTAL: ${items.length} REGISTOS  •  AT: ${stats.atCount}  •  CONTRATOS: ${stats.ctCount}${filterDescription ? `  •  FILTRO: ${filterDescription}` : ''}  •  EMISSÃO: ${dataEmissao}`,
+    406,
+    29,
+    { align: 'right' }
+  );
+
+  // Linha divisória horizontal
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.line(14, 33, 406, 33);
+
+  // --- FOLHA 2: TABELA DE SERVIÇOS EM A3 HORIZONTAL ---
   const tableRows = items.map(item => {
     const f = item.folha;
     const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim() || '-';
@@ -1682,7 +1800,7 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
   });
 
   runAutoTable({
-    startY: currentY,
+    startY: 36,
     head: [[
       'Folha',
       'Tipo',
@@ -1721,7 +1839,7 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
       3: { cellWidth: 28 }, // Marca/Modelo
       4: { cellWidth: 44 }, // Cliente
       5: { cellWidth: 54 }, // Morada
-      6: { cellWidth: 28 }, // Regiao
+      6: { cellWidth: 28 }, // Região
       7: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }, // Dist Km
       8: { cellWidth: 18, halign: 'center' }, // Data
       9: { cellWidth: 32 }, // Estado
@@ -1731,41 +1849,63 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
     alternateRowStyles: {
       fillColor: [248, 250, 252]
     },
-    margin: { left: 14, right: 14, bottom: 15 },
-    pageBreak: 'auto'
+    margin: { left: 14, right: 14, top: 12, bottom: 16 },
+    pageBreak: 'auto',
+    willDrawPage: (data: any) => {
+      // Se quebrar para uma nova página (pág 3+), desenha cabeçalho superior subtil
+      if (data.pageNumber > 2) {
+        doc.setFillColor(30, 41, 59);
+        doc.rect(0, 0, 420, 5, 'F');
+        doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+        doc.rect(320, 0, 100, 5, 'F');
+      }
+    }
   });
 
-  // 7. MULTI-PAGE PROFESSIONAL FOOTER (A3 Landscape: width 420, height 297)
+  // 3. RODAPÉS DINÂMICOS CONFORME A ORIENTAÇÃO DA PÁGINA
   const pageCount = (doc as any).internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    const pageSize = doc.internal.pageSize;
+    const pageWidth = pageSize.getWidth ? pageSize.getWidth() : pageSize.width;
+    const pageHeight = pageSize.getHeight ? pageSize.getHeight() : pageSize.height;
+    const isPortrait = pageHeight > pageWidth;
 
-    // Footer Base Bar
+    const footerY = pageHeight - 10;
+    const textY = pageHeight - 3.5;
+    const rightMargin = pageWidth - 14;
+
+    // Barra base do rodapé
     doc.setFillColor(30, 41, 59); // Slate 800
-    doc.rect(0, 287, 420, 10, 'F');
+    doc.rect(0, footerY, pageWidth, 10, 'F');
 
-    // Accent triangle & line
+    // Acento visual no rodapé
     doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
     try {
-      doc.triangle(0, 297, 45, 297, 0, 278, 'F');
+      doc.triangle(0, pageHeight, 45, pageHeight, 0, footerY - 9, 'F');
     } catch (e) {}
-    doc.rect(0, 290, 32, 7, 'F');
+    doc.rect(0, footerY + 3, 32, 7, 'F');
 
-    // Footer Text
+    // Texto de marca à esquerda
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.text('GRAUMP', 15, 293.5);
+    doc.text('GRAUMP', 15, textY);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(203, 213, 225);
-    doc.text(' • Oficina HP Gestão & Frotas', 29, 293.5);
+    doc.text(' • Oficina HP Gestão & Frotas', 29, textY);
 
+    // Texto central informativo
     doc.setTextColor(148, 163, 184);
-    doc.text('Mapa Operacional de Serviços em Aberto • Formato A3 • Documento Processado por Computador', 210, 293.5, { align: 'center' });
+    const centerTitle = isPortrait
+      ? 'Mapa Operacional de Serviços em Aberto • Folha 1 (Enquadramento Geográfico - Formato Vertical A3)'
+      : 'Lista Resumida de Serviços em Aberto • Folha 2 (Detalhamento Operacional - Formato Horizontal A3)';
+    doc.text(centerTitle, pageWidth / 2, textY, { align: 'center' });
 
+    // Numeração de página à direita
     doc.setTextColor(255, 255, 255);
-    doc.text(`Página ${i} de ${pageCount}`, 406, 293.5, { align: 'right' });
+    doc.text(`Página ${i} de ${pageCount}`, rightMargin, textY, { align: 'right' });
   }
 
   return doc;
