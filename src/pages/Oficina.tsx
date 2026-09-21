@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Plus,
   Search,
@@ -39,7 +39,8 @@ import {
   GraduationCap,
   Handshake,
   Mail,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -86,6 +87,15 @@ interface OficinaProps {
   onClearSelectedFolha?: () => void;
   currentUser?: UserProfile;
 }
+
+export const ALL_TIPOS: TipoServico[] = [
+  'Oficina',
+  'Validação e Preparação',
+  'Assistência Técnica',
+  'Garantia',
+  'Entrega e Formação',
+  'Contrato'
+];
 
 export const OPERATIONAL_STATUSES: StatusFolhaServico[] = [
   'A ser intervencionado',
@@ -283,7 +293,9 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('TODOS');
-  const [filterTipo, setFilterTipo] = useState<string>('TODOS');
+  const [filterTipos, setFilterTipos] = useState<string[]>([]);
+  const [isTipoDropdownOpen, setIsTipoDropdownOpen] = useState(false);
+  const tipoDropdownRef = useRef<HTMLDivElement>(null);
   const [filterRequisicao, setFilterRequisicao] = useState<string>('TODOS');
   const [filterFaturacao, setFilterFaturacao] = useState<string>('TODOS');
 
@@ -378,10 +390,33 @@ export const Oficina: React.FC<OficinaProps> = ({
       if (plateContainerRef.current && !plateContainerRef.current.contains(e.target as Node)) {
         setIsPlateDropdownOpen(false);
       }
+      if (tipoDropdownRef.current && !tipoDropdownRef.current.contains(e.target as Node)) {
+        setIsTipoDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleToggleTipo = (tipo: string) => {
+    setFilterTipos(prev => {
+      if (prev.includes(tipo)) {
+        return prev.filter(t => t !== tipo);
+      } else {
+        return [...prev, tipo];
+      }
+    });
+  };
+
+  const tipoCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    folhas.forEach(f => {
+      if (f.tipo) {
+        counts[f.tipo] = (counts[f.tipo] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [folhas]);
 
   // Open modal if prop passed
   useEffect(() => {
@@ -1277,7 +1312,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       (f.anomalias && f.anomalias.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = filterStatus === 'TODOS' || f.status === filterStatus;
-    const matchesTipo = filterTipo === 'TODOS' || f.tipo === filterTipo;
+    const matchesTipo = filterTipos.length === 0 || filterTipos.includes(f.tipo);
     const matchesReq = filterRequisicao === 'TODOS' || (f.requisicao || 'Não') === filterRequisicao;
     const matchesFat = filterFaturacao === 'TODOS' || (f.faturacao || 'Pendente') === filterFaturacao;
 
@@ -1330,20 +1365,162 @@ export const Oficina: React.FC<OficinaProps> = ({
             ))}
           </select>
 
-          {/* Type Filter */}
-          <select
-            value={filterTipo}
-            onChange={e => setFilterTipo(e.target.value)}
-            className="py-1.5 px-3 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-hp-500"
-          >
-            <option value="TODOS">Todos os Tipos</option>
-            <option value="Validação e Preparação">Validação e Preparação</option>
-            <option value="Oficina">Oficina</option>
-            <option value="Assistência Técnica">Assistência Técnica</option>
-            <option value="Garantia">Garantia</option>
-            <option value="Entrega e Formação">Entrega e Formação</option>
-            <option value="Contrato">Contrato</option>
-          </select>
+          {/* Multi-Select Type Filter */}
+          <div className="relative" ref={tipoDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsTipoDropdownOpen(prev => !prev)}
+              className={`py-1.5 px-3 rounded-xl text-xs flex items-center gap-2 border transition-all select-none ${
+                filterTipos.length > 0
+                  ? 'bg-hp-500/15 border-hp-500/60 text-white shadow-sm shadow-hp-500/10'
+                  : 'bg-slate-900/80 border-slate-700/80 text-slate-300 hover:border-slate-600'
+              }`}
+              title="Filtrar por múltiplos Tipos de Serviço"
+            >
+              <Filter className={`w-3.5 h-3.5 ${filterTipos.length > 0 ? 'text-hp-400' : 'text-slate-400'}`} />
+
+              {filterTipos.length === 0 ? (
+                <span>Todos os Tipos</span>
+              ) : filterTipos.length === 1 ? (
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${getTipoStyles(filterTipos[0]).dot}`} />
+                  <span className="font-semibold text-white">{filterTipos[0]}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white truncate max-w-[150px]">
+                    {filterTipos.join(', ')}
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-hp-500 text-white text-[10px] font-black">
+                    {filterTipos.length}
+                  </span>
+                </div>
+              )}
+
+              {filterTipos.length > 0 && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setFilterTipos([]);
+                  }}
+                  className="p-0.5 rounded-md hover:bg-white/20 text-slate-400 hover:text-white transition-colors ml-0.5 cursor-pointer"
+                  title="Limpar seleção de tipos"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 ml-0.5 transition-transform duration-200 ${
+                  isTipoDropdownOpen ? 'rotate-180 text-hp-400' : ''
+                }`}
+              />
+            </button>
+
+            {/* Dropdown Popover */}
+            {isTipoDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1.5 z-50 w-72 bg-slate-950/95 border border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in fade-in zoom-in-95">
+                {/* Dropdown Header */}
+                <div className="p-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/70">
+                  <div className="flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-hp-400" />
+                    <span className="text-xs font-bold text-white">Tipo de Serviço</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {filterTipos.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setFilterTipos([])}
+                        className="text-[11px] font-semibold text-hp-400 hover:text-hp-300 transition-colors cursor-pointer"
+                      >
+                        Limpar ({filterTipos.length})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setFilterTipos([...ALL_TIPOS])}
+                        className="text-[11px] font-medium text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                      >
+                        Selecionar Todos
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dropdown Option List */}
+                <div className="p-1.5 space-y-0.5 max-h-64 overflow-y-auto">
+                  {ALL_TIPOS.map(tipo => {
+                    const isSelected = filterTipos.includes(tipo);
+                    const style = getTipoStyles(tipo);
+                    const count = tipoCounts[tipo] || 0;
+
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => handleToggleTipo(tipo)}
+                        className={`w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-hp-500/15 text-white border border-hp-500/30 font-semibold'
+                            : 'text-slate-300 hover:bg-slate-800/70 border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {/* Checkbox Box */}
+                          <div
+                            className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                              isSelected
+                                ? 'bg-hp-500 border-hp-500 text-white'
+                                : 'border-slate-600 bg-slate-900'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+
+                          {/* Color Dot & Name */}
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${style.dot}`} />
+                            <span className={isSelected ? 'text-white font-semibold' : 'text-slate-200'}>
+                              {tipo}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Count Badge */}
+                        <span
+                          className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${
+                            isSelected
+                              ? 'bg-hp-500/30 text-hp-200 font-bold'
+                              : 'bg-slate-800/80 text-slate-400'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Dropdown Footer */}
+                <div className="p-2 border-t border-slate-800/80 bg-slate-900/50 flex items-center justify-between text-[11px] text-slate-400 px-3">
+                  <span>
+                    {filterTipos.length === 0
+                      ? 'Todos os tipos visíveis'
+                      : `${filterTipos.length} de ${ALL_TIPOS.length} selecionados`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTipoDropdownOpen(false)}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold text-[10px] transition-colors cursor-pointer"
+                  >
+                    Concluir
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Requisicao Filter */}
           <select
@@ -1416,6 +1593,43 @@ export const Oficina: React.FC<OficinaProps> = ({
           )}
         </div>
       </div>
+
+      {/* Active Multi-Type Filter Pills */}
+      {filterTipos.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-1 py-0.5 animate-in fade-in">
+          <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+            <Filter className="w-3 h-3 text-hp-400" />
+            Tipos selecionados ({filterTipos.length}):
+          </span>
+          {filterTipos.map(tipo => {
+            const style = getTipoStyles(tipo);
+            return (
+              <span
+                key={tipo}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-slate-900/90 border border-slate-700 text-slate-200 shadow-sm"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                <span>{tipo}</span>
+                <button
+                  type="button"
+                  onClick={() => handleToggleTipo(tipo)}
+                  className="p-0.5 rounded-full hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title={`Remover ${tipo}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setFilterTipos([])}
+            className="text-[11px] text-hp-400 hover:text-hp-300 hover:underline font-semibold ml-1.5 cursor-pointer"
+          >
+            Limpar tudo
+          </button>
+        </div>
+      )}
 
       {/* View Mode: Cards (Grid) */}
       {viewMode === 'cards' ? (
