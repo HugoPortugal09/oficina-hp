@@ -470,7 +470,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
             
             const recipients = auto.destinatarios && auto.destinatarios.length > 0
               ? auto.destinatarios
-              : ['hugo@grau-maquinaria.com', 'pinto@grau-maquinaria.com'];
+              : ['hugo@grau-maquinaria.com'];
 
             const htmlTempos = `
               <div style="font-family:'Segoe UI', Arial, sans-serif; padding:20px; background:#f1f5f9;">

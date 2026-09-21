@@ -6,6 +6,47 @@ import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServi
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput } from '../utils/dateUtils';
 import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
+const INTERNAL_API_KEY = 'hp_app_sec_98fbc71a3d42';
+
+export interface SendEmailApiPayload {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    encoding: string;
+    contentType: string;
+  }>;
+}
+
+/**
+ * Sends email securely via internal /api/send-email endpoint with auth header
+ */
+export async function postSendEmailApi(
+  payload: SendEmailApiPayload
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-app-auth': INTERNAL_API_KEY,
+        'Authorization': `Bearer ${INTERNAL_API_KEY}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.success) {
+      return { success: true, messageId: data.messageId };
+    }
+    return { success: false, error: data.error || `HTTP ${resp.status}` };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Falha de rede ao contactar servidor de email' };
+  }
+}
+
 /**
  * Compresses and resizes an image Data URI or base64 string to a compact JPEG
  * so photo attachments don't exceed email size limits.
@@ -384,19 +425,16 @@ export async function sendTaskNotificationEmail(payload: TaskNotificationPayload
   // 1. Enviar email real via API interna
   let apiDeliverySuccess = false;
   try {
-    const resp = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: recipients,
-        subject,
-        html: htmlContent
-      })
+    const sendResult = await postSendEmailApi({
+      to: recipients,
+      subject,
+      html: htmlContent
     });
-    const data = await resp.json().catch(() => ({}));
-    if (resp.ok && data.success) {
+    if (sendResult.success) {
       apiDeliverySuccess = true;
       console.log(`[EmailService] ✅ Email de tarefa enviado via SMTP para ${recipients.join(', ')}`);
+    } else {
+      console.warn('[EmailService] ⚠️ Resposta ao enviar tarefa:', sendResult.error);
     }
   } catch (apiErr) {
     console.warn('[EmailService] ⚠️ Não foi possível contactar /api/send-email:', apiErr);
@@ -529,7 +567,6 @@ export function resolveEntregaFormacaoRecipients(
   }
   emailsSet.add(adminEmail);
   emailsSet.add('hugo@grau-maquinaria.com');
-  emailsSet.add('pinto@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
   return { recipients, quemFezEmail, adminEmail };
@@ -817,22 +854,17 @@ export async function sendEntregaFormacaoEmail(payload: EntregaFormacaoEmailPayl
   // 2. Enviar email real via API interna (/api/send-email via Gmail SMTP) com o anexo PDF
   let apiDeliverySuccess = false;
   try {
-    const resp = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: recipients,
-        subject,
-        html: htmlContent,
-        attachments
-      })
+    const sendResult = await postSendEmailApi({
+      to: recipients,
+      subject,
+      html: htmlContent,
+      attachments
     });
-    const data = await resp.json().catch(() => ({}));
-    if (resp.ok && data.success) {
+    if (sendResult.success) {
       apiDeliverySuccess = true;
-      console.log(`[EmailService] ✅ Email de Entrega e Formação com PDF anexado enviado via SMTP com sucesso para ${recipients.join(', ')} (ID: ${data.messageId})`);
+      console.log(`[EmailService] ✅ Email de Entrega e Formação com PDF anexado enviado via SMTP com sucesso para ${recipients.join(', ')} (ID: ${sendResult.messageId})`);
     } else {
-      console.warn('[EmailService] ⚠️ Resposta da API de email:', data);
+      console.warn('[EmailService] ⚠️ Resposta da API de email:', sendResult.error);
     }
   } catch (apiErr) {
     console.warn('[EmailService] ⚠️ Não foi possível contactar /api/send-email diretamente:', apiErr);
@@ -1269,7 +1301,7 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
     // 3. Resolve recipients
     let recipients = payload?.destinatarios && payload.destinatarios.length > 0
       ? payload.destinatarios
-      : ['hugo@grau-maquinaria.com', 'pinto@grau-maquinaria.com'];
+      : ['hugo@grau-maquinaria.com'];
 
     // Check config if other recipients exist in automations
     try {
@@ -1287,22 +1319,17 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
     // 4. Send email via internal API
     let apiDeliverySuccess = false;
     try {
-      const resp = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: recipients,
-          subject,
-          html: htmlContent,
-          attachments
-        })
+      const sendResult = await postSendEmailApi({
+        to: recipients,
+        subject,
+        html: htmlContent,
+        attachments
       });
-      const data = await resp.json().catch(() => ({}));
-      if (resp.ok && data.success) {
+      if (sendResult.success) {
         apiDeliverySuccess = true;
-        console.log(`[EmailService] ✅ Email diário de tempos de resposta enviado com sucesso via SMTP (ID: ${data.messageId})`);
+        console.log(`[EmailService] ✅ Email diário de tempos de resposta enviado com sucesso via SMTP (ID: ${sendResult.messageId})`);
       } else {
-        console.warn('[EmailService] ⚠️ Resposta da API:', data);
+        console.warn('[EmailService] ⚠️ Resposta da API:', sendResult.error);
       }
     } catch (apiErr) {
       console.warn('[EmailService] ⚠️ Não foi possível contactar /api/send-email:', apiErr);
@@ -1410,7 +1437,6 @@ export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): 
 
   emailsSet.add(adminEmail);
   emailsSet.add('hugo@grau-maquinaria.com');
-  emailsSet.add('pinto@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
 
@@ -1689,22 +1715,17 @@ export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): 
   // Dispatch via /api/send-email
   let apiDeliverySuccess = false;
   try {
-    const resp = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: recipients,
-        subject,
-        html: htmlContent,
-        attachments
-      })
+    const sendResult = await postSendEmailApi({
+      to: recipients,
+      subject,
+      html: htmlContent,
+      attachments
     });
-    const data = await resp.json().catch(() => ({}));
-    if (resp.ok && data.success) {
+    if (sendResult.success) {
       apiDeliverySuccess = true;
       console.log(`[EmailService] ✅ Folha de Serviço ${folha.numero} enviada com sucesso para ${recipients.join(', ')}`);
     } else {
-      console.warn('[EmailService] Resposta da API:', data);
+      console.warn('[EmailService] Resposta da API:', sendResult.error);
     }
   } catch (apiErr) {
     console.warn('[EmailService] Erro ao contactar /api/send-email:', apiErr);
@@ -1934,21 +1955,16 @@ export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
 
   let apiDeliverySuccess = false;
   try {
-    const resp = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: recipients,
-        subject,
-        html: htmlContent
-      })
+    const sendResult = await postSendEmailApi({
+      to: recipients,
+      subject,
+      html: htmlContent
     });
-    const data = await resp.json().catch(() => ({}));
-    if (resp.ok && data.success) {
+    if (sendResult.success) {
       apiDeliverySuccess = true;
       console.log(`[EmailService] ✅ Email de Agendamento de Visita enviado com sucesso para ${recipients.join(', ')}`);
     } else {
-      console.warn('[EmailService] Resposta da API:', data);
+      console.warn('[EmailService] Resposta da API:', sendResult.error);
     }
   } catch (apiErr) {
     console.warn('[EmailService] Erro ao contactar /api/send-email:', apiErr);
@@ -2015,7 +2031,6 @@ export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): 
 
   emailsSet.add(adminEmail);
   emailsSet.add('hugo@grau-maquinaria.com');
-  emailsSet.add('pinto@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
   const empresaNome = empresa?.nome || 'Cliente Particular / Sem Empresa';
@@ -2175,21 +2190,16 @@ export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): 
 
   let apiDeliverySuccess = false;
   try {
-    const resp = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: recipients,
-        subject,
-        html: htmlContent
-      })
+    const sendResult = await postSendEmailApi({
+      to: recipients,
+      subject,
+      html: htmlContent
     });
-    const data = await resp.json().catch(() => ({}));
-    if (resp.ok && data.success) {
+    if (sendResult.success) {
       apiDeliverySuccess = true;
       console.log(`[EmailService] ✅ Email de Contacto enviado com sucesso para ${recipients.join(', ')}`);
     } else {
-      console.warn('[EmailService] Resposta da API:', data);
+      console.warn('[EmailService] Resposta da API:', sendResult.error);
     }
   } catch (apiErr) {
     console.warn('[EmailService] Erro ao contactar /api/send-email:', apiErr);
@@ -2692,24 +2702,18 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
     let apiDeliverySuccess = false;
     let apiError = '';
     try {
-      const resp = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: recipients,
-          subject,
-          html: htmlContent,
-          attachments
-        })
+      const sendResult = await postSendEmailApi({
+        to: recipients,
+        subject,
+        html: htmlContent,
+        attachments
       });
-
-      const data = await resp.json().catch(() => ({}));
-      if (resp.ok && data.success) {
+      if (sendResult.success) {
         apiDeliverySuccess = true;
-        console.log(`[EmailService] ✅ Email de Planeamento Semanal enviado com sucesso via SMTP (ID: ${data.messageId})`);
+        console.log(`[EmailService] ✅ Email de Planeamento Semanal enviado com sucesso via SMTP (ID: ${sendResult.messageId})`);
       } else {
-        apiError = data.error || `HTTP ${resp.status}`;
-        console.warn('[EmailService] ⚠️ Resposta da API:', data);
+        apiError = sendResult.error || 'Erro no envio';
+        console.warn('[EmailService] ⚠️ Resposta da API:', sendResult.error);
       }
     } catch (apiErr: any) {
       apiError = apiErr?.message || 'Falha de rede';

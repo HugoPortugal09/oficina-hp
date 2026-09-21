@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Wrench, Shield, Lock, Mail, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Wrench, Shield, Lock, Mail, Eye, EyeOff, KeyRound, UserCheck, Users, Sparkles } from 'lucide-react';
 import type { UserProfile } from '../types';
+import { isAdminEmail, ADMIN_EMAILS } from '../types';
 
 interface LoginProps {
   utilizadores: UserProfile[];
@@ -23,33 +24,72 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
 
     setTimeout(() => {
       const cleanEmail = email.trim().toLowerCase();
-      const user = utilizadores.find(
-        u => u.email.toLowerCase() === cleanEmail || u.nome.toLowerCase().includes(cleanEmail)
+      
+      // 1. Find user in registered list
+      let user = utilizadores.find(
+        u => (u.email && u.email.toLowerCase() === cleanEmail) ||
+             (u.nome && u.nome.toLowerCase() === cleanEmail) ||
+             (u.nome && u.nome.toLowerCase().includes(cleanEmail))
       );
 
+      // 2. If it's a designated Administrator email but not yet in the array, instantiate it
+      if (!user && isAdminEmail(cleanEmail)) {
+        user = {
+          id: `u_admin_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
+          nome: cleanEmail.includes('hugo') ? 'Hugo Portugal (Administrador)' : 'Administrador',
+          email: cleanEmail,
+          role: 'administrador',
+          avatar: cleanEmail.includes('hugo') ? 'HP' : 'AD',
+          password: 'admin',
+          descricao: 'Administrador Principal • Acesso total e configurações',
+          ativo: true
+        };
+      }
+
       if (!user) {
-        setError('Email ou utilizador não encontrado no sistema.');
+        setError('Email ou utilizador não encontrado no sistema. Verifique os dados inseridos.');
         setIsLoading(false);
         return;
       }
 
-      // Check password (if user has a configured password, or default pass)
-      const validPassword = user.password || (user.role === 'administrador' ? 'admin' : '123');
-      if (password !== validPassword && password !== 'admin' && password !== '123') {
+      if (user.ativo === false) {
+        setError('Esta conta de colaborador foi desativada pelo Administrador.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if user is administrator
+      const isUserAdmin = user.role === 'administrador' || isAdminEmail(user.email);
+      const expectedPassword = user.password || (isUserAdmin ? 'admin' : '123');
+
+      // Strict password validation (no cross-role bypass)
+      if (password !== expectedPassword) {
         setError('Palavra-passe incorreta. Tente novamente.');
         setIsLoading(false);
         return;
       }
 
+      // Ensure admin role if email is an admin email
+      if (isAdminEmail(user.email) && user.role !== 'administrador') {
+        user = { ...user, role: 'administrador' };
+      }
+
       if (rememberMe) {
         try {
           localStorage.setItem('oficina_hp_session_user_id', user.id);
+          localStorage.setItem('oficina_hp_active_user_id', user.id);
         } catch {}
       }
 
       setIsLoading(false);
       onLogin(user);
-    }, 400);
+    }, 350);
+  };
+
+  const handleSelectPreFill = (u: UserProfile) => {
+    setEmail(u.email);
+    setPassword(u.password || (u.role === 'administrador' ? 'admin' : '123'));
+    setError(null);
   };
 
   return (
@@ -62,7 +102,7 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
         <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="w-full max-w-md relative z-10 space-y-6">
+      <div className="w-full max-w-md relative z-10 space-y-5">
         {/* Brand Header */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 shadow-2xl shadow-black/60 relative overflow-hidden group">
@@ -73,14 +113,14 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
             OFICINA <span className="text-sky-400">HP</span>
           </h1>
           <p className="text-xs text-slate-400 font-medium">
-            Gestão Operacional & Frotas
+            Gestão Operacional & Frotas • Acesso à Equipa
           </p>
         </div>
 
         {/* Card Form */}
-        <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
           <div className="space-y-1">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Shield className="w-4 h-4 text-hp-400" /> Iniciar Sessão
             </h2>
             <p className="text-xs text-slate-400">
@@ -89,15 +129,15 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
           </div>
 
           {error && (
-            <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center gap-2.5 animate-shake">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center gap-2.5 animate-shake">
               <div className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3.5">
             {/* Email / Username Field */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label className="text-xs font-bold text-slate-300 block">
                 Email / Utilizador
               </label>
@@ -106,16 +146,16 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
                 <input
                   type="text"
                   required
-                  placeholder="exemplo@oficinahp.pt"
+                  placeholder="ex: hugo@grau-maquinaria.com"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  className="w-full py-2.5 pl-10 pr-4 bg-slate-950/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-hp-500 focus:ring-1 focus:ring-hp-500 transition-all font-medium"
+                  className="w-full py-2.5 pl-10 pr-4 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-hp-500 focus:ring-1 focus:ring-hp-500 transition-all font-medium"
                 />
               </div>
             </div>
 
             {/* Password Field */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-300 block">
                   Palavra-passe
@@ -129,7 +169,7 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
                   placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full py-2.5 pl-10 pr-10 bg-slate-950/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-hp-500 focus:ring-1 focus:ring-hp-500 transition-all font-medium"
+                  className="w-full py-2.5 pl-10 pr-10 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-hp-500 focus:ring-1 focus:ring-hp-500 transition-all font-medium"
                 />
                 <button
                   type="button"
@@ -142,13 +182,13 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
             </div>
 
             {/* Remember Me */}
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-300">
+            <div className="flex items-center justify-between pt-0.5">
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-300 select-none">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-hp-600 focus:ring-0 cursor-pointer"
+                  className="w-3.5 h-3.5 rounded bg-slate-950 border-slate-700 text-hp-600 focus:ring-0 cursor-pointer"
                 />
                 Lembrar sessão neste dispositivo
               </label>
@@ -158,7 +198,7 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gradient-to-r from-hp-600 to-hp-500 hover:from-hp-500 hover:to-hp-400 text-white font-bold rounded-xl text-sm shadow-lg shadow-hp-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-2.5 bg-gradient-to-r from-hp-600 to-hp-500 hover:from-hp-500 hover:to-hp-400 text-white font-bold rounded-xl text-xs shadow-lg shadow-hp-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -169,11 +209,48 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
               )}
             </button>
           </form>
+
+          {/* Quick Team Member Access */}
+          <div className="pt-3 border-t border-slate-800/80">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-hp-400" /> Colaboradores da Equipa
+              </span>
+              <span className="text-[10px] text-slate-500">Clique para preencher</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {utilizadores.slice(0, 6).map(u => {
+                const isAdmin = u.role === 'administrador' || isAdminEmail(u.email);
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => handleSelectPreFill(u)}
+                    className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800 hover:border-hp-500/50 hover:bg-slate-800/50 text-left flex items-center gap-2 transition-all group"
+                  >
+                    <div className={`w-6 h-6 rounded-md font-bold text-[10px] flex items-center justify-center ${
+                      isAdmin ? 'bg-hp-500/20 text-hp-400' : u.role === 'gestor' ? 'bg-sky-500/20 text-sky-400' : 'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {u.avatar || u.nome.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-bold text-slate-200 truncate group-hover:text-white">
+                        {u.nome}
+                      </div>
+                      <div className="text-[9px] text-slate-500 truncate capitalize">
+                        {isAdmin ? 'Administrador' : u.role}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
         <div className="text-center text-[11px] text-slate-500">
-          Oficina HP • Sistema de Gestão Interna & Assistência Técnica v2.0
+          Oficina HP • Sistema de Gestão Operacional & Frotas
         </div>
       </div>
     </div>

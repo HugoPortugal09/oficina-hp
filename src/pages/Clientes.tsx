@@ -209,7 +209,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas, currentU
       const targetEmpresa = (empresas || []).find(e => e.id === clientToSave.empresaId);
       const isEdit = existingIndex >= 0;
 
-      // Disparo automático de email para o utilizador, hugo@grau-maquinaria.com e pinto@grau-maquinaria.com
+      // Disparo automático de email para o utilizador e destinatários configurados
       sendNovoContactoEmail({
         cliente: clientToSave,
         empresa: targetEmpresa,
@@ -392,7 +392,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas, currentU
                   <button
                     onClick={e => handleSendContactEmail(cli, e)}
                     disabled={sendingEmailForId === cli.id}
-                    title="Enviar dados do contacto por email (para hugo@grau-maquinaria.com, pinto@grau-maquinaria.com e para si)"
+                    title="Enviar dados do contacto por email para o seu email e destinatários configurados"
                     className="py-1.5 px-2.5 bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 border border-hp-500/30 transition-colors disabled:opacity-50 shrink-0"
                   >
                     <Mail className="w-3.5 h-3.5 text-hp-400" />
@@ -457,7 +457,7 @@ export const Clientes: React.FC<ClientesProps> = ({ clientes, empresas, currentU
                         <button
                           onClick={e => handleSendContactEmail(cli, e)}
                           disabled={sendingEmailForId === cli.id}
-                          title="Enviar dados do contacto por email para hugo@grau-maquinaria.com, pinto@grau-maquinaria.com e para si"
+                          title="Enviar dados do contacto por email para o seu email e destinatários configurados"
                           className="p-1.5 bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 rounded-lg transition-colors disabled:opacity-50"
                         >
                           <Mail className="w-3.5 h-3.5 text-hp-400" />

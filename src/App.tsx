@@ -42,7 +42,7 @@ import type {
   VisionScanResult,
   UserProfile
 } from './types';
-import { USERS, getPermissionsForRole } from './types';
+import { USERS, getPermissionsForRole, isAdminEmail } from './types';
 
 export default function App() {
   // Check if current URL route is /mobile
@@ -86,8 +86,13 @@ export default function App() {
       const savedId = localStorage.getItem('oficina_hp_session_user_id') || localStorage.getItem('oficina_hp_active_user_id');
       if (savedId) {
         const fromDb = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || USERS;
-        const found = fromDb.find(u => u.id === savedId);
-        if (found) return found;
+        const found = fromDb.find(u => u.id === savedId || (u.email && u.email.toLowerCase() === savedId.toLowerCase()));
+        if (found) {
+          if (isAdminEmail(found.email) && found.role !== 'administrador') {
+            return { ...found, role: 'administrador' };
+          }
+          return found;
+        }
       }
     } catch {}
     return USERS[0]; // Administrador por defeito
@@ -104,11 +109,12 @@ export default function App() {
   });
 
   const handleLogin = (user: UserProfile) => {
-    setCurrentUser(user);
+    const effectiveUser = isAdminEmail(user.email) ? { ...user, role: 'administrador' as const } : user;
+    setCurrentUser(effectiveUser);
     setIsAuthenticated(true);
     try {
-      localStorage.setItem('oficina_hp_session_user_id', user.id);
-      localStorage.setItem('oficina_hp_active_user_id', user.id);
+      localStorage.setItem('oficina_hp_session_user_id', effectiveUser.id);
+      localStorage.setItem('oficina_hp_active_user_id', effectiveUser.id);
     } catch {}
   };
 
@@ -116,19 +122,21 @@ export default function App() {
     setIsAuthenticated(false);
     try {
       localStorage.removeItem('oficina_hp_session_user_id');
+      localStorage.removeItem('oficina_hp_active_user_id');
     } catch {}
   };
 
   const handleSelectUser = (user: UserProfile) => {
-    setCurrentUser(user);
+    const effectiveUser = isAdminEmail(user.email) ? { ...user, role: 'administrador' as const } : user;
+    setCurrentUser(effectiveUser);
     try {
-      localStorage.setItem('oficina_hp_active_user_id', user.id);
-      localStorage.setItem('oficina_hp_session_user_id', user.id);
+      localStorage.setItem('oficina_hp_active_user_id', effectiveUser.id);
+      localStorage.setItem('oficina_hp_session_user_id', effectiveUser.id);
     } catch {}
-    if (user.role !== 'administrador' && activeTab === 'configuracoes') {
+    if (effectiveUser.role !== 'administrador' && activeTab === 'configuracoes') {
       setActiveTab('dashboard');
     }
-    if (user.role === 'tecnico' && activeTab === 'propostas') {
+    if (effectiveUser.role === 'tecnico' && (activeTab === 'propostas' || activeTab === 'automacoes')) {
       setActiveTab('dashboard');
     }
   };

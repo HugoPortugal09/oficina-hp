@@ -34,11 +34,17 @@ const MIME_TYPES = {
   '.pdf': 'application/pdf'
 };
 
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'hp_app_sec_98fbc71a3d42';
+
+if (!process.env.EMAIL_APP_PASSWORD) {
+  console.warn('[Server] ⚠️ AVISO: EMAIL_APP_PASSWORD não configurada nas variáveis de ambiente. Configure no Easypanel.');
+}
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com',
-    pass: process.env.EMAIL_APP_PASSWORD || 'ewhzzvysccrptkns'
+    pass: process.env.EMAIL_APP_PASSWORD || ''
   }
 });
 
@@ -46,7 +52,7 @@ export async function sendEmail({ to, subject, html, text, attachments }) {
   const recipients = Array.isArray(to) ? to.join(', ') : to;
   console.log(`[Server] A enviar email para: ${recipients} | Assunto: ${subject}`);
   const mailOptions = {
-    from: '"Oficina HP" <oficinahpapp@gmail.com>',
+    from: `"Oficina HP" <${process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com'}>`,
     to: recipients,
     subject: subject,
     html: html,
@@ -60,11 +66,15 @@ export async function sendEmail({ to, subject, html, text, attachments }) {
   return info;
 }
 
+// Rate limiter for outgoing emails (max 40 emails / min)
+let rateLimitWindowStart = Date.now();
+let rateLimitCount = 0;
+
 const server = http.createServer(async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-app-auth');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -74,6 +84,33 @@ const server = http.createServer(async (req, res) => {
 
   // API Route: POST /api/send-email
   if (req.url === '/api/send-email' && req.method === 'POST') {
+    // 1. Security Check: Validate internal app key
+    const authHeader = req.headers['authorization'] || '';
+    const customHeader = req.headers['x-app-auth'] || '';
+    const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const token = customHeader.trim() || bearerToken;
+
+    if (token !== INTERNAL_API_KEY) {
+      console.warn('[Server] 🚫 Bloqueado acesso não autorizado a /api/send-email');
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Acesso não autorizado. Chave de aplicação inválida.' }));
+      return;
+    }
+
+    // 2. Rate limiting check
+    const now = Date.now();
+    if (now - rateLimitWindowStart > 60000) {
+      rateLimitWindowStart = now;
+      rateLimitCount = 0;
+    }
+    rateLimitCount++;
+    if (rateLimitCount > 40) {
+      console.warn('[Server] ⚠️ Limite de envio por minuto excedido em /api/send-email');
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Limite de envio atingido. Aguarde antes de enviar novamente.' }));
+      return;
+    }
+
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {

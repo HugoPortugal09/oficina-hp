@@ -31,9 +31,9 @@ import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { checkPocketBaseConnection } from '../services/pocketbase';
-import { syncPullFromCloud, uploadAllLocalToCloud } from '../services/pocketbaseSync';
+import { syncPullFromCloud, uploadAllLocalToCloud, syncPushToCloud } from '../services/pocketbaseSync';
 import type { ConfiguracaoOficina, UserProfile, UserRole } from '../types';
-import { USERS } from '../types';
+import { USERS, isAdminEmail, ADMIN_EMAILS } from '../types';
 
 interface ConfiguracoesProps {
   theme?: 'dark' | 'light';
@@ -91,25 +91,29 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
       alert('Por favor insira o nome do utilizador.');
       return;
     }
+    const isTargetAdmin = (editingUser.role === 'administrador') || isAdminEmail(editingUser.email);
+    const finalRole: UserRole = isTargetAdmin ? 'administrador' : ((editingUser.role as UserRole) || 'tecnico');
     const avatar = editingUser.avatar?.trim() || editingUser.nome.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+    
     const finalUser: UserProfile = {
       id: editingUser.id || db.generateId('usr'),
       nome: editingUser.nome.trim(),
       email: editingUser.email?.trim() || '',
-      password: editingUser.password?.trim() || (editingUser.role === 'administrador' ? 'admin' : '123'),
-      role: (editingUser.role as UserRole) || 'tecnico',
+      password: editingUser.password?.trim() || (isTargetAdmin ? 'admin' : '123'),
+      role: finalRole,
       avatar: avatar,
       descricao: editingUser.descricao?.trim() || (
-        editingUser.role === 'administrador'
+        finalRole === 'administrador'
           ? 'Administrador com acesso total e configurações'
-          : editingUser.role === 'gestor'
+          : finalRole === 'gestor'
           ? 'Gestor de Operações com foco em tarefas e consulta'
           : 'Técnico de Manutenção e Oficina'
-      )
+      ),
+      ativo: editingUser.ativo !== undefined ? editingUser.ativo : true
     };
 
     const currentList = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || USERS;
-    const existingIndex = currentList.findIndex(u => u.id === finalUser.id);
+    const existingIndex = currentList.findIndex(u => u.id === finalUser.id || (u.email && u.email.toLowerCase() === finalUser.email.toLowerCase()));
     let updated: UserProfile[];
     if (existingIndex >= 0) {
       updated = [...currentList];
@@ -117,21 +121,33 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     } else {
       updated = [...currentList, finalUser];
     }
+
     db.save(STORAGE_KEYS.UTILIZADORES, updated);
     setUtilizadores(updated);
+    syncPushToCloud(STORAGE_KEYS.UTILIZADORES, updated).catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.UTILIZADORES } }));
+    }
     setIsUserModalOpen(false);
   };
 
   const handleDeleteUser = (userId: string) => {
-    if (userId === 'usr_admin') {
-      alert('Não é possível eliminar o utilizador Administrador principal.');
+    const currentList = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || USERS;
+    const targetUser = currentList.find(u => u.id === userId);
+
+    if (targetUser && (isAdminEmail(targetUser.email) || targetUser.role === 'administrador')) {
+      alert('Não é possível eliminar um Administrador designado do sistema.');
       return;
     }
-    if (confirm('Tem a certeza que deseja eliminar este utilizador?')) {
-      const currentList = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || USERS;
+
+    if (confirm(`Tem a certeza que deseja eliminar o colaborador ${targetUser?.nome || ''}?`)) {
       const updated = currentList.filter(u => u.id !== userId);
       db.save(STORAGE_KEYS.UTILIZADORES, updated);
       setUtilizadores(updated);
+      syncPushToCloud(STORAGE_KEYS.UTILIZADORES, updated).catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.UTILIZADORES } }));
+      }
     }
   };
 
@@ -765,6 +781,122 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
         </div>
       </GlassCard>
 
+      {/* Team Management Card */}
+      <GlassCard>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <Users className="w-5 h-5 text-hp-400" />
+            <div>
+              <h3 className="text-base font-bold text-white">Equipa & Controlo de Acessos</h3>
+              <p className="text-xs text-slate-400">
+                Gestão dos colaboradores da oficina, credenciais individuais e níveis de permissão
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCreateNewUser}
+            className="px-3.5 py-1.5 rounded-xl bg-hp-600 hover:bg-hp-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-hp-600/20 transition-all cursor-pointer self-start sm:self-auto"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Adicionar Colaborador
+          </button>
+        </div>
+
+        {/* Users List Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
+          {utilizadores.map(u => {
+            const isUserAdmin = u.role === 'administrador' || isAdminEmail(u.email);
+            return (
+              <div
+                key={u.id}
+                className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-slate-700/80 transition-all flex items-start justify-between gap-3 group"
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 ${
+                    isUserAdmin
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      : u.role === 'gestor'
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}>
+                    {u.avatar || u.nome.substring(0, 2).toUpperCase()}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-white truncate">{u.nome}</h4>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                        isUserAdmin
+                          ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                          : u.role === 'gestor'
+                          ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      }`}>
+                        {isUserAdmin ? 'Administrador' : u.role === 'gestor' ? 'Gestor' : 'Técnico'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 truncate mt-0.5 font-medium">
+                      {u.email || 'Sem email associado'}
+                    </div>
+
+                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                      {u.descricao || (isUserAdmin ? 'Acesso total' : u.role === 'gestor' ? 'Gestão operacional' : 'Técnico de oficina')}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleEditUser(u)}
+                    title="Editar colaborador"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                  </button>
+
+                  {!isUserAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteUser(u.id)}
+                      title="Eliminar colaborador"
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Permissions Summary Note */}
+        <div className="mt-4 p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+          <div className="font-bold text-slate-300 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-hp-400" />
+            Níveis de Acesso & Permissões:
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[10px]">
+            <div className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800">
+              <span className="font-bold text-purple-400 block">👑 Administrador</span>
+              <span>Acesso irrestrito a configurações, automações, propostas e controlo da equipa.</span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800">
+              <span className="font-bold text-sky-400 block">💼 Gestor</span>
+              <span>Acesso ao planeamento, visitas, tarefas e orçamentos. Sem acesso a configurações.</span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-slate-950/60 border border-slate-800">
+              <span className="font-bold text-amber-400 block">🔧 Técnico</span>
+              <span>Operacional de oficina e exterior, folhas e peças. Sem acesso a orçamentos ou preços.</span>
+            </div>
+          </div>
+        </div>
+      </GlassCard>
+
       {/* Create / Edit User Modal */}
       {isUserModalOpen && (
         <Modal
@@ -913,6 +1045,26 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
                   </div>
                 </button>
               </div>
+
+              {isAdminEmail(editingUser.email) && (
+                <div className="mt-2.5 p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-[11px] text-purple-300 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-purple-400 shrink-0" />
+                  <span>Este endereço de email é um <strong>Administrador Oficial</strong> designado do sistema e terá sempre permissões completas de Administração.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Account Active Toggle */}
+            <div className="flex items-center gap-2 pt-1">
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={editingUser.ativo !== false}
+                  onChange={e => setEditingUser(prev => ({ ...prev, ativo: e.target.checked }))}
+                  className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-hp-600 focus:ring-0 cursor-pointer"
+                />
+                <span className="font-semibold">Conta Ativa (pode aceder ao sistema)</span>
+              </label>
             </div>
 
             {/* Modal Actions */}

@@ -405,6 +405,18 @@ export interface VisionScanResult {
 
 export type UserRole = 'administrador' | 'gestor' | 'tecnico';
 
+export const ADMIN_EMAILS = [
+  'hugo@grau-maquinaria.com',
+  'hugoportugal@gmail.com',
+  'oficinahpapp@gmail.com'
+] as const;
+
+export function isAdminEmail(email?: string): boolean {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  return ADMIN_EMAILS.some(adminEmail => adminEmail.toLowerCase() === clean);
+}
+
 export interface UserProfile {
   id: string;
   nome: string;
@@ -412,7 +424,10 @@ export interface UserProfile {
   avatar: string;
   email: string;
   password?: string;
-  descricao: string;
+  descricao?: string;
+  telefone?: string;
+  ativo?: boolean;
+  criadoEm?: string;
 }
 
 export interface RolePermissions {
@@ -427,35 +442,80 @@ export interface RolePermissions {
 
 export const USERS: UserProfile[] = [
   {
-    id: 'u_admin',
-    nome: 'Hugo Portugal (Administrador)',
+    id: 'u_admin_hugo',
+    nome: 'Hugo Portugal',
     role: 'administrador',
     avatar: 'HP',
     email: 'hugo@grau-maquinaria.com',
     password: 'admin',
-    descricao: 'Acesso total a todas as áreas, peças, serviços, Automações e Configurações'
+    descricao: 'Administrador Principal • Acesso total e configurações',
+    ativo: true
+  },
+  {
+    id: 'u_admin_gmail',
+    nome: 'Hugo Portugal (Gmail)',
+    role: 'administrador',
+    avatar: 'HP',
+    email: 'hugoportugal@gmail.com',
+    password: 'admin',
+    descricao: 'Administrador • Acesso total e configurações',
+    ativo: true
+  },
+  {
+    id: 'u_admin_app',
+    nome: 'Oficina HP App',
+    role: 'administrador',
+    avatar: 'OH',
+    email: 'oficinahpapp@gmail.com',
+    password: 'admin',
+    descricao: 'Administrador de Sistema • Acesso total',
+    ativo: true
   },
   {
     id: 'u_gestor',
     nome: 'Gestor de Operações',
     role: 'gestor',
     avatar: 'GO',
-    email: 'gestor@oficinahp.pt',
+    email: 'gestor@grau-maquinaria.com',
     password: '123',
-    descricao: 'Acesso geral. Apenas leitura em Peças e Serviços (exceto Tarefas onde pode editar)'
+    descricao: 'Gestor Operacional • Planeamento, visitas, tarefas e orçamentos',
+    ativo: true
   },
   {
-    id: 'u_tecnico',
+    id: 'u_tecnico_oficina',
     nome: 'Técnico de Oficina',
     role: 'tecnico',
     avatar: 'TO',
-    email: 'tecnico@oficinahp.pt',
+    email: 'oficina@grau-maquinaria.com',
     password: '123',
-    descricao: 'Acesso operacional. Sem acesso a Orçamentos e sem preços visíveis nas peças'
+    descricao: 'Técnico de Oficina • Intervenções mecânicas, peças e tempos',
+    ativo: true
+  },
+  {
+    id: 'u_tecnico_exterior',
+    nome: 'Técnico de Exterior',
+    role: 'tecnico',
+    avatar: 'TE',
+    email: 'exterior@grau-maquinaria.com',
+    password: '123',
+    descricao: 'Técnico de Terreno • Assistência técnica móvel e contratos',
+    ativo: true
   }
 ];
 
-export function getPermissionsForRole(role: UserRole): RolePermissions {
+export function getPermissionsForRole(role: UserRole, email?: string): RolePermissions {
+  if (email && isAdminEmail(email)) {
+    return {
+      canAccessConfig: true,
+      canAccessAutomacoes: true,
+      canAccessPropostas: true,
+      canEditPecas: true,
+      canEditServicos: true,
+      canEditTarefas: true,
+      canViewPrecos: true
+    };
+  }
+
   switch (role) {
     case 'administrador':
       return {
@@ -472,20 +532,20 @@ export function getPermissionsForRole(role: UserRole): RolePermissions {
         canAccessConfig: false,
         canAccessAutomacoes: false,
         canAccessPropostas: true,
-        canEditPecas: false, // Não pode alterar nada no menu Peças
-        canEditServicos: false, // Não pode alterar nada no menu Serviços...
-        canEditTarefas: true, // ...com a exceção das tarefas
-        canViewPrecos: false // Gestor não deve ter acesso a preços de peças
+        canEditPecas: false,
+        canEditServicos: false,
+        canEditTarefas: true,
+        canViewPrecos: false
       };
     case 'tecnico':
       return {
         canAccessConfig: false,
         canAccessAutomacoes: false,
-        canAccessPropostas: false, // Sem acesso aos orçamentos
+        canAccessPropostas: false,
         canEditPecas: true,
         canEditServicos: true,
         canEditTarefas: true,
-        canViewPrecos: false // A lista de peças não deve ter preços
+        canViewPrecos: false
       };
   }
 }
