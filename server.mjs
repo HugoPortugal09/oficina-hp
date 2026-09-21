@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
+import { startServerAutomationCron, runServerAutomations, getLisbonTime } from './server-automations.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -97,6 +98,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Cron automation endpoints
+  if (req.url === '/api/cron/check' || req.url === '/api/cron/run') {
+    const isForced = req.method === 'POST';
+    const cronResult = await runServerAutomations(sendEmail, isForced);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, cronResult }));
+    return;
+  }
+
+  if (req.url === '/api/cron/status') {
+    const lisbon = getLisbonTime();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'active', lisbon }));
+    return;
+  }
+
   // Static File Serving with SPA Fallback
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
   let pathname = parsedUrl.pathname;
@@ -131,5 +148,6 @@ const server = http.createServer(async (req, res) => {
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`🚀 Oficina HP Server a correr na porta ${PORT}`);
+    startServerAutomationCron(sendEmail);
   });
 }
