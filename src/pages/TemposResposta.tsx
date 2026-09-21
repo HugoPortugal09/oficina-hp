@@ -24,11 +24,13 @@ import {
   Printer,
   Loader2,
   X,
-  ChevronDown
+  ChevronDown,
+  MapPin
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { formatDate, calculateDiffDays, getTodayFormatted } from '../utils/dateUtils';
+import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 import { generateTemposRespostaPDF } from '../services/pdfService';
 import { sendDailyTemposRespostaEmail } from '../services/emailService';
 import { getTipoStyles } from '../utils/statusColors';
@@ -56,7 +58,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
   equipamentos,
   onSelectFolha
 }) => {
-  const [filterScope, setFilterScope] = useState<'abertas' | 'todos' | 'oficina' | 'criticas'>('abertas');
+  const [filterScope, setFilterScope] = useState<'abertas' | 'todos' | 'oficina' | 'exterior' | 'criticas'>('abertas');
   const [filterTipos, setFilterTipos] = useState<string[]>([]);
   const [isTipoDropdownOpen, setIsTipoDropdownOpen] = useState(false);
   const tipoDropdownRef = useRef<HTMLDivElement>(null);
@@ -124,6 +126,8 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
         diasRequisicao,
         tempoResposta,
         isOficina: f.tipo === 'Oficina',
+        isOficinaOrGraump: isOficinaOrGraump(f),
+        isExterior: isExteriorService(f),
         isCritico: !isConcluido && (((imobilizacao?.days || 0) >= 10) || ((diasRequisicao?.days || 0) >= 10))
       };
     });
@@ -134,7 +138,8 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
     return processedRows.filter(row => {
       // Filter scope
       if (filterScope === 'abertas' && row.isConcluido) return false;
-      if (filterScope === 'oficina' && !row.isOficina) return false;
+      if (filterScope === 'oficina' && (!row.isOficinaOrGraump || row.isConcluido)) return false;
+      if (filterScope === 'exterior' && (!row.isExterior || row.isConcluido)) return false;
       if (filterScope === 'criticas' && !row.isCritico) return false;
 
       // Filter tipo (multi-selection)
@@ -147,7 +152,8 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
         const matchesPlate = row.folha.matricula.toLowerCase().includes(q);
         const matchesEmp = row.empresaNome.toLowerCase().includes(q);
         const matchesStatus = row.folha.status.toLowerCase().includes(q);
-        if (!matchesNum && !matchesPlate && !matchesEmp && !matchesStatus) return false;
+        const matchesLoc = (row.folha.localizacao || '').toLowerCase().includes(q);
+        if (!matchesNum && !matchesPlate && !matchesEmp && !matchesStatus && !matchesLoc) return false;
       }
 
       return true;
@@ -176,7 +182,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
 
   // Overall Statistics / Metrics
   const stats = useMemo(() => {
-    const openOficinaRows = processedRows.filter(r => r.isOficina && !r.isConcluido && r.imobilizacao);
+    const openOficinaRows = processedRows.filter(r => r.isOficinaOrGraump && !r.isConcluido && r.imobilizacao);
     const avgImobilizacaoOficina = openOficinaRows.length > 0
       ? openOficinaRows.reduce((acc, r) => acc + (r.imobilizacao?.days || 0), 0) / openOficinaRows.length
       : 0;
@@ -188,12 +194,16 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
 
     const criticalCount = processedRows.filter(r => r.isCritico).length;
     const totalAbertas = processedRows.filter(r => !r.isConcluido).length;
+    const totalOficinaAbertas = processedRows.filter(r => !r.isConcluido && r.isOficinaOrGraump).length;
+    const totalExteriorAbertas = processedRows.filter(r => !r.isConcluido && r.isExterior).length;
 
     return {
       avgImobilizacaoOficina,
       avgDiasReq,
       criticalCount,
-      totalAbertas
+      totalAbertas,
+      totalOficinaAbertas,
+      totalExteriorAbertas
     };
   }, [processedRows]);
 
@@ -222,14 +232,14 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
     }
   };
 
-  // Download Individual A3 PDF
-  const handleDownloadPDF = (scope: 'OFICINA' | 'ASSISTENCIA_CONTRATOS' | 'TODOS') => {
+  // Download Individual A3 PDF (Apenas em Aberto)
+  const handleDownloadPDF = (scope: 'OFICINA' | 'EXTERIOR' | 'TODOS') => {
     try {
       const doc = generateTemposRespostaPDF(folhas, empresas, scope);
-      const dateStr = new Date().toISOString().split('T')[0];
-      let fname = `Tempos_Resposta_Geral_A3_${dateStr}.pdf`;
+      const dateStr = getTodayFormatted().replace(/\//g, '-');
+      let fname = `Tempos_Resposta_Geral_Abertos_A3_${dateStr}.pdf`;
       if (scope === 'OFICINA') fname = `Tempos_Resposta_Oficina_A3_${dateStr}.pdf`;
-      else if (scope === 'ASSISTENCIA_CONTRATOS') fname = `Tempos_Resposta_Assistencia_Contratos_A3_${dateStr}.pdf`;
+      else if (scope === 'EXTERIOR') fname = `Tempos_Resposta_Exterior_A3_${dateStr}.pdf`;
       doc.save(fname);
     } catch (err) {
       alert('Erro ao gerar o documento PDF em formato A3.');
@@ -240,11 +250,11 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
   const handlePrintA3 = () => {
     if (isGeneratingA3Pdf) return;
     setIsGeneratingA3Pdf(true);
-    setPrintFeedback('A preparar mapa de tempos de resposta em formato A3 horizontal...');
+    setPrintFeedback('A preparar mapa de tempos de resposta em formato A3 horizontal com todas as opções de visualização...');
 
     try {
       if (filteredRows.length === 0) {
-        setPrintFeedback('⚠️ Nenhum registo encontrado com os filtros selecionados.');
+        setPrintFeedback('⚠️ Nenhum registo encontrado com as opções de visualização selecionadas.');
         setTimeout(() => setPrintFeedback(null), 4000);
         setIsGeneratingA3Pdf(false);
         return;
@@ -252,18 +262,29 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
 
       let scopeLabel = 'Todos os Registos';
       if (filterScope === 'abertas') scopeLabel = 'Apenas Abertos';
-      else if (filterScope === 'oficina') scopeLabel = 'Oficina';
+      else if (filterScope === 'oficina') scopeLabel = 'Oficina (GRAUMP)';
+      else if (filterScope === 'exterior') scopeLabel = 'Exterior (Fora de GRAUMP)';
       else if (filterScope === 'criticas') scopeLabel = 'Críticos (≥ 10 dias)';
+      else if (filterScope === 'todos') scopeLabel = 'Histórico Completo';
+
+      const sortNameMap: Record<string, string> = {
+        imobilizacao: 'Tempo de Imobilização',
+        requisicao: 'Dias desde Requisição',
+        data: 'Data de Entrada',
+        numero: 'N.º de Folha'
+      };
+      const sortLabel = `${sortNameMap[sortBy] || sortBy} (${sortOrder === 'asc' ? 'Crescente' : 'Decrescente'})`;
 
       const doc = generateTemposRespostaPDF(folhas, empresas, {
         filterTipos,
         filterScopeLabel: scopeLabel,
         searchTerm: searchTerm.trim() || undefined,
+        sortLabel,
         customRows: filteredRows
       });
 
       const todayStr = getTodayFormatted().replace(/\//g, '-');
-      const filename = `Tempos_Resposta_A3_${todayStr}.pdf`;
+      const filename = `Tempos_Resposta_Visualizacao_A3_${todayStr}.pdf`;
       doc.save(filename);
 
       try {
@@ -273,7 +294,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
         if (win) win.focus();
       } catch (e) {}
 
-      setPrintFeedback(`✅ Mapa A3 gerado com sucesso! (${filteredRows.length} registos)`);
+      setPrintFeedback(`✅ Mapa A3 gerado com sucesso com as opções de visualização escolhidas! (${filteredRows.length} registos)`);
       setTimeout(() => setPrintFeedback(null), 4000);
     } catch (err: any) {
       console.error('[TemposResposta] Erro ao gerar PDF A3:', err);
@@ -383,23 +404,23 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
             <button
               onClick={() => handleDownloadPDF('OFICINA')}
               className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
-              title="Descarregar PDF A3 da Oficina"
+              title="Descarregar PDF A3 da Oficina (GRAUMP, apenas em aberto)"
             >
               <Download className="w-3 h-3 text-orange-400" />
               PDF Oficina (A3)
             </button>
             <button
-              onClick={() => handleDownloadPDF('ASSISTENCIA_CONTRATOS')}
+              onClick={() => handleDownloadPDF('EXTERIOR')}
               className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
-              title="Descarregar PDF A3 de Assistência & Contratos"
+              title="Descarregar PDF A3 do Exterior (fora de GRAUMP, apenas em aberto)"
             >
               <Download className="w-3 h-3 text-sky-400" />
-              PDF AT/Contratos (A3)
+              PDF Exterior (A3)
             </button>
             <button
               onClick={() => handleDownloadPDF('TODOS')}
               className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
-              title="Descarregar PDF A3 Geral Completo"
+              title="Descarregar PDF A3 Geral (Apenas em aberto)"
             >
               <Download className="w-3 h-3 text-emerald-400" />
               PDF Geral (A3)
@@ -509,7 +530,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
             {stats.totalAbertas}
           </h3>
           <span className="text-[10px] text-slate-400">
-            Em curso na oficina / assistência
+            Oficina GRAUMP ({stats.totalOficinaAbertas}) • Exterior ({stats.totalExteriorAbertas})
           </span>
         </GlassCard>
       </div>
@@ -542,10 +563,18 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
             <button
               onClick={() => setFilterScope('oficina')}
               className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
-                filterScope === 'oficina' ? 'bg-hp-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                filterScope === 'oficina' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Oficina
+              Oficina (GRAUMP)
+            </button>
+            <button
+              onClick={() => setFilterScope('exterior')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                filterScope === 'exterior' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Exterior
             </button>
             <button
               onClick={() => setFilterScope('criticas')}
@@ -806,7 +835,7 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
                 <th className="py-3 px-3.5">Folha</th>
                 <th className="py-3 px-3">Tipo</th>
                 <th className="py-3 px-3.5">Viatura</th>
-                <th className="py-3 px-3.5">Cliente / Empresa</th>
+                <th className="py-3 px-3.5">Cliente / Localização</th>
                 <th className="py-3 px-3.5">Data Requisição (Dias)</th>
                 <th className="py-3 px-3.5">Entrada Oficina</th>
                 <th className="py-3 px-3.5">Conclusão</th>
@@ -868,9 +897,18 @@ export const TemposResposta: React.FC<TemposRespostaProps> = ({
                         </div>
                       </td>
 
-                      {/* 4. Empresa */}
-                      <td className="py-3 px-3.5 text-slate-300 max-w-[160px] truncate font-medium">
-                        {row.empresaNome}
+                      {/* 4. Cliente / Localização */}
+                      <td className="py-3 px-3.5 text-slate-300 max-w-[180px]">
+                        <div className="font-medium truncate">{row.empresaNome}</div>
+                        <div className="text-[10px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                          <span className={row.isOficinaOrGraump ? 'text-orange-400/90 font-medium' : 'text-sky-400/90 font-medium'}>
+                            {row.isOficinaOrGraump ? 'Oficina GRAUMP' : 'Exterior'}
+                          </span>
+                          {f.localizacao && f.localizacao !== 'GRAUMP' && (
+                            <span className="text-slate-500 truncate text-[9px]">({f.localizacao})</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 5. Data da Requisição & Número de Dias */}

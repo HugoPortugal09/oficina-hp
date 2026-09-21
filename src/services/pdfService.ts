@@ -4,6 +4,7 @@ import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, Cliente, 
 import { db, STORAGE_KEYS } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
+import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
 export function createFolhaServicoPDFDoc(
   folha: FolhaServico,
@@ -1272,13 +1273,14 @@ export function generateEntregaFormacaoPDF(
   return doc;
 }
 
-export type TemposRespostaScope = 'OFICINA' | 'ASSISTENCIA_CONTRATOS' | 'TODOS';
+export type TemposRespostaScope = 'OFICINA' | 'EXTERIOR' | 'ASSISTENCIA_CONTRATOS' | 'TODOS';
 
 export interface TemposRespostaPDFConfig {
   scope?: TemposRespostaScope;
   filterTipos?: string[];
   filterScopeLabel?: string;
   searchTerm?: string;
+  sortLabel?: string;
   customRows?: Array<{
     folha: FolhaServico;
     empresaNome: string;
@@ -1329,8 +1331,8 @@ export function generateTemposRespostaPDF(
   }> = [];
 
   let docTitle = 'QUADRO GERAL DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO';
-  let scopeSubtitle = 'Relatório global diário com toda a informação operacional (Oficina, Assistência e Contratos)';
-  let scopeBadge = 'ÂMBITO: GERAL (COMPLETO)';
+  let scopeSubtitle = 'Relatório global diário com toda a informação operacional (Oficina e Exterior)';
+  let scopeBadge = 'ÂMBITO: GERAL (APENAS EM ABERTO)';
   let accentColor = [13, 148, 136]; // Teal
 
   if (isConfigObj && config.customRows) {
@@ -1340,33 +1342,45 @@ export function generateTemposRespostaPDF(
     accentColor = [2, 132, 199]; // Sky blue GRAUMP
 
     const parts: string[] = [];
+    if (config.filterScopeLabel) {
+      parts.push(`ÂMBITO: ${config.filterScopeLabel.toUpperCase()}`);
+    }
     if (config.filterTipos && config.filterTipos.length > 0) {
       parts.push(`TIPOS: ${config.filterTipos.join(' + ')}`);
     } else {
       parts.push('TODOS OS TIPOS');
     }
-    if (config.filterScopeLabel) {
-      parts.push(`ÂMBITO: ${config.filterScopeLabel.toUpperCase()}`);
-    }
     if (config.searchTerm) {
       parts.push(`PESQUISA: "${config.searchTerm}"`);
     }
+    if (config.sortLabel) {
+      parts.push(`ORDENAÇÃO: ${config.sortLabel.toUpperCase()}`);
+    }
     scopeBadge = parts.join('  •  ');
   } else {
-    // 1. Filter rows by scope
-    let filteredFolhas = folhas;
+    // 1. Filtrar registos por âmbito - Regra obrigatória: Apenas descarregar os que estão em aberto!
+    let filteredFolhas = folhas.filter(f => isOpenService(f));
+
     if (scope === 'OFICINA') {
-      filteredFolhas = folhas.filter(f => f.tipo === 'Oficina');
-      docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — OFICINA';
-      scopeSubtitle = 'Acompanhamento diário de viaturas na oficina, tempos de imobilização e intervenção';
-      scopeBadge = 'ÂMBITO: OFICINA';
+      // Regra do utilizador: "O PDF Oficina (A3) devem de constar todos os serviços que sejam Oficina e todos os outros em que a morada seja GRAUMP."
+      filteredFolhas = filteredFolhas.filter(f => isOficinaOrGraump(f));
+      docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — OFICINA (GRAUMP)';
+      scopeSubtitle = 'Acompanhamento diário de viaturas na oficina e serviços sediados na GRAUMP (Apenas em Aberto)';
+      scopeBadge = 'ÂMBITO: OFICINA (GRAUMP)  •  APENAS EM ABERTO';
       accentColor = [234, 88, 12]; // Orange
-    } else if (scope === 'ASSISTENCIA_CONTRATOS') {
-      filteredFolhas = folhas.filter(f => f.tipo === 'Assistência Técnica' || f.tipo === 'Contrato');
-      docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — ASSISTÊNCIA TÉCNICA E CONTRATOS';
-      scopeSubtitle = 'Acompanhamento diário de intervenções no terreno, contratos de manutenção e pedidos de assistência';
-      scopeBadge = 'ÂMBITO: ASSISTÊNCIA & CONTRATOS';
+    } else if (scope === 'EXTERIOR' || scope === 'ASSISTENCIA_CONTRATOS') {
+      // Regra do utilizador: "No pdf AT/Contratos (A3), deves de mudar o nome para PDF Exterior, e devem de estar todos os serviços que a morada não sejam GRAUMP."
+      filteredFolhas = filteredFolhas.filter(f => isExteriorService(f));
+      docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — EXTERIOR';
+      scopeSubtitle = 'Acompanhamento diário de intervenções no terreno, assistências e contratos fora da GRAUMP (Apenas em Aberto)';
+      scopeBadge = 'ÂMBITO: EXTERIOR (FORA DA GRAUMP)  •  APENAS EM ABERTO';
       accentColor = [2, 132, 199]; // Sky blue
+    } else {
+      // TODOS (Geral em aberto)
+      docTitle = 'QUADRO GERAL DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO';
+      scopeSubtitle = 'Relatório global diário com todos os serviços em curso (Oficina e Exterior) (Apenas em Aberto)';
+      scopeBadge = 'ÂMBITO: GERAL (APENAS EM ABERTO)';
+      accentColor = [13, 148, 136]; // Teal
     }
 
     // 2. Augment and sort rows
@@ -1388,8 +1402,7 @@ export function generateTemposRespostaPDF(
         isCritico
       };
     }).sort((a, b) => {
-      // Open/in progress first, then critical status, then imobilizacao days desc, then date desc
-      if (a.isConcluido !== b.isConcluido) return a.isConcluido ? 1 : -1;
+      // Critical status first, then imobilizacao days desc, then date desc
       if (a.isCritico !== b.isCritico) return a.isCritico ? -1 : 1;
       const imobA = a.imobilizacao?.days || 0;
       const imobB = b.imobilizacao?.days || 0;
@@ -1443,13 +1456,17 @@ export function generateTemposRespostaPDF(
     const dataConc = f.dataConclusao ? formatDate(f.dataConclusao) : 'Em Aberto';
     const imobText = r.imobilizacao ? r.imobilizacao.text : '-';
     const obs = (f.anomalias || f.notasInternas || f.notasCliente || '-').replace(/\n/g, ' ');
+    const locTag = f.localizacao
+      ? `\n📍 ${f.localizacao}`
+      : (isOficinaOrGraump(f) ? '\n📍 GRAUMP (Albergaria)' : '');
+    const clienteCell = `${r.empresaNome}${locTag}`;
 
     return [
       f.numero || f.id,
       f.tipo,
       f.matricula || '---',
       marcaModelo,
-      r.empresaNome,
+      clienteCell,
       dataCriacao,
       dataReq,
       diasReqText,
@@ -1468,7 +1485,7 @@ export function generateTemposRespostaPDF(
       'Tipo',
       'Matrícula',
       'Marca / Modelo',
-      'Cliente / Entidade',
+      'Cliente / Localização',
       'Criação',
       'Data Req.',
       'Dias Req.',
@@ -1476,7 +1493,6 @@ export function generateTemposRespostaPDF(
       'Conclusão',
       'Imobilização',
       'Estado Atual',
-      'Observações Técnicas / Anomalias'
     ]],
     body: tableRows,
     theme: 'grid',

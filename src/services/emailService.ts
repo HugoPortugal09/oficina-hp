@@ -4,6 +4,7 @@ import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCli
 import { USERS } from '../types';
 import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc, generatePlaneamentoSemanalA4PDF, type PlaneamentoSemanalDayCol, type PlaneamentoSemanalDayItem } from './pdfService';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput } from '../utils/dateUtils';
+import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
 /**
  * Compresses and resizes an image Data URI or base64 string to a compact JPEG
@@ -915,6 +916,7 @@ export function buildTemposRespostaDailyHtml(
     criticalCount: number;
     totalAbertas: number;
     totalOficinaAbertas: number;
+    totalExteriorAbertas?: number;
     totalAssistenciaAbertas: number;
     totalContratoAbertas: number;
   },
@@ -1065,7 +1067,7 @@ export function buildTemposRespostaDailyHtml(
                       ${stats.totalAbertas} <span style="font-size: 13px; font-weight: 700; color: #134e4a;">em curso</span>
                     </div>
                     <div style="font-size: 11.5px; color: #115e59; font-weight: 600; margin-top: 2px;">
-                      Oficina (${stats.totalOficinaAbertas}) &bull; AT (${stats.totalAssistenciaAbertas}) &bull; Contratos (${stats.totalContratoAbertas})
+                      Oficina GRAUMP (${stats.totalOficinaAbertas}) &bull; Exterior (${stats.totalExteriorAbertas ?? (stats.totalAssistenciaAbertas + stats.totalContratoAbertas)})
                     </div>
                   </td>
                 </tr>
@@ -1079,9 +1081,9 @@ export function buildTemposRespostaDailyHtml(
                       📎 3 Documentos Oficiais em PDF Formato A3 Anexados a este Email:
                     </div>
                     <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #0f172a;">
-                      <li style="margin-bottom: 4px;"><strong>1. Tempos_Resposta_Oficina.pdf</strong> — Quadro de acompanhamento detalhado apenas da Oficina.</li>
-                      <li style="margin-bottom: 4px;"><strong>2. Tempos_Resposta_Assistencia_Contratos.pdf</strong> — Quadro com Assistência Técnica no terreno e Contratos.</li>
-                      <li style="margin-bottom: 0;"><strong>3. Tempos_Resposta_Geral_Completo.pdf</strong> — Quadro Geral completo com toda a informação operacional.</li>
+                      <li style="margin-bottom: 4px;"><strong>1. Tempos_Resposta_Oficina.pdf</strong> — Quadro de acompanhamento de viaturas na oficina e serviços sediados na GRAUMP (apenas em aberto).</li>
+                      <li style="margin-bottom: 4px;"><strong>2. Tempos_Resposta_Exterior.pdf</strong> — Quadro Exterior com todas as intervenções no terreno e fora das instalações da GRAUMP (apenas em aberto).</li>
+                      <li style="margin-bottom: 0;"><strong>3. Tempos_Resposta_Geral_Completo.pdf</strong> — Quadro Geral completo com todos os serviços em aberto.</li>
                     </ul>
                     <div style="margin-top: 8px; font-size: 11.5px; color: #475569; font-style: italic;">
                       * Nota: Em cumprimento das diretrizes de apresentação, os ficheiros PDF anexos contêm apenas as tabelas detalhadas em formato A3 horizontal para fácil impressão ou consulta em grande ecrã.
@@ -1187,16 +1189,17 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
     const criticalCount = criticalRows.length;
     const totalAbertas = processedRows.filter(r => !r.isConcluido).length;
 
-    const totalOficinaAbertas = processedRows.filter(r => !r.isConcluido && r.isOficina).length;
+    const totalOficinaAbertas = processedRows.filter(r => !r.isConcluido && isOficinaOrGraump(r.folha)).length;
+    const totalExteriorAbertas = processedRows.filter(r => !r.isConcluido && isExteriorService(r.folha)).length;
     const totalAssistenciaAbertas = processedRows.filter(r => !r.isConcluido && r.folha.tipo === 'Assistência Técnica').length;
     const totalContratoAbertas = processedRows.filter(r => !r.isConcluido && r.folha.tipo === 'Contrato').length;
 
     const dataHoje = getTodayFormatted();
 
-    // 1. Generate the 3 A3 Landscape PDFs
+    // 1. Generate the 3 A3 Landscape PDFs (Apenas em Aberto)
     const attachments: any[] = [];
 
-    // PDF 1: Oficina
+    // PDF 1: Oficina (Serviços Oficina e todos com morada na GRAUMP)
     try {
       const docOficina = generateTemposRespostaPDF(rawFolhas, empresas, 'OFICINA');
       const dataUriOficina = docOficina.output('datauristring');
@@ -1213,24 +1216,24 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
       console.error('[EmailService] Erro ao gerar PDF da Oficina:', errOf);
     }
 
-    // PDF 2: Assistência Técnica & Contratos
+    // PDF 2: Exterior (Todos os serviços cuja morada não seja GRAUMP)
     try {
-      const docAT = generateTemposRespostaPDF(rawFolhas, empresas, 'ASSISTENCIA_CONTRATOS');
-      const dataUriAT = docAT.output('datauristring');
-      const base64AT = dataUriAT.split(',')[1];
-      if (base64AT) {
+      const docExterior = generateTemposRespostaPDF(rawFolhas, empresas, 'EXTERIOR');
+      const dataUriExterior = docExterior.output('datauristring');
+      const base64Exterior = dataUriExterior.split(',')[1];
+      if (base64Exterior) {
         attachments.push({
-          filename: `Tempos_Resposta_Assistencia_Contratos.pdf`,
-          content: base64AT,
+          filename: `Tempos_Resposta_Exterior.pdf`,
+          content: base64Exterior,
           encoding: 'base64',
           contentType: 'application/pdf'
         });
       }
-    } catch (errAT) {
-      console.error('[EmailService] Erro ao gerar PDF de Assistência/Contratos:', errAT);
+    } catch (errExt) {
+      console.error('[EmailService] Erro ao gerar PDF Exterior:', errExt);
     }
 
-    // PDF 3: Geral Completo
+    // PDF 3: Geral Completo (Apenas em Aberto)
     try {
       const docGeral = generateTemposRespostaPDF(rawFolhas, empresas, 'TODOS');
       const dataUriGeral = docGeral.output('datauristring');
@@ -1255,6 +1258,7 @@ export async function sendDailyTemposRespostaEmail(payload?: TemposRespostaEmail
         criticalCount,
         totalAbertas,
         totalOficinaAbertas,
+        totalExteriorAbertas,
         totalAssistenciaAbertas,
         totalContratoAbertas
       },
