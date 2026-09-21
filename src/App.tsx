@@ -25,6 +25,7 @@ import { Login } from './pages/Login';
 
 import { db, STORAGE_KEYS } from './services/dbService';
 import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
+import { startAutomationRunner } from './services/automationRunner';
 import type {
   NavigationTab,
   FolhaServico,
@@ -278,12 +279,16 @@ export default function App() {
       syncPullFromCloud().catch(() => {});
     }, 8000);
 
+    // 6. Background Automation Runner (Monday 07:30 weekly planeamento, response times, etc.)
+    const stopAutomationRunner = startAutomationRunner();
+
     window.addEventListener('oficina_hp_db_changed', handleDbChange);
     window.addEventListener('focus', handleWindowFocus);
 
     return () => {
       unsubscribeRealtime();
       clearInterval(syncInterval);
+      stopAutomationRunner();
       window.removeEventListener('oficina_hp_db_changed', handleDbChange);
       window.removeEventListener('focus', handleWindowFocus);
     };

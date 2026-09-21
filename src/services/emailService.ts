@@ -2,8 +2,8 @@ import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente, Cliente } from '../types';
 import { USERS } from '../types';
-import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc } from './pdfService';
-import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
+import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc, generatePlaneamentoSemanalA4PDF, type PlaneamentoSemanalDayCol, type PlaneamentoSemanalDayItem } from './pdfService';
+import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput } from '../utils/dateUtils';
 
 /**
  * Compresses and resizes an image Data URI or base64 string to a compact JPEG
@@ -2218,4 +2218,558 @@ export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): 
   };
 }
 
+// -------------------------------------------------------------
+// Weekly Planning (Planeamento Semanal) Email Notification & PDF
+// -------------------------------------------------------------
 
+export interface WeeklyPlaneamentoEmailPayload {
+  destinatarios?: string[];
+  weekStartDate?: Date;
+  folhas?: FolhaServico[];
+  visitas?: VisitaCliente[];
+  empresas?: Empresa[];
+}
+
+function getMondayDate(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addDaysToDate(d: Date, days: number): Date {
+  const result = new Date(d);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function formatIsoDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function buildWeeklyPlaneamentoHtml(options: {
+  startDateStr: string;
+  endDateStr: string;
+  days: PlaneamentoSemanalDayCol[];
+  totalFolhas: number;
+  totalVisitas: number;
+  uniqueTecnicos: string[];
+  pdfFilename: string;
+}): string {
+  const { startDateStr, endDateStr, days, totalFolhas, totalVisitas, uniqueTecnicos, pdfFilename } = options;
+  const activeDaysCount = days.filter(d => d.items.length > 0).length;
+
+  const daysHtml = days.map(d => {
+    const hasItems = d.items.length > 0;
+    const itemsRows = hasItems
+      ? d.items.map(item => {
+          let badgeBg = '#059669';
+          let badgeText = '#ffffff';
+          if (item.type === 'visita') {
+            badgeBg = '#0284c7';
+          } else if (item.tipoOuMotivo?.toLowerCase().includes('assistência')) {
+            badgeBg = '#d97706';
+          } else if (item.tipoOuMotivo?.toLowerCase().includes('contrato')) {
+            badgeBg = '#7c3aed';
+          } else if (item.tipoOuMotivo?.toLowerCase().includes('oficina')) {
+            badgeBg = '#059669';
+          }
+
+          const equipmentStr = [item.matricula, item.marcaModelo].filter(Boolean).join(' - ');
+          const extraInfo = [item.localidade, item.contacto].filter(Boolean).join(' • ');
+
+          return `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 10px 12px; font-size: 12.5px; font-weight: 700; color: #1e293b; white-space: nowrap; vertical-align: top; width: 65px;">
+                <span style="display: inline-block; background: #f1f5f9; padding: 3px 6px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                  ${item.hora || '09:00'}
+                </span>
+              </td>
+              <td style="padding: 10px 12px; font-size: 12.5px; vertical-align: top; width: 110px;">
+                <span style="display: inline-block; background: ${badgeBg}; color: ${badgeText}; font-size: 10.5px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em;">
+                  ${item.tipoOuMotivo || (item.type === 'visita' ? 'VISITA' : 'OFICINA')}
+                </span>
+                <div style="font-size: 11.5px; font-weight: 700; color: #0284c7; margin-top: 4px;">
+                  ${item.numeroOuTitulo}
+                </div>
+              </td>
+              <td style="padding: 10px 12px; font-size: 13px; vertical-align: top;">
+                <div style="font-weight: 700; color: #0f172a; font-size: 13.5px;">${item.empresa}</div>
+                ${equipmentStr ? `<div style="font-size: 12px; color: #475569; margin-top: 2px; font-weight: 500;">🚗 ${equipmentStr}</div>` : ''}
+                ${extraInfo ? `<div style="font-size: 11.5px; color: #64748b; margin-top: 2px;">📍 ${extraInfo}</div>` : ''}
+                ${item.notas ? `<div style="font-size: 11.5px; color: #334155; background: #f8fafc; padding: 4px 8px; border-radius: 4px; margin-top: 4px; border-left: 2px solid #94a3b8; font-style: italic;">📝 ${item.notas}</div>` : ''}
+              </td>
+              <td style="padding: 10px 12px; font-size: 12.5px; color: #0f172a; vertical-align: top; width: 130px; text-align: right;">
+                <span style="display: inline-block; background: #e0f2fe; color: #0369a1; font-weight: 600; font-size: 11.5px; padding: 2px 8px; border-radius: 12px;">
+                  👤 ${item.tecnico || 'Hugo Portugal'}
+                </span>
+                ${item.status ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">${item.status}</div>` : ''}
+              </td>
+            </tr>
+          `;
+        }).join('')
+      : `
+        <tr>
+          <td colspan="4" style="padding: 14px 16px; font-size: 12.5px; color: #94a3b8; text-align: center; font-style: italic;">
+            Sem intervenções ou visitas agendadas para este dia.
+          </td>
+        </tr>
+      `;
+
+    return `
+      <div style="margin-bottom: 20px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="background: #f8fafc; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+          <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="font-size: 14px; font-weight: 800; color: #0f172a;">
+                📅 ${d.label} <span style="font-size: 13px; font-weight: 600; color: #64748b;">(${d.formattedDate})</span>
+              </td>
+              <td style="text-align: right; font-size: 12px; font-weight: 700; color: ${hasItems ? '#059669' : '#94a3b8'};">
+                ${d.items.length} ${d.items.length === 1 ? 'marcação' : 'marcações'}
+              </td>
+            </tr>
+          </table>
+        </div>
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+          <tbody>
+            ${itemsRows}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Planeamento Semanal - Oficina HP</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, h2, h3, p, a, span { font-family: 'Segoe UI', Arial, Helvetica, sans-serif !important; }
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
+  <style type="text/css">
+    :root { color-scheme: light dark; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; background-color: #f1f5f9; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <!--[if (gte mso 9)|(IE)]>
+        <table role="presentation" width="680" align="center" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+        <![endif]-->
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 680px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Accent Line -->
+          <tr>
+            <td height="4" bgcolor="#059669" style="background-color: #059669; line-height: 4px; font-size: 4px;">&nbsp;</td>
+          </tr>
+
+          <!-- Header -->
+          <tr>
+            <td bgcolor="#0f172a" style="background-color: #0f172a; padding: 26px 30px; text-align: left;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <span style="display: inline-block; background-color: #059669; color: #ffffff; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 10px; border-radius: 6px; margin-bottom: 8px;">
+                      PLANEAMENTO SEMANAL • RELATÓRIO EXECUTIVO
+                    </span>
+                    <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">
+                      Planeamento Técnico & Visitas
+                    </h1>
+                    <p style="margin: 6px 0 0 0; font-size: 14px; color: #94a3b8;">
+                      Semana de <strong>${startDateStr}</strong> a <strong>${endDateStr}</strong> • Grau Maquinaria / Oficina HP
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- KPI Executive Metrics -->
+          <tr>
+            <td style="padding: 20px 28px 10px 28px; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="25%" align="center" style="padding: 8px;">
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 8px; text-align: center;">
+                      <div style="font-size: 24px; font-weight: 800; color: #0284c7;">${totalFolhas}</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 2px;">Serviços Agendados</div>
+                    </div>
+                  </td>
+                  <td width="25%" align="center" style="padding: 8px;">
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 8px; text-align: center;">
+                      <div style="font-size: 24px; font-weight: 800; color: #059669;">${totalVisitas}</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 2px;">Visitas a Clientes</div>
+                    </div>
+                  </td>
+                  <td width="25%" align="center" style="padding: 8px;">
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 8px; text-align: center;">
+                      <div style="font-size: 24px; font-weight: 800; color: #7c3aed;">${uniqueTecnicos.length}</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 2px;">Técnicos Atribuídos</div>
+                    </div>
+                  </td>
+                  <td width="25%" align="center" style="padding: 8px;">
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 8px; text-align: center;">
+                      <div style="font-size: 24px; font-weight: 800; color: #d97706;">${activeDaysCount}</div>
+                      <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 2px;">Dias c/ Intervenções</div>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- PDF Attachment Notice Banner -->
+          <tr>
+            <td style="padding: 16px 28px 10px 28px;">
+              <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 12px 16px;">
+                <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="30" valign="middle" style="font-size: 22px; line-height: 1;">
+                      📎
+                    </td>
+                    <td valign="middle">
+                      <strong style="color: #065f46; font-size: 13.5px;">
+                        PDF A4 Paisagem Anexado: ${pdfFilename}
+                      </strong>
+                      <div style="font-size: 12px; color: #047857; margin-top: 2px;">
+                        O mapa semanal executivo completo com colunas por dia está anexado a este email, pronto para consulta em ecrã ou impressão.
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Daily Schedule Sections -->
+          <tr>
+            <td style="padding: 16px 28px 24px 28px;">
+              <h2 style="font-size: 16px; font-weight: 800; color: #0f172a; margin: 0 0 14px 0; letter-spacing: -0.01em;">
+                Agenda Detalhada por Dia
+              </h2>
+              ${daysHtml}
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 28px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <div style="font-size: 12px; font-weight: 700; color: #475569;">
+                Oficina HP • Grau Maquinaria
+              </div>
+              <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
+                Automação Semanal • Gerado em ${new Date().toLocaleDateString('pt-PT')} às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </td>
+          </tr>
+
+        </table>
+        <!--[if (gte mso 9)|(IE)]>
+            </td>
+          </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
+ * Generates the weekly planning A4 landscape PDF and sends it via email with an executive HTML summary.
+ */
+export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  try {
+    const rawFolhas = payload?.folhas || db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || [];
+    const rawVisitas = payload?.visitas || db.get<VisitaCliente>(STORAGE_KEYS.VISITAS_CLIENTE) || [];
+    const empresas = payload?.empresas || db.get<Empresa>(STORAGE_KEYS.EMPRESAS) || [];
+
+    // Calculate Week Days: Monday to Sunday
+    const monday = getMondayDate(payload?.weekStartDate || new Date());
+    const weekDays = [
+      { index: 0, label: 'Segunda-feira', short: 'Seg', date: addDaysToDate(monday, 0) },
+      { index: 1, label: 'Terça-feira', short: 'Ter', date: addDaysToDate(monday, 1) },
+      { index: 2, label: 'Quarta-feira', short: 'Qua', date: addDaysToDate(monday, 2) },
+      { index: 3, label: 'Quinta-feira', short: 'Qui', date: addDaysToDate(monday, 3) },
+      { index: 4, label: 'Sexta-feira', short: 'Sex', date: addDaysToDate(monday, 4) },
+      { index: 5, label: 'Sábado', short: 'Sáb', date: addDaysToDate(monday, 5) },
+      { index: 6, label: 'Domingo', short: 'Dom', date: addDaysToDate(monday, 6) }
+    ].map(d => ({
+      ...d,
+      isoStr: formatIsoDate(d.date),
+      formattedDate: `${String(d.date.getDate()).padStart(2, '0')}/${String(d.date.getMonth() + 1).padStart(2, '0')}`
+    }));
+
+    // Filter current week items
+    const weekIsoStrings = new Set(weekDays.map(d => d.isoStr));
+    const currentWeekFolhas = rawFolhas.filter(f => {
+      const targetDate = formatDateToInput(f.dataPlaneada || f.data);
+      return weekIsoStrings.has(targetDate);
+    });
+    const currentWeekVisitas = rawVisitas.filter(v => {
+      const targetDate = formatDateToInput(v.data);
+      return weekIsoStrings.has(targetDate);
+    });
+
+    // Check weekend appointments
+    const hasSabado = (
+      currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[5].isoStr) ||
+      currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[5].isoStr)
+    );
+    const hasDomingo = (
+      currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[6].isoStr) ||
+      currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[6].isoStr)
+    );
+
+    const activeDays = weekDays.filter(d => {
+      if (d.index <= 4) return true; // Segunda a Sexta sempre
+      if (d.index === 5) return hasSabado;
+      if (d.index === 6) return hasDomingo;
+      return false;
+    });
+
+    // Build Day Columns with Items
+    const dayCols: PlaneamentoSemanalDayCol[] = activeDays.map(d => {
+      const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada || f.data) === d.isoStr);
+      const dayVisitas = currentWeekVisitas.filter(v => formatDateToInput(v.data) === d.isoStr);
+
+      const items: PlaneamentoSemanalDayItem[] = [
+        ...dayFolhas.map((f): PlaneamentoSemanalDayItem => {
+          const emp = empresas.find(e => e.id === f.empresaId);
+          const local = f.localizacao?.trim() || f.moradaIntervencao?.trim() || f.localIntervencao?.trim() || '';
+          const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim();
+          const anomalia = (f.anomalias || f.notasInternas || '').trim();
+
+          return {
+            type: 'folha',
+            hora: f.horaPlaneada || '09:00',
+            numeroOuTitulo: f.numero,
+            tipoOuMotivo: f.tipo,
+            matricula: f.matricula,
+            marcaModelo,
+            empresa: emp?.nome || 'Cliente Geral',
+            localidade: local,
+            tecnico: f.tecnicoPlaneado || 'Hugo Portugal',
+            status: f.status || 'Agendado',
+            notas: anomalia
+          };
+        }),
+        ...dayVisitas.map((v): PlaneamentoSemanalDayItem => {
+          const contacto = [v.nomeContacto, v.telefone].filter(Boolean).join(' • ');
+          return {
+            type: 'visita',
+            hora: v.hora || '09:30',
+            numeroOuTitulo: 'VISITA',
+            tipoOuMotivo: v.motivo || 'No Terreno',
+            empresa: v.nomeEmpresa || 'Cliente',
+            contacto,
+            localidade: v.morada || '',
+            tecnico: v.tecnico || 'Hugo Portugal',
+            status: v.status || 'Agendada',
+            notas: v.notas?.trim() || ''
+          };
+        })
+      ];
+
+      return {
+        index: d.index,
+        label: d.label,
+        short: d.short,
+        formattedDate: d.formattedDate,
+        isoStr: d.isoStr,
+        items
+      };
+    });
+
+    const startDateStr = formatDate(weekDays[0].isoStr);
+    const lastDayObj = activeDays[activeDays.length - 1];
+    const endDateStr = formatDate(lastDayObj.isoStr);
+
+    const totalFolhas = currentWeekFolhas.length;
+    const totalVisitas = currentWeekVisitas.length;
+
+    // Collect unique technicians
+    const tecnicosSet = new Set<string>();
+    dayCols.forEach(col => {
+      col.items.forEach(it => {
+        if (it.tecnico) tecnicosSet.add(it.tecnico);
+      });
+    });
+    const uniqueTecnicos = Array.from(tecnicosSet);
+
+    // 1. Generate Executive A4 Landscape PDF
+    let base64Pdf = '';
+    const pdfFilename = `Planeamento_Semanal_A4_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
+    try {
+      const doc = generatePlaneamentoSemanalA4PDF({
+        days: dayCols,
+        startDateStr,
+        endDateStr,
+        totalFolhas,
+        totalVisitas
+      });
+      const dataUri = doc.output('datauristring');
+      base64Pdf = dataUri.split(',')[1] || '';
+    } catch (pdfErr) {
+      console.error('[EmailService] Erro ao gerar PDF de Planeamento Semanal:', pdfErr);
+    }
+
+    const attachments: any[] = [];
+    if (base64Pdf) {
+      attachments.push({
+        filename: pdfFilename,
+        content: base64Pdf,
+        encoding: 'base64',
+        contentType: 'application/pdf'
+      });
+    }
+
+    // 2. Build HTML Body
+    const htmlContent = buildWeeklyPlaneamentoHtml({
+      startDateStr,
+      endDateStr,
+      days: dayCols,
+      totalFolhas,
+      totalVisitas,
+      uniqueTecnicos,
+      pdfFilename
+    });
+
+    // 3. Resolve Recipients
+    const emailsSet = new Set<string>();
+    if (payload?.destinatarios && payload.destinatarios.length > 0) {
+      payload.destinatarios.forEach(e => {
+        if (e && e.includes('@')) emailsSet.add(e.trim().toLowerCase());
+      });
+    }
+
+    // Retrieve from automations configuration if not specified
+    try {
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES) || [];
+      const autoItem = autos.find((a: any) => a.tipo === 'email_planeamento');
+      if (autoItem && Array.isArray(autoItem.destinatarios)) {
+        autoItem.destinatarios.forEach((e: string) => {
+          if (e && e.includes('@')) emailsSet.add(e.trim().toLowerCase());
+        });
+      }
+    } catch {}
+
+    // Default fallback
+    if (emailsSet.size === 0) {
+      emailsSet.add('hugo@grau-maquinaria.com');
+    }
+
+    const recipients = Array.from(emailsSet);
+    const subject = `[Oficina HP] 📅 Planeamento Semanal (${startDateStr} a ${endDateStr})`;
+
+    console.log(`[EmailService] A enviar Planeamento Semanal para: ${recipients.join(', ')} com anexo ${pdfFilename}`);
+
+    // 4. Send email via /api/send-email
+    let apiDeliverySuccess = false;
+    let apiError = '';
+    try {
+      const resp = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipients,
+          subject,
+          html: htmlContent,
+          attachments
+        })
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.success) {
+        apiDeliverySuccess = true;
+        console.log(`[EmailService] ✅ Email de Planeamento Semanal enviado com sucesso via SMTP (ID: ${data.messageId})`);
+      } else {
+        apiError = data.error || `HTTP ${resp.status}`;
+        console.warn('[EmailService] ⚠️ Resposta da API:', data);
+      }
+    } catch (apiErr: any) {
+      apiError = apiErr?.message || 'Falha de rede';
+      console.warn('[EmailService] ⚠️ Erro ao contactar /api/send-email:', apiErr);
+    }
+
+    // 5. Save email log
+    try {
+      const emailLogEntry = {
+        id: db.generateId('eml'),
+        tipo: 'email_planeamento_semanal',
+        destinatarios: recipients,
+        assunto: subject,
+        dataEnvio: new Date().toISOString(),
+        anexosCount: attachments.length,
+        sucesso: apiDeliverySuccess,
+        detalhes: {
+          periodo: `${startDateStr} a ${endDateStr}`,
+          totalFolhas,
+          totalVisitas
+        }
+      };
+      const logs = db.get<any>('oficina_hp_email_logs') || [];
+      db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+
+      // Update automacao item last run
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES) || [];
+      const updatedAutos = autos.map((a: any) => a.tipo === 'email_planeamento' ? {
+        ...a,
+        ultimoDisparo: `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      } : a);
+      db.save(STORAGE_KEYS.AUTOMACOES, updatedAutos);
+
+      // PocketBase queue backup
+      const pb = getPocketBase();
+      pb.collection('app_data').create({
+        key: `email_planeamento_${Date.now()}`,
+        data: {
+          recipients,
+          subject,
+          tipo: 'planeamento_semanal',
+          anexosCount: attachments.length,
+          totalFolhas,
+          totalVisitas,
+          sent: apiDeliverySuccess
+        },
+        timestamp: new Date().toISOString()
+      }).catch(() => {});
+    } catch (e) {}
+
+    return {
+      success: apiDeliverySuccess,
+      recipients,
+      message: apiDeliverySuccess
+        ? `Planeamento Semanal em PDF enviado com sucesso para: ${recipients.join(', ')}`
+        : `Erro ao enviar email (${apiError || 'Serviço indisponível'}). Verifique o servidor de envio.`
+    };
+  } catch (error: any) {
+    console.error('[EmailService] Exceção ao enviar planeamento semanal:', error);
+    return {
+      success: false,
+      recipients: payload?.destinatarios || ['hugo@grau-maquinaria.com'],
+      message: `Erro ao processar envio do planeamento semanal: ${error?.message || String(error)}`
+    };
+  }
+}

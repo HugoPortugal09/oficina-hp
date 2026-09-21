@@ -25,7 +25,7 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import { sendDailyTemposRespostaEmail } from '../services/emailService';
+import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail } from '../services/emailService';
 import type { AutomacaoItem, TipoAutomacao } from '../types';
 
 export const Automacoes: React.FC = () => {
@@ -113,18 +113,18 @@ export const Automacoes: React.FC = () => {
           msg: result.message
         });
       } else if (auto.tipo === 'email_planeamento') {
-        // Disparar envio de planeamento semanal
-        await new Promise(r => setTimeout(r, 1200));
+        const result = await sendWeeklyPlaneamentoEmail({
+          destinatarios: auto.destinatarios
+        });
         
-        // Atualizar data de último disparo
         const nowStr = `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         const updated = automacoes.map(a => a.id === auto.id ? { ...a, ultimoDisparo: nowStr } : a);
         saveList(updated);
 
         setStatusFeedback({
           id: auto.id,
-          success: true,
-          msg: `Relatório Semanal em PDF enviado com sucesso para: ${auto.destinatarios.join(', ')}`
+          success: result.success,
+          msg: result.message
         });
       } else {
         await new Promise(r => setTimeout(r, 800));
