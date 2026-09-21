@@ -2180,4 +2180,295 @@ export function generateFolhasServicoA3PDF(options: FolhasServicoA3Options): jsP
   return doc;
 }
 
+// -------------------------------------------------------------
+// PLANEAMENTO SEMANAL EM FORMATO A4 HORIZONTAL (LANDSCAPE)
+// -------------------------------------------------------------
+
+export interface PlaneamentoSemanalDayItem {
+  type: 'folha' | 'visita';
+  hora?: string;
+  numeroOuTitulo: string; // "FS26900" ou "VISITA"
+  tipoOuMotivo: string; // "Oficina", "Diagnóstico no Terreno", etc.
+  matricula?: string;
+  marcaModelo?: string;
+  empresa: string;
+  contacto?: string;
+  localidade?: string;
+  tecnico?: string;
+  status?: string;
+  notas?: string;
+}
+
+export interface PlaneamentoSemanalDayCol {
+  index: number;
+  label: string; // "Segunda-feira", "Terça-feira", etc.
+  short: string; // "Seg", "Ter", etc.
+  formattedDate: string; // "21/09"
+  isoStr: string; // "2026-09-21"
+  items: PlaneamentoSemanalDayItem[];
+}
+
+export interface PlaneamentoSemanalA4Options {
+  days: PlaneamentoSemanalDayCol[];
+  startDateStr: string; // "21/09/2026"
+  endDateStr: string; // "25/09/2026"
+  selectedTecnico?: string;
+  searchTerm?: string;
+  totalFolhas: number;
+  totalVisitas: number;
+}
+
+/**
+ * Generates an executive A4 Landscape (297mm x 210mm) document for Weekly Planning & Visits:
+ * Displays active week days as columns (Monday to Friday always included;
+ * Saturday and Sunday only included if there are appointments scheduled).
+ */
+export function generatePlaneamentoSemanalA4PDF(options: PlaneamentoSemanalA4Options): jsPDF {
+  const {
+    days,
+    startDateStr,
+    endDateStr,
+    selectedTecnico,
+    searchTerm,
+    totalFolhas,
+    totalVisitas
+  } = options;
+
+  // A4 Landscape: 297mm width x 210mm height
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+    compress: true
+  });
+
+  const runAutoTable = (opts: any) => {
+    const fn = (autoTable as any)?.default?.default || (autoTable as any)?.default || autoTable;
+    if (typeof fn === 'function') {
+      fn(doc, opts);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(opts);
+    }
+  };
+
+  const accentColor = [2, 132, 199]; // Sky blue GRAUMP
+  const dataEmissao = getTodayFormatted();
+
+  // 1. TOP HEADER ACCENT BARS (Largura 297mm)
+  doc.setFillColor(30, 41, 59); // Slate 800
+  doc.rect(0, 0, 297, 5, 'F');
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(197, 0, 100, 5, 'F');
+
+  // 2. GRAUMP LOGO (12mm margem esquerda, topo 7mm)
+  try {
+    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 12, 8, 26, 17, undefined, 'FAST');
+  } catch (err) {
+    doc.setFillColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.text('GRAUMP', 12, 19);
+  }
+
+  // 3. HEADER TITLES (Alinhados à direita a 285mm)
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('MAPA SEMANAL DE PLANEAMENTO & VISITAS', 285, 13, { align: 'right' });
+
+  // Subtitle with days description
+  const hasSab = days.some(d => d.index === 5);
+  const hasDom = days.some(d => d.index === 6);
+  let scopeLabel = 'Segunda a Sexta-feira';
+  if (hasSab && hasDom) scopeLabel = 'Segunda a Domingo (Semana Completa)';
+  else if (hasSab) scopeLabel = 'Segunda a Sábado';
+  else if (hasDom) scopeLabel = 'Segunda a Sexta + Domingo';
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Semana de ${startDateStr} a ${endDateStr} (${scopeLabel})`, 285, 18, { align: 'right' });
+
+  // Metadata Row
+  const tecLabel = selectedTecnico && selectedTecnico !== 'TODOS' ? `TÉCNICO: ${selectedTecnico.toUpperCase()}` : 'TODOS OS TÉCNICOS';
+  const searchPart = searchTerm ? `  •  FILTRO: "${searchTerm}"` : '';
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.text(
+    `${tecLabel}  •  TOTAL: ${totalFolhas} FOLHAS, ${totalVisitas} VISITAS${searchPart}  •  EMISSÃO: ${dataEmissao}`,
+    285,
+    23,
+    { align: 'right' }
+  );
+
+  // Linha divisória horizontal
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(12, 26, 285, 26);
+
+  // 4. PREPARAR COLUNAS E LINHAS DO CALENDÁRIO
+  const numCols = days.length; // 5, 6 ou 7
+  const tableWidth = 273; // 285 - 12
+  const colWidth = tableWidth / numCols;
+
+  // Cabeçalhos de coluna
+  const tableHead = [
+    days.map(d => `${d.label.toUpperCase()}\n${d.formattedDate} (${d.items.length})`)
+  ];
+
+  // Ordenar itens de cada dia por hora
+  days.forEach(d => {
+    d.items.sort((a, b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
+  });
+
+  const maxItems = Math.max(1, ...days.map(d => d.items.length));
+  const tableRows: string[][] = [];
+
+  for (let r = 0; r < maxItems; r++) {
+    const rowCells: string[] = [];
+    for (let c = 0; c < numCols; c++) {
+      const day = days[c];
+      const item = day.items[r];
+
+      if (item) {
+        const lines: string[] = [];
+        const horaStr = item.hora ? `[${item.hora}] ` : '';
+
+        if (item.type === 'folha') {
+          lines.push(`${horaStr}${item.numeroOuTitulo} • ${item.tipoOuMotivo}`);
+          if (item.matricula) {
+            lines.push(`${item.matricula}${item.marcaModelo ? ` (${item.marcaModelo})` : ''}`);
+          }
+          if (item.empresa) lines.push(item.empresa);
+          if (item.localidade) lines.push(`Local: ${item.localidade}`);
+          if (item.tecnico) lines.push(`Téc: ${item.tecnico}`);
+          if (item.status) lines.push(`Estado: ${item.status}`);
+          if (item.notas) {
+            const shortNotes = item.notas.length > 40 ? item.notas.substring(0, 38) + '...' : item.notas;
+            lines.push(`Obs: ${shortNotes.replace(/\n/g, ' ')}`);
+          }
+        } else {
+          lines.push(`${horaStr}VISITA • ${item.tipoOuMotivo}`);
+          if (item.empresa) lines.push(item.empresa);
+          if (item.contacto) lines.push(`Cont: ${item.contacto}`);
+          if (item.localidade) lines.push(`Morada: ${item.localidade}`);
+          if (item.tecnico) lines.push(`Téc: ${item.tecnico}`);
+          if (item.status) lines.push(`Estado: ${item.status}`);
+          if (item.notas) {
+            const shortNotes = item.notas.length > 40 ? item.notas.substring(0, 38) + '...' : item.notas;
+            lines.push(`Notas: ${shortNotes.replace(/\n/g, ' ')}`);
+          }
+        }
+
+        rowCells.push(lines.join('\n'));
+      } else {
+        if (r === 0 && day.items.length === 0) {
+          rowCells.push('— Sem marcações —');
+        } else {
+          rowCells.push('');
+        }
+      }
+    }
+    tableRows.push(rowCells);
+  }
+
+  // Column styles mapping
+  const columnStyles: Record<number, any> = {};
+  for (let c = 0; c < numCols; c++) {
+    columnStyles[c] = {
+      cellWidth: colWidth,
+      valign: 'top'
+    };
+  }
+
+  runAutoTable({
+    startY: 28,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59], // Dark slate
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+      cellPadding: 2.5
+    },
+    styles: {
+      fontSize: 6.8,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.2,
+      overflow: 'linebreak'
+    },
+    columnStyles,
+    margin: { left: 12, right: 12, top: 10, bottom: 12 },
+    didParseCell: (data: any) => {
+      if (data.section === 'body') {
+        const raw = String(data.cell.raw || '');
+        if (raw.includes('VISITA •')) {
+          data.cell.styles.fillColor = [240, 253, 244]; // Emerald 50
+          data.cell.styles.textColor = [6, 78, 59]; // Dark emerald
+        } else if (raw.includes('FS') && raw.includes('•')) {
+          data.cell.styles.fillColor = [240, 249, 255]; // Sky 50
+          data.cell.styles.textColor = [12, 74, 110]; // Dark sky
+        } else if (raw === '— Sem marcações —') {
+          data.cell.styles.fillColor = [248, 250, 252];
+          data.cell.styles.textColor = [148, 163, 184];
+          data.cell.styles.fontStyle = 'italic';
+          data.cell.styles.halign = 'center';
+        } else if (raw === '') {
+          data.cell.styles.fillColor = [255, 255, 255];
+        }
+      }
+    }
+  });
+
+  // 5. RODAPÉ EXECUTIVO (A4 Landscape: width 297, height 210)
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const footerY = 202;
+    const textY = 206.5;
+
+    // Barra base do rodapé
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(0, footerY, 297, 8, 'F');
+
+    // Acento visual no rodapé
+    doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+    try {
+      doc.triangle(0, 210, 30, 210, 0, footerY - 5, 'F');
+    } catch (e) {}
+    doc.rect(0, footerY + 2, 22, 6, 'F');
+
+    // Texto de marca à esquerda
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRAUMP', 10, textY);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(203, 213, 225);
+    doc.text(' • Oficina HP Gestão & Frotas', 23, textY);
+
+    // Texto central informativo
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      'Planeamento Semanal Operacional • Folha A4 Horizontal • Processado por Computador',
+      148.5,
+      textY,
+      { align: 'center' }
+    );
+
+    // Numeração de página à direita
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Página ${i} de ${pageCount}`, 285, textY, { align: 'right' });
+  }
+
+  return doc;
+}
+
 

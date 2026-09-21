@@ -24,7 +24,9 @@ import {
   ExternalLink,
   Layers,
   Sparkles,
-  GripVertical
+  GripVertical,
+  Printer,
+  Loader2
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -39,6 +41,11 @@ import type {
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sendVisitaEmail } from '../services/emailService';
 import { formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
+import {
+  generatePlaneamentoSemanalA4PDF,
+  type PlaneamentoSemanalDayCol,
+  type PlaneamentoSemanalDayItem
+} from '../services/pdfService';
 
 interface PlaneamentoProps {
   folhas: FolhaServico[];
@@ -110,6 +117,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [isGeneratingA4Pdf, setIsGeneratingA4Pdf] = useState(false);
   
   // Drag & drop state
   const [draggedItem, setDraggedItem] = useState<{ type: 'visita' | 'folha'; id: string } | null>(null);
@@ -533,6 +541,124 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     });
   }, [folhas, weekStartStr, weekEndStr, selectedTecnico, searchTerm, empresas]);
 
+  // Print currently selected week in A4 Landscape
+  const handlePrintA4Planeamento = () => {
+    if (isGeneratingA4Pdf) return;
+    setIsGeneratingA4Pdf(true);
+    setFeedbackMessage('A preparar mapa de planeamento semanal em formato A4 horizontal...');
+
+    try {
+      // Regra do utilizador: Segunda a Sexta (índices 0 a 4) são sempre incluídos.
+      // Sábado (5) e Domingo (6) só são incluídos se existirem marcações (folhas ou visitas).
+      const hasSabado = (
+        currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[5].isoStr) ||
+        currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[5].isoStr)
+      );
+
+      const hasDomingo = (
+        currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[6].isoStr) ||
+        currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[6].isoStr)
+      );
+
+      const activeDays = weekDays.filter(d => {
+        if (d.index < 5) return true;
+        if (d.index === 5) return hasSabado;
+        if (d.index === 6) return hasDomingo;
+        return false;
+      });
+
+      const dayCols: PlaneamentoSemanalDayCol[] = activeDays.map(d => {
+        const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada || f.data) === d.isoStr);
+        const dayVisitas = currentWeekVisitas.filter(v => formatDateToInput(v.data) === d.isoStr);
+
+        const items: PlaneamentoSemanalDayItem[] = [
+          ...dayFolhas.map((f): PlaneamentoSemanalDayItem => {
+            const emp = empresas.find(e => e.id === f.empresaId);
+            const local = f.localizacao?.trim() || f.moradaIntervencao?.trim() || f.localIntervencao?.trim() || '';
+            const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim();
+            const anomalia = (f.anomalias || f.notasInternas || '').trim();
+
+            return {
+              type: 'folha',
+              hora: f.horaPlaneada || '09:00',
+              numeroOuTitulo: f.numero,
+              tipoOuMotivo: f.tipo,
+              matricula: f.matricula,
+              marcaModelo,
+              empresa: emp?.nome || 'Cliente Geral',
+              localidade: local,
+              tecnico: f.tecnicoPlaneado || 'Hugo Portugal',
+              status: f.status || 'Agendado',
+              notas: anomalia
+            };
+          }),
+          ...dayVisitas.map((v): PlaneamentoSemanalDayItem => {
+            const contacto = [v.nomeContacto, v.telefone].filter(Boolean).join(' • ');
+            return {
+              type: 'visita',
+              hora: v.hora || '09:30',
+              numeroOuTitulo: 'VISITA',
+              tipoOuMotivo: v.motivo || 'No Terreno',
+              empresa: v.nomeEmpresa || 'Cliente',
+              contacto,
+              localidade: v.morada || '',
+              tecnico: v.tecnico || 'Hugo Portugal',
+              status: v.status || 'Agendada',
+              notas: v.notas?.trim() || ''
+            };
+          })
+        ];
+
+        return {
+          index: d.index,
+          label: d.label,
+          short: d.short,
+          formattedDate: d.formattedDayMonth,
+          isoStr: d.isoStr,
+          items
+        };
+      });
+
+      const startDateStr = formatDate(weekDays[0].isoStr);
+      const lastDayObj = activeDays[activeDays.length - 1];
+      const endDateStr = formatDate(lastDayObj.isoStr);
+
+      const doc = generatePlaneamentoSemanalA4PDF({
+        days: dayCols,
+        startDateStr,
+        endDateStr,
+        selectedTecnico: selectedTecnico !== 'TODOS' ? selectedTecnico : undefined,
+        searchTerm: searchTerm.trim() || undefined,
+        totalFolhas: currentWeekFolhas.length,
+        totalVisitas: currentWeekVisitas.length
+      });
+
+      const filename = `Planeamento_Semanal_A4_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
+      doc.save(filename);
+
+      try {
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        const win = window.open(url, '_blank');
+        if (win) win.focus();
+      } catch (e) {}
+
+      let scopeText = 'Segunda a Sexta';
+      if (hasSabado && hasDomingo) scopeText = 'Segunda a Domingo';
+      else if (hasSabado) scopeText = 'Segunda a Sábado';
+      else if (hasDomingo) scopeText = 'Segunda a Sexta + Domingo';
+
+      setFeedbackMessage(`✅ Planeamento semanal A4 gerado com sucesso! (${activeDays.length} dias incluídos: ${scopeText} • ${currentWeekFolhas.length} folhas, ${currentWeekVisitas.length} visitas)`);
+      setTimeout(() => setFeedbackMessage(null), 5000);
+    } catch (err: any) {
+      console.error('[Planeamento] Erro ao gerar PDF A4:', err);
+      setFeedbackMessage(`❌ Erro ao gerar PDF A4: ${err?.message || err}`);
+      setTimeout(() => setFeedbackMessage(null), 6000);
+    } finally {
+      setIsGeneratingA4Pdf(false);
+    }
+  };
+
   return (
     <div className="space-y-3.5 animate-in fade-in duration-300">
       {/* Top Header */}
@@ -581,6 +707,31 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
             className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 text-xs font-bold transition-all active:scale-95"
           >
             Esta Semana
+          </button>
+
+          {/* Print A4 Weekly Planner Button */}
+          <button
+            type="button"
+            onClick={handlePrintA4Planeamento}
+            disabled={isGeneratingA4Pdf}
+            title="Imprimir planeamento da semana selecionada em Folha A4 na horizontal"
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 border ${
+              isGeneratingA4Pdf
+                ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-emerald-400/30 shadow-emerald-950/40'
+            }`}
+          >
+            {isGeneratingA4Pdf ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-200" />
+                <span>A Preparar A4...</span>
+              </>
+            ) : (
+              <>
+                <Printer className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Imprimir A4</span>
+              </>
+            )}
           </button>
 
           {/* New Visit Button */}
@@ -735,7 +886,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
               </select>
             </div>
 
-            {/* Legend */}
+            {/* Legend & Quick Print */}
             <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-400">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-hp-500" />
@@ -745,6 +896,20 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                 <span className="text-emerald-300">Visita ao Cliente</span>
               </div>
+              <button
+                type="button"
+                onClick={handlePrintA4Planeamento}
+                disabled={isGeneratingA4Pdf}
+                title="Imprimir planeamento da semana em Folha A4 na horizontal"
+                className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ml-1"
+              >
+                {isGeneratingA4Pdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+                ) : (
+                  <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+                <span>Imprimir A4</span>
+              </button>
             </div>
           </div>
 
