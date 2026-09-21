@@ -1754,8 +1754,8 @@ export interface VisitaEmailPayload {
 }
 
 /**
- * Envia email com os dados da visita/agendamento para o utilizador que inseriu,
- * hugo@grau-maquinaria.com e pinto@grau-maquinaria.com
+ * Envia email com os dados da visita/agendamento para o utilizador que inseriu
+ * e para a direção técnica (hugo@grau-maquinaria.com).
  */
 export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
   success: boolean;
@@ -1779,7 +1779,6 @@ export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
 
   emailsSet.add(adminEmail);
   emailsSet.add('hugo@grau-maquinaria.com');
-  emailsSet.add('pinto@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
   const dataFormatada = formatDate(visita.data);
@@ -1913,7 +1912,7 @@ export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
           <tr>
             <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
               <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
-              <p style="margin: 0; color: #475569;">GRAUMP &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+              <p style="margin: 0; color: #475569;">GRAUMP &bull; hugo@grau-maquinaria.com</p>
             </td>
           </tr>
 

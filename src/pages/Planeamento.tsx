@@ -420,7 +420,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     onSaveVisita(savedVisita);
     setIsVisitaModalOpen(false);
 
-    // Envio automático de email com os dados inseridos para o utilizador, hugo@ e pinto@
+    // Envio automático de email com os dados inseridos para o utilizador e hugo@grau-maquinaria.com
     sendVisitaEmail({
       visita: savedVisita,
       currentUser
