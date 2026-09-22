@@ -3,8 +3,12 @@ import { jsPDF } from 'jspdf';
 import autoTablePkg from 'jspdf-autotable';
 
 // Apply autotable plugin to jsPDF in Node.js
-if (autoTablePkg && typeof autoTablePkg.applyPlugin === 'function') {
-  autoTablePkg.applyPlugin(jsPDF);
+if (autoTablePkg) {
+  if (typeof autoTablePkg.default?.applyPlugin === 'function') {
+    autoTablePkg.default.applyPlugin(jsPDF);
+  } else if (typeof autoTablePkg.applyPlugin === 'function') {
+    autoTablePkg.applyPlugin(jsPDF);
+  }
 }
 
 const POCKETBASE_URL = process.env.POCKETBASE_URL || 'https://oficina-hp-pocketbase.l1mamt.easypanel.host';
@@ -288,6 +292,483 @@ function buildServerPlaneamentoHtml({ startDateStr, endDateStr, days, totalFolha
 }
 
 /**
+ * Formata data para formato português DD/MM/AAAA
+ */
+function formatPtDate(d) {
+  if (!d) return '-';
+  const iso = normalizeToIso(d);
+  if (!iso || iso.length < 10) return String(d);
+  const [y, m, day] = iso.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+function calculateDiffDays(startDateStr, endDateStr) {
+  if (!startDateStr) return { days: 0, text: '-' };
+  const isoStart = normalizeToIso(startDateStr);
+  if (!isoStart) return { days: 0, text: '-' };
+  const start = new Date(isoStart + 'T00:00:00');
+  const end = endDateStr ? new Date(normalizeToIso(endDateStr) + 'T00:00:00') : new Date();
+  const diffTime = end.getTime() - start.getTime();
+  const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+  return {
+    days: diffDays,
+    text: `${diffDays} dia${diffDays === 1 ? '' : 's'}`
+  };
+}
+
+function isOpenService(f) {
+  if (!f) return false;
+  const st = String(f.status || '').toUpperCase();
+  if (st.includes('CONCLUÍDO') || st.includes('CONCLUIDO') || st.includes('FINALIZADO') || st.startsWith('FEITO') || st === 'FEITO') {
+    return false;
+  }
+  if (f.dataConclusao) return false;
+  return true;
+}
+
+function isOficinaOrGraump(f) {
+  if (!f) return false;
+  if (f.localizacaoTipo === 'oficina') return true;
+  if (f.tipo === 'Oficina') return true;
+  if (typeof f.status === 'string' && f.status.startsWith('OF -')) return true;
+  const loc = (f.localizacao || '').toLowerCase();
+  if (loc.includes('oficina') || loc.includes('graump')) return true;
+  return false;
+}
+
+function isExteriorService(f) {
+  return !isOficinaOrGraump(f);
+}
+
+/**
+ * Gera PDF A3 Paisagem com tabela detalhada de Tempos de Resposta no Node.js
+ */
+function generateServerTemposA3PDF({ rawFolhas, empresas, scope, dateStr }) {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a3',
+    compress: true
+  });
+
+  // Filtrar apenas serviços em aberto
+  let filtered = rawFolhas.filter(f => isOpenService(f));
+
+  let docTitle = 'QUADRO GERAL DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO';
+  let scopeSubtitle = 'Relatório global diário com todos os serviços em curso (Oficina e Exterior) (Apenas em Aberto)';
+  let scopeBadge = 'ÂMBITO: GERAL (APENAS EM ABERTO)';
+  let accentColor = [13, 148, 136]; // Teal
+
+  if (scope === 'OFICINA') {
+    filtered = filtered.filter(f => isOficinaOrGraump(f));
+    docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — OFICINA (GRAUMP)';
+    scopeSubtitle = 'Acompanhamento diário de viaturas na oficina e serviços sediados na GRAUMP (Apenas em Aberto)';
+    scopeBadge = 'ÂMBITO: OFICINA (GRAUMP) • APENAS EM ABERTO';
+    accentColor = [234, 88, 12]; // Laranja
+  } else if (scope === 'EXTERIOR') {
+    filtered = filtered.filter(f => isExteriorService(f));
+    docTitle = 'QUADRO DE TEMPOS DE RESPOSTA & IMOBILIZAÇÃO — EXTERIOR';
+    scopeSubtitle = 'Acompanhamento diário de intervenções no terreno, assistências e contratos fora da GRAUMP (Apenas em Aberto)';
+    scopeBadge = 'ÂMBITO: EXTERIOR (FORA DA GRAUMP) • APENAS EM ABERTO';
+    accentColor = [2, 132, 199]; // Azul Céu
+  }
+
+  const rows = filtered.map(f => {
+    const emp = empresas.find(e => e.id === f.empresaId);
+    const startDateImob = f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined);
+    const imob = calculateDiffDays(startDateImob);
+    const diasReq = calculateDiffDays(f.dataRequisicao);
+    const isCritico = (imob.days >= 10) || (diasReq.days >= 10);
+    return {
+      folha: f,
+      empresaNome: emp?.nome || 'Cliente / Não especificado',
+      imob,
+      diasReq,
+      isCritico
+    };
+  }).sort((a, b) => {
+    if (a.isCritico !== b.isCritico) return a.isCritico ? -1 : 1;
+    if (b.imob.days !== a.imob.days) return b.imob.days - a.imob.days;
+    return new Date(b.folha.data).getTime() - new Date(a.folha.data).getTime();
+  });
+
+  // Barra superior decorativa (420mm de largura A3)
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, 420, 6, 'F');
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(290, 0, 130, 6, 'F');
+
+  // Cabeçalho e Título
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('GRAUMP', 14, 20);
+
+  doc.setFontSize(14);
+  doc.text(docTitle, 406, 17, { align: 'right' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(scopeSubtitle, 406, 23, { align: 'right' });
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.text(`${scopeBadge}  •  TOTAL REGISTOS: ${rows.length}  •  EMISSÃO: ${dateStr}`, 406, 29, { align: 'right' });
+
+  // Corpo da Tabela
+  const tableData = rows.map(r => {
+    const f = r.folha;
+    const marcaMod = `${f.marca || ''} ${f.modelo || ''}`.trim() || '-';
+    const locTag = f.localizacao
+      ? `\n📍 ${f.localizacao}`
+      : (isOficinaOrGraump(f) ? '\n📍 GRAUMP (Albergaria)' : '');
+    const cliCell = `${r.empresaNome}${locTag}`;
+    const obs = (f.anomalias || f.notasInternas || f.descricaoTrabalho || '-').replace(/\n/g, ' ');
+
+    return [
+      f.numero || f.id,
+      f.tipo || 'Oficina',
+      f.matricula || '---',
+      marcaMod,
+      cliCell,
+      formatPtDate(f.data),
+      f.dataRequisicao ? formatPtDate(f.dataRequisicao) : '-',
+      r.diasReq.days > 0 ? r.diasReq.text : '-',
+      formatPtDate(f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined)),
+      'Em Aberto',
+      r.imob.days > 0 ? r.imob.text : '-',
+      f.status || 'Pendente',
+      obs
+    ];
+  });
+
+  if (typeof doc.autoTable === 'function') {
+    doc.autoTable({
+      startY: 34,
+      head: [[
+        'Folha',
+        'Tipo',
+        'Matrícula',
+        'Marca / Modelo',
+        'Cliente / Localização',
+        'Criação',
+        'Data Req.',
+        'Dias Req.',
+        'Entrada Of.',
+        'Conclusão',
+        'Imobilização',
+        'Estado Atual',
+        'Observações / Trabalhos'
+      ]],
+      body: tableData,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [30, 41, 59],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        cellPadding: 3
+      },
+      styles: {
+        fontSize: 7.5,
+        cellPadding: 2.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+        overflow: 'linebreak'
+      },
+      columnStyles: {
+        0: { cellWidth: 20, fontStyle: 'bold', textColor: [2, 132, 199] },
+        1: { cellWidth: 28, fontStyle: 'bold' },
+        2: { cellWidth: 22, fontStyle: 'bold' },
+        3: { cellWidth: 32 },
+        4: { cellWidth: 54 },
+        5: { cellWidth: 18, halign: 'center' },
+        6: { cellWidth: 18, halign: 'center' },
+        7: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+        8: { cellWidth: 18, halign: 'center' },
+        9: { cellWidth: 20, halign: 'center' },
+        10: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+        11: { cellWidth: 46 },
+        12: { cellWidth: 76 }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          const rowData = rows[data.row.index];
+          if (rowData && rowData.isCritico) {
+            if (data.column.index === 10 || data.column.index === 7) {
+              data.cell.styles.textColor = [225, 29, 72];
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.fillColor = [255, 241, 242];
+            }
+          }
+          if (data.column.index === 9 && data.cell.raw === 'Em Aberto') {
+            data.cell.styles.textColor = [217, 119, 6];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
+    });
+  }
+
+  const dataUri = doc.output('datauristring');
+  return dataUri.split(',')[1] || '';
+}
+
+/**
+ * Calcula os KPIs executivos para o email de Tempos de Resposta
+ */
+function calculateServerTemposStats(rawFolhas, empresas) {
+  const openFolhas = rawFolhas.filter(f => isOpenService(f));
+
+  let totalImobOficinaDays = 0;
+  let countOficinaImob = 0;
+  let totalDiasReq = 0;
+  let countReq = 0;
+  let criticalCount = 0;
+  const criticalRows = [];
+
+  openFolhas.forEach(f => {
+    const emp = empresas.find(e => e.id === f.empresaId);
+    const startDateImob = f.dataEntradaOficina || (f.tipo === 'Oficina' ? f.data : undefined);
+    const imob = calculateDiffDays(startDateImob);
+    const diasReq = calculateDiffDays(f.dataRequisicao);
+    const isCritico = (imob.days >= 10) || (diasReq.days >= 10);
+
+    if (isOficinaOrGraump(f) && imob.days > 0) {
+      totalImobOficinaDays += imob.days;
+      countOficinaImob++;
+    }
+
+    if (f.dataRequisicao && diasReq.days > 0) {
+      totalDiasReq += diasReq.days;
+      countReq++;
+    }
+
+    if (isCritico) {
+      criticalCount++;
+      criticalRows.push({
+        numero: f.numero || f.id,
+        matricula: f.matricula || '---',
+        cliente: emp?.nome || 'Cliente',
+        dias: Math.max(imob.days, diasReq.days),
+        status: f.status || 'Em Aberto'
+      });
+    }
+  });
+
+  const avgImobilizacaoOficina = countOficinaImob > 0 ? (totalImobOficinaDays / countOficinaImob) : 0;
+  const avgDiasReq = countReq > 0 ? (totalDiasReq / countReq) : 0;
+  const totalOficinaAbertas = openFolhas.filter(f => isOficinaOrGraump(f)).length;
+  const totalExteriorAbertas = openFolhas.filter(f => isExteriorService(f)).length;
+
+  return {
+    totalAbertas: openFolhas.length,
+    totalOficinaAbertas,
+    totalExteriorAbertas,
+    avgImobilizacaoOficina,
+    avgDiasReq,
+    criticalCount,
+    criticalRows: criticalRows.slice(0, 10)
+  };
+}
+
+/**
+ * Constrói o HTML executivo oficial do email de Tempos de Resposta
+ */
+function buildServerTemposRespostaHtml({ stats, dateStr }) {
+  const criticalTableRows = stats.criticalRows.map(r => `
+    <tr style="border-bottom: 1px solid #fee2e2;">
+      <td style="padding: 7px 8px; font-weight: 700; color: #0284c7; border: 1px solid #fca5a5;">${r.numero}</td>
+      <td style="padding: 7px 8px; font-weight: 700; color: #0f172a; border: 1px solid #fca5a5;">${r.matricula}</td>
+      <td style="padding: 7px 8px; color: #334155; border: 1px solid #fca5a5;">${r.cliente}</td>
+      <td style="padding: 7px 8px; font-weight: 800; color: #be123c; text-align: center; border: 1px solid #fca5a5;">${r.dias} dias</td>
+      <td style="padding: 7px 8px; color: #d97706; font-weight: 600; border: 1px solid #fca5a5;">${r.status}</td>
+    </tr>
+  `).join('');
+
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quadro Diário de Tempos de Resposta &amp; Imobilização - GRAUMP</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="background-color: #f1f5f9; width: 100%;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 620px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+          
+          <!-- Top Header -->
+          <tr>
+            <td bgcolor="#0b1528" style="background-color: #0b1528; padding: 24px 28px; border-bottom: 4px solid #0d9488;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" valign="middle" style="font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #2dd4bf; font-family: 'Segoe UI', Arial, sans-serif;">
+                    GRAUMP &bull; OFICINA HP &bull; FROTAS
+                  </td>
+                  <td align="right" valign="middle">
+                    <span style="background-color: #0d9488; color: #ffffff; font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 14px; text-transform: uppercase; font-family: 'Segoe UI', Arial, sans-serif; display: inline-block;">
+                      DISPARO DIÁRIO DAS 06H00
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 14px;">
+                    <h1 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 800; color: #ffffff; line-height: 1.3; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Quadro Diário de Tempos de Resposta &amp; Imobilização
+                    </h1>
+                    <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                      Relatório de controlo operacional emitido a <strong>${dateStr}</strong>.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content Body -->
+          <tr>
+            <td style="padding: 24px 28px;">
+              
+              <!-- Section Title -->
+              <h2 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin-top: 0; margin-bottom: 16px; font-weight: 800; border-bottom: 2px solid #0d9488; padding-bottom: 6px;">
+                📊 Resumo Executivo &amp; Médias Operacionais
+              </h2>
+
+              <!-- 4 KPI Cards Grid -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 22px;">
+                <tr>
+                  <!-- Card 1: Imobilização Média -->
+                  <td width="48%" valign="top" bgcolor="#fff7ed" style="background-color: #fff7ed; border: 1px solid #fdba74; border-left: 5px solid #ea580c; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #9a3412; text-transform: uppercase; margin-bottom: 4px;">
+                      ⏱️ Imobilização Média (Oficina)
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #c2410c;">
+                      ${stats.avgImobilizacaoOficina.toFixed(1)} <span style="font-size: 13px; font-weight: 700; color: #9a3412;">dias</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #9a3412; font-weight: 600; margin-top: 2px;">
+                      Média desde a entrada na oficina
+                    </div>
+                  </td>
+
+                  <td width="4%">&nbsp;</td>
+
+                  <!-- Card 2: Média Requisição -->
+                  <td width="48%" valign="top" bgcolor="#f0f9ff" style="background-color: #f0f9ff; border: 1px solid #7dd3fc; border-left: 5px solid #0284c7; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #075985; text-transform: uppercase; margin-bottom: 4px;">
+                      📅 Média desde Requisição
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0284c7;">
+                      ${stats.avgDiasReq.toFixed(1)} <span style="font-size: 13px; font-weight: 700; color: #0369a1;">dias</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #075985; font-weight: 600; margin-top: 2px;">
+                      Para serviços com requisição
+                    </div>
+                  </td>
+                </tr>
+
+                <tr><td colspan="3" style="height: 10px; font-size: 10px; line-height: 10px;">&nbsp;</td></tr>
+
+                <tr>
+                  <!-- Card 3: Viaturas Críticas -->
+                  <td width="48%" valign="top" bgcolor="#fef2f2" style="background-color: #fef2f2; border: 1px solid #fca5a5; border-left: 5px solid #e11d48; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #9f1239; text-transform: uppercase; margin-bottom: 4px;">
+                      🚨 Viaturas Críticas (&ge; 10 dias)
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #be123c;">
+                      ${stats.criticalCount} <span style="font-size: 13px; font-weight: 700; color: #9f1239;">viaturas</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #9f1239; font-weight: 600; margin-top: 2px;">
+                      Imobilização ou requisição &ge; 10 dias
+                    </div>
+                  </td>
+
+                  <td width="4%">&nbsp;</td>
+
+                  <!-- Card 4: Serviços em Aberto -->
+                  <td width="48%" valign="top" bgcolor="#f0fdfa" style="background-color: #f0fdfa; border: 1px solid #5eead4; border-left: 5px solid #0d9488; border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #115e59; text-transform: uppercase; margin-bottom: 4px;">
+                      🔧 Serviços em Aberto
+                    </div>
+                    <div style="font-size: 24px; font-weight: 900; font-family: monospace; color: #0f766e;">
+                      ${stats.totalAbertas} <span style="font-size: 13px; font-weight: 700; color: #134e4a;">em curso</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #115e59; font-weight: 600; margin-top: 2px;">
+                      Oficina GRAUMP (${stats.totalOficinaAbertas}) &bull; Exterior (${stats.totalExteriorAbertas})
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Attachments Notice Banner -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#f8fafc" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0d9488; border-radius: 6px; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 14px 18px;">
+                    <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">
+                      📎 3 Documentos Oficiais em PDF Formato A3 Anexados a este Email:
+                    </div>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #0f172a;">
+                      <li style="margin-bottom: 4px;"><strong>1. Tempos_Resposta_Oficina.pdf</strong> — Quadro de acompanhamento de viaturas na oficina e serviços sediados na GRAUMP (apenas em aberto).</li>
+                      <li style="margin-bottom: 4px;"><strong>2. Tempos_Resposta_Exterior.pdf</strong> — Quadro Exterior com todas as intervenções no terreno e fora das instalações da GRAUMP (apenas em aberto).</li>
+                      <li style="margin-bottom: 0;"><strong>3. Tempos_Resposta_Geral_Completo.pdf</strong> — Quadro Geral completo com todos os serviços em aberto.</li>
+                    </ul>
+                    <div style="margin-top: 8px; font-size: 11.5px; color: #475569; font-style: italic;">
+                      * Nota: Ficheiros em formato A3 horizontal para consulta detalhada ou impressão.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Critical Vehicles Mini Table (If any) -->
+              ${stats.criticalCount > 0 ? `
+              <div style="margin-top: 20px;">
+                <h3 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #9f1239; margin-top: 0; margin-bottom: 10px; font-weight: 800; border-bottom: 2px solid #e11d48; padding-bottom: 6px;">
+                  ⚠️ Viaturas e Serviços Críticos em Atenção Imediata (${stats.criticalCount})
+                </h3>
+                <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size: 12px; background-color: #ffffff; border: 1px solid #fca5a5; border-collapse: collapse;">
+                  <thead>
+                    <tr bgcolor="#fee2e2" style="background-color: #fee2e2; text-align: left; color: #991b1b;">
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Folha</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Matrícula</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Cliente</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Dias</th>
+                      <th style="padding: 8px; font-weight: 800; font-size: 11px; text-transform: uppercase; border: 1px solid #fca5a5;">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${criticalTableRows}
+                  </tbody>
+                </table>
+              </div>
+              ` : ''}
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
+              <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
+              <p style="margin: 0; color: #475569;">Disparo automático diário às 06:00 (Dias de semana) &bull; Servidor 24/7</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
  * Main Check & Execution Function for All Automations
  */
 export async function runServerAutomations(sendEmailFn, forced = false) {
@@ -460,52 +941,83 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
         const shouldRun = forced || (isWeekday && isPast600 && lastSentDay !== lisbon.dateIso);
 
         if (shouldRun) {
-          console.log(`[ServerCron] 🚀 A executar 'email_tempos_resposta' para o dia ${lisbon.dateIso}...`);
+          console.log(`[ServerCron] 🚀 A executar 'email_tempos_resposta' (3 PDFs A3) para o dia ${lisbon.dateIso}...`);
           try {
             const rawFolhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
             const empresas = await getAppData(pb, 'oficina_hp_empresas', []);
 
-            // Calculate critical sheets (open and > 10 days)
-            const openFolhas = rawFolhas.filter(f => f.status !== 'Concluído' && f.status !== 'Finalizado' && !f.status.startsWith('FEITO'));
-            
+            const dateStr = `${String(lisbon.day).padStart(2, '0')}/${String(lisbon.month).padStart(2, '0')}/${lisbon.year}`;
+
+            // 1. Gerar os 3 PDFs A3 Paisagem (Apenas em Aberto)
+            const attachments = [];
+
+            // PDF 1: Oficina (Serviços Oficina e todos com morada na GRAUMP)
+            try {
+              const base64Oficina = generateServerTemposA3PDF({ rawFolhas, empresas, scope: 'OFICINA', dateStr });
+              if (base64Oficina) {
+                attachments.push({
+                  filename: 'Tempos_Resposta_Oficina.pdf',
+                  content: base64Oficina,
+                  encoding: 'base64',
+                  contentType: 'application/pdf'
+                });
+              }
+            } catch (errOf) {
+              console.error('[ServerCron] Erro ao gerar PDF Oficina A3:', errOf);
+            }
+
+            // PDF 2: Exterior (Intervenções no terreno / fora da GRAUMP)
+            try {
+              const base64Exterior = generateServerTemposA3PDF({ rawFolhas, empresas, scope: 'EXTERIOR', dateStr });
+              if (base64Exterior) {
+                attachments.push({
+                  filename: 'Tempos_Resposta_Exterior.pdf',
+                  content: base64Exterior,
+                  encoding: 'base64',
+                  contentType: 'application/pdf'
+                });
+              }
+            } catch (errExt) {
+              console.error('[ServerCron] Erro ao gerar PDF Exterior A3:', errExt);
+            }
+
+            // PDF 3: Geral Completo (Apenas em aberto)
+            try {
+              const base64Geral = generateServerTemposA3PDF({ rawFolhas, empresas, scope: 'TODOS', dateStr });
+              if (base64Geral) {
+                attachments.push({
+                  filename: 'Tempos_Resposta_Geral_Completo.pdf',
+                  content: base64Geral,
+                  encoding: 'base64',
+                  contentType: 'application/pdf'
+                });
+              }
+            } catch (errAll) {
+              console.error('[ServerCron] Erro ao gerar PDF Geral A3:', errAll);
+            }
+
+            // 2. Calcular Estatísticas Executivas e Construir HTML
+            const stats = calculateServerTemposStats(rawFolhas, empresas);
+            const htmlTempos = buildServerTemposRespostaHtml({ stats, dateStr });
+
             const recipients = auto.destinatarios && auto.destinatarios.length > 0
               ? auto.destinatarios
               : ['hugo@grau-maquinaria.com'];
 
-            const htmlTempos = `
-              <div style="font-family:'Segoe UI', Arial, sans-serif; padding:20px; background:#f1f5f9;">
-                <div style="max-width:600px; margin:0 auto; background:#fff; border-radius:8px; border:1px solid #cbd5e1; overflow:hidden;">
-                  <div style="background:#0f172a; padding:18px 24px; color:#fff;">
-                    <h2 style="margin:0; font-size:18px;">Relatório Diário de Tempos de Resposta & Imobilização</h2>
-                    <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">${lisbon.dateIso} • Grau Maquinaria</p>
-                  </div>
-                  <div style="padding:20px 24px;">
-                    <p>Bom dia,</p>
-                    <p>Segue o resumo das folhas em aberto no sistema Oficina HP:</p>
-                    <ul>
-                      <li><strong>Total Folhas Abertas:</strong> ${openFolhas.length}</li>
-                      <li><strong>Oficina:</strong> ${openFolhas.filter(f => f.tipo === 'Oficina').length}</li>
-                      <li><strong>Assistência Técnica:</strong> ${openFolhas.filter(f => f.tipo === 'Assistência Técnica').length}</li>
-                      <li><strong>Contratos:</strong> ${openFolhas.filter(f => f.tipo === 'Contrato').length}</li>
-                    </ul>
-                    <p>Consulte a aplicação para aceder aos detalhes e tempos de imobilização atualizados.</p>
-                  </div>
-                </div>
-              </div>
-            `;
-
             await sendEmailFn({
               to: recipients,
-              subject: `[Oficina HP] Relatório Diário de Tempos de Resposta (${lisbon.dateIso})`,
-              html: htmlTempos
+              subject: `[Oficina HP] 📊 Quadro Diário de Tempos de Resposta & Imobilização (${dateStr})`,
+              html: htmlTempos,
+              attachments
             });
 
             await setAppData(pb, `auto_last_day_${auto.id}`, lisbon.dateIso);
+            await setAppData(pb, `oficina_hp_last_run_day_${auto.id}`, lisbon.dateIso);
             automacoes[i].ultimoDisparo = `Hoje às ${lisbon.timeStr}`;
             await setAppData(pb, 'oficina_hp_automacoes', automacoes);
 
-            console.log(`[ServerCron] ✅ Tempos de resposta enviado para: ${recipients.join(', ')}`);
-            results.push({ id: auto.id, tipo: auto.tipo, success: true });
+            console.log(`[ServerCron] ✅ Tempos de resposta com ${attachments.length} PDFs A3 enviado para: ${recipients.join(', ')}`);
+            results.push({ id: auto.id, tipo: auto.tipo, success: true, attachmentsCount: attachments.length });
           } catch (err) {
             console.error(`[ServerCron] ❌ Erro ao enviar tempos de resposta:`, err);
             results.push({ id: auto.id, tipo: auto.tipo, success: false, error: err.message });

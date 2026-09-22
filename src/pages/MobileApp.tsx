@@ -5376,7 +5376,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                                 setTimeout(() => setSaveBanner(null), 6000);
                               });
                             }}
-                            title="Disparar email de dados do contacto para hugo@, pinto@ e utilizador"
+                            title="Enviar ficha do contacto por email para a administração e utilizador"
                             className="py-2.5 rounded-2xl bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-hp-500/30 active:scale-95 transition-all truncate px-1"
                           >
                             <Send className="w-3.5 h-3.5 text-hp-400 shrink-0" />

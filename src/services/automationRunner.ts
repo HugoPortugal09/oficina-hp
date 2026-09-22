@@ -57,7 +57,8 @@ export async function checkAndExecuteDueAutomations(): Promise<void> {
         const storageKey = `oficina_hp_last_run_week_${auto.id}`;
         const lastSentWeek = localStorage.getItem(storageKey);
 
-        if (isMonday && isPastScheduledTime && lastSentWeek !== currentWeekKey) {
+        const alreadyFiredWeek = auto.ultimoDisparo && auto.ultimoDisparo.includes('Hoje');
+        if (isMonday && isPastScheduledTime && lastSentWeek !== currentWeekKey && !alreadyFiredWeek) {
           console.log(`[AutomationRunner] 🚀 A disparar envio semanal de planeamento (${currentWeekKey}) para: ${auto.destinatarios.join(', ')}`);
           try {
             const res = await sendWeeklyPlaneamentoEmail({ destinatarios: auto.destinatarios });
@@ -82,8 +83,9 @@ export async function checkAndExecuteDueAutomations(): Promise<void> {
         const isPastScheduledTime = currentMinutes >= (6 * 60); // >= 06:00
         const storageKey = `oficina_hp_last_run_day_${auto.id}`;
         const lastSentDay = localStorage.getItem(storageKey);
+        const alreadyFiredToday = auto.ultimoDisparo && auto.ultimoDisparo.includes('Hoje');
 
-        if (isWeekday && isPastScheduledTime && lastSentDay !== todayIso) {
+        if (isWeekday && isPastScheduledTime && lastSentDay !== todayIso && !alreadyFiredToday) {
           console.log(`[AutomationRunner] 🚀 A disparar envio diário de tempos de resposta (${todayIso}) para: ${auto.destinatarios.join(', ')}`);
           try {
             const res = await sendDailyTemposRespostaEmail({ destinatarios: auto.destinatarios });

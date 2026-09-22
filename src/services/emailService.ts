@@ -1154,7 +1154,7 @@ export function buildTemposRespostaDailyHtml(
           <tr>
             <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
               <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
-              <p style="margin: 0; color: #475569;">Disparo automático diário às 06:00 (Dias de semana) &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+              <p style="margin: 0; color: #475569;">Disparo automático diário às 06:00 (Dias de semana) &bull; GRAUMP Maquinaria Portugal &bull; Oficina HP</p>
             </td>
           </tr>
 
@@ -2006,8 +2006,8 @@ export interface NovoContactoEmailPayload {
 }
 
 /**
- * Envia email com os dados do contacto/cliente para o utilizador que inseriu,
- * hugo@grau-maquinaria.com e pinto@grau-maquinaria.com
+ * Envia email com os dados do contacto/cliente para o utilizador que inseriu
+ * e para o email de gestão configurado (emailDestinatarioPlaneamento).
  */
 export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): Promise<{
   success: boolean;
@@ -2030,7 +2030,6 @@ export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): 
   } catch {}
 
   emailsSet.add(adminEmail);
-  emailsSet.add('hugo@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
   const empresaNome = empresa?.nome || 'Cliente Particular / Sem Empresa';
@@ -2172,7 +2171,7 @@ export async function sendNovoContactoEmail(payload: NovoContactoEmailPayload): 
           <tr>
             <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 16px 28px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 11.5px; color: #475569;">
               <p style="margin: 0 0 4px 0; color: #0f172a; font-weight: 700;"><strong>Oficina HP &bull; GRAUMP Maquinaria Portugal</strong></p>
-              <p style="margin: 0; color: #475569;">GRAUMP &bull; hugo@grau-maquinaria.com &bull; pinto@grau-maquinaria.com</p>
+              <p style="margin: 0; color: #475569;">GRAUMP &bull; Oficina HP &bull; Gestão Operacional</p>
             </td>
           </tr>
 
