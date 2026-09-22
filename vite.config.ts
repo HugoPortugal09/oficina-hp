@@ -24,13 +24,13 @@ export default defineConfig({
                 service: 'gmail',
                 auth: {
                   user: process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com',
-                  pass: process.env.EMAIL_APP_PASSWORD || 'ewhzzvysccrptkns'
+                  pass: process.env.EMAIL_APP_PASSWORD || ''
                 }
               });
               const recipients = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
               console.log(`[Vite Server] A enviar email para: ${recipients}`);
               const mailOptions: any = {
-                from: '"Oficina HP" <oficinahpapp@gmail.com>',
+                from: `"Oficina HP" <${process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com'}>`,
                 to: recipients,
                 subject: payload.subject,
                 html: payload.html,
@@ -54,6 +54,35 @@ export default defineConfig({
       }
     }
   ],
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor-react';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-lucide';
+            }
+            if (id.includes('jspdf') || id.includes('html2canvas')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('tesseract.js')) {
+              return 'vendor-ocr';
+            }
+            if (id.includes('leaflet')) {
+              return 'vendor-maps';
+            }
+            if (id.includes('pocketbase')) {
+              return 'vendor-pocketbase';
+            }
+          }
+        }
+      }
+    }
+  },
   server: {
     port: 3000,
     host: true

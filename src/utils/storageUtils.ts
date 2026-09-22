@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Storage quota management and resilient localStorage wrapper.
  * Prevents and recovers from DOMException: QuotaExceededError when storing data.
  */
@@ -33,8 +33,34 @@ export function isQuotaError(err: any): boolean {
 }
 
 /**
- * Scans localStorage and prunes heavy base64 strings (>30KB) from media collections.
- * Frees up 3MB - 8MB of storage space instantly without losing structured data.
+ * Calcula o espaço atualmente ocupado no LocalStorage.
+ */
+export function getStorageUsage(): { usedKB: number; totalKB: number; percent: number } {
+  if (typeof localStorage === 'undefined') {
+    return { usedKB: 0, totalKB: 5120, percent: 0 };
+  }
+
+  let totalChars = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key) {
+      const val = localStorage.getItem(key) || '';
+      totalChars += key.length + val.length;
+    }
+  }
+
+  // Em UTF-16 cada char ocupa ~2 bytes
+  const usedKB = Math.round((totalChars * 2) / 1024);
+  const totalKB = 5120; // 5MB padrão da maioria dos navegadores móveis
+  const percent = Math.min(100, Math.round((usedKB / totalKB) * 100));
+
+  return { usedKB, totalKB, percent };
+}
+
+/**
+ * Otimização inteligente de quota:
+ * 1. Primeiro tenta higienizar imagens desproporcionalmente pesadas (>180KB em base64).
+ * 2. Em seguida, limpa fotos apenas de folhas já concluídas antigas, preservando as folhas em aberto.
  */
 export function optimizeLocalStorageQuota(): boolean {
   if (typeof localStorage === 'undefined') return false;
@@ -51,7 +77,7 @@ export function optimizeLocalStorageQuota(): boolean {
 
     for (const key of keysToCheck) {
       const raw = localStorage.getItem(key);
-      if (!raw || raw.length < 30000) continue;
+      if (!raw || raw.length < 50000) continue;
 
       try {
         const list = JSON.parse(raw);
@@ -65,11 +91,20 @@ export function optimizeLocalStorageQuota(): boolean {
             let fotos = f.fotos;
             let fotosCliente = f.fotosCliente;
 
+            // Se a folha estiver concluída e muito antiga, ou se a imagem for gigantesca (>180.000 chars)
+            const isConcluded = f.estado === 'concluido' || f.fechada;
+
             if (Array.isArray(fotos) && fotos.length > 0) {
               const cleanedFotos = fotos.filter((photo: string) => {
-                if (typeof photo === 'string' && photo.length > 30000) {
-                  fChanged = true;
-                  return false;
+                if (typeof photo === 'string') {
+                  if (photo.length > 180000) {
+                    fChanged = true;
+                    return false;
+                  }
+                  if (isConcluded && photo.length > 100000) {
+                    fChanged = true;
+                    return false;
+                  }
                 }
                 return true;
               });
@@ -79,9 +114,15 @@ export function optimizeLocalStorageQuota(): boolean {
             if (Array.isArray(fotosCliente) && fotosCliente.length > 0) {
               let fcChanged = false;
               const cleanedFotos = fotosCliente.filter((photo: string) => {
-                if (typeof photo === 'string' && photo.length > 30000) {
-                  fcChanged = true;
-                  return false;
+                if (typeof photo === 'string') {
+                  if (photo.length > 180000) {
+                    fcChanged = true;
+                    return false;
+                  }
+                  if (isConcluded && photo.length > 100000) {
+                    fcChanged = true;
+                    return false;
+                  }
                 }
                 return true;
               });
@@ -109,14 +150,14 @@ export function optimizeLocalStorageQuota(): boolean {
             let fotoUrl = eq.fotoUrl;
             let fotos = eq.fotos;
 
-            if (typeof fotoUrl === 'string' && fotoUrl.length > 30000) {
+            if (typeof fotoUrl === 'string' && fotoUrl.length > 180000) {
               fotoUrl = '';
               eqChanged = true;
             }
 
             if (Array.isArray(fotos) && fotos.length > 0) {
               const cleanedFotos = fotos.filter((f: string) => {
-                if (typeof f === 'string' && f.length > 30000) {
+                if (typeof f === 'string' && f.length > 180000) {
                   eqChanged = true;
                   return false;
                 }

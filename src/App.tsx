@@ -1,28 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
-import { CameraScannerModal } from './components/CameraScannerModal';
-import { Dashboard } from './pages/Dashboard';
-import { MapaPortugal } from './pages/MapaPortugal';
-import { Oficina } from './pages/Oficina';
-import { Kanban } from './pages/Kanban';
-import { Propostas } from './pages/Propostas';
-import { Empresas } from './pages/Empresas';
-import { Clientes } from './pages/Clientes';
-import { Equipamentos } from './pages/Equipamentos';
-import { Pecas } from './pages/Pecas';
-import { PedidosPecas } from './pages/PedidosPecas';
-import { GuiasEnvio } from './pages/GuiasEnvio';
-import { Contratos } from './pages/Contratos';
-import { Tarefas } from './pages/Tarefas';
-import { AtividadeSemanal } from './pages/AtividadeSemanal';
-import { Planeamento } from './pages/Planeamento';
-import { Automacoes } from './pages/Automacoes';
-import { TemposResposta } from './pages/TemposResposta';
-import { Configuracoes } from './pages/Configuracoes';
-import { MobileApp } from './pages/MobileApp';
-import { Login } from './pages/Login';
 import { RegistoConviteModal } from './components/RegistoConviteModal';
+
+// Helper tipado para importação lazy de componentes com named exports
+const lazyNamed = <T extends Record<string, any>, K extends keyof T>(
+  loader: () => Promise<T>,
+  name: K
+) => React.lazy(() => loader().then((m) => ({ default: m[name] })));
+
+// Code-Splitting: Carregamento sob demanda de todas as páginas e do scanner pesado
+const Dashboard = lazyNamed(() => import('./pages/Dashboard'), 'Dashboard');
+const MapaPortugal = lazyNamed(() => import('./pages/MapaPortugal'), 'MapaPortugal');
+const Oficina = lazyNamed(() => import('./pages/Oficina'), 'Oficina');
+const Kanban = lazyNamed(() => import('./pages/Kanban'), 'Kanban');
+const Propostas = lazyNamed(() => import('./pages/Propostas'), 'Propostas');
+const Empresas = lazyNamed(() => import('./pages/Empresas'), 'Empresas');
+const Clientes = lazyNamed(() => import('./pages/Clientes'), 'Clientes');
+const Equipamentos = lazyNamed(() => import('./pages/Equipamentos'), 'Equipamentos');
+const Pecas = lazyNamed(() => import('./pages/Pecas'), 'Pecas');
+const PedidosPecas = lazyNamed(() => import('./pages/PedidosPecas'), 'PedidosPecas');
+const GuiasEnvio = lazyNamed(() => import('./pages/GuiasEnvio'), 'GuiasEnvio');
+const Contratos = lazyNamed(() => import('./pages/Contratos'), 'Contratos');
+const Tarefas = lazyNamed(() => import('./pages/Tarefas'), 'Tarefas');
+const AtividadeSemanal = lazyNamed(() => import('./pages/AtividadeSemanal'), 'AtividadeSemanal');
+const Planeamento = lazyNamed(() => import('./pages/Planeamento'), 'Planeamento');
+const Automacoes = lazyNamed(() => import('./pages/Automacoes'), 'Automacoes');
+const TemposResposta = lazyNamed(() => import('./pages/TemposResposta'), 'TemposResposta');
+const Configuracoes = lazyNamed(() => import('./pages/Configuracoes'), 'Configuracoes');
+const MobileApp = lazyNamed(() => import('./pages/MobileApp'), 'MobileApp');
+const Login = lazyNamed(() => import('./pages/Login'), 'Login');
+const CameraScannerModal = lazyNamed(() => import('./components/CameraScannerModal'), 'CameraScannerModal');
+
+function PageFallback() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center min-h-[350px] p-8 text-center animate-pulse">
+      <div className="w-10 h-10 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mb-3" />
+      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        A carregar vista...
+      </span>
+    </div>
+  );
+}
+
+function FullscreenFallback() {
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-100">
+      <div className="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mb-4" />
+      <span className="text-sm font-semibold tracking-wide text-slate-300">
+        Oficina HP • A carregar aplicação...
+      </span>
+    </div>
+  );
+}
 
 import { db, STORAGE_KEYS } from './services/dbService';
 import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
@@ -420,18 +450,24 @@ export default function App() {
 
   // If not authenticated, render Login Screen
   if (!isAuthenticated) {
-    return <Login utilizadores={utilizadores} onLogin={handleLogin} theme={theme} />;
+    return (
+      <Suspense fallback={<FullscreenFallback />}>
+        <Login utilizadores={utilizadores} onLogin={handleLogin} theme={theme} />
+      </Suspense>
+    );
   }
 
   if (isMobileRoute) {
     return (
-      <MobileApp
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onSwitchToDesktop={navigateToDesktop}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-      />
+      <Suspense fallback={<FullscreenFallback />}>
+        <MobileApp
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onSwitchToDesktop={navigateToDesktop}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
+      </Suspense>
     );
   }
 
@@ -484,7 +520,8 @@ export default function App() {
 
         {/* Dynamic Page Container */}
         <main className="flex-1 px-4 sm:px-6 py-4 max-w-7xl w-full mx-auto">
-          {activeTab === 'dashboard' && (
+          <Suspense fallback={<PageFallback />}>
+            {activeTab === 'dashboard' && (
             <Dashboard
               folhasServico={folhas}
               propostas={propostas}
@@ -686,15 +723,20 @@ export default function App() {
               </div>
             )
           )}
+          </Suspense>
         </main>
       </div>
 
-      {/* Camera / AI Vision Scanner Modal */}
-      <CameraScannerModal
-        isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        onScanComplete={handleScanComplete}
-      />
+      {/* Camera / AI Vision Scanner Modal (Carregado apenas quando aberto) */}
+      {isScannerOpen && (
+        <Suspense fallback={null}>
+          <CameraScannerModal
+            isOpen={isScannerOpen}
+            onClose={() => setIsScannerOpen(false)}
+            onScanComplete={handleScanComplete}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

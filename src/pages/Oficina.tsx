@@ -808,7 +808,7 @@ export const Oficina: React.FC<OficinaProps> = ({
     try {
       const newPhotos: string[] = [];
       for (let i = 0; i < files.length; i++) {
-        const compressed = await compressImageFile(files[i], 1280, 0.75);
+        const compressed = await compressImageFile(files[i], { maxDim: 1024, quality: 0.65, maxSizeBytes: 85 * 1024 });
         if (compressed) newPhotos.push(compressed);
       }
       if (newPhotos.length > 0) {
@@ -831,7 +831,7 @@ export const Oficina: React.FC<OficinaProps> = ({
     try {
       const newPhotos: string[] = [];
       for (let i = 0; i < files.length; i++) {
-        const compressed = await compressImageFile(files[i], 1280, 0.75);
+        const compressed = await compressImageFile(files[i], { maxDim: 1024, quality: 0.65, maxSizeBytes: 85 * 1024 });
         if (compressed) newPhotos.push(compressed);
       }
       if (newPhotos.length > 0) {

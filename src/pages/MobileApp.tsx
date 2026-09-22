@@ -364,7 +364,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
-        const base64 = await compressImageFile(file, 1280, 0.75);
+        const base64 = await compressImageFile(file, { maxDim: 1024, quality: 0.65, maxSizeBytes: 85 * 1024 });
         if (!base64) continue;
         if (target === 'all-ai') {
           setAiPhotos(prev => [...prev, base64]);
@@ -1095,7 +1095,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     try {
       const newPhotos: string[] = [];
       for (let i = 0; i < files.length; i++) {
-        const compressed = await compressImageFile(files[i], 1280, 0.75);
+        const compressed = await compressImageFile(files[i], { maxDim: 1024, quality: 0.65, maxSizeBytes: 85 * 1024 });
         if (compressed) newPhotos.push(compressed);
       }
       if (newPhotos.length > 0) {
