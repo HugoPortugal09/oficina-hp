@@ -1,6 +1,6 @@
 import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
-import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente, Cliente } from '../types';
+import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente, Cliente, UserRole } from '../types';
 import { USERS } from '../types';
 import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc, generatePlaneamentoSemanalA4PDF, type PlaneamentoSemanalDayCol, type PlaneamentoSemanalDayItem } from './pdfService';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput } from '../utils/dateUtils';
@@ -2778,5 +2778,156 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
       recipients: payload?.destinatarios || ['hugo@grau-maquinaria.com'],
       message: `Erro ao processar envio do planeamento semanal: ${error?.message || String(error)}`
     };
+  }
+}
+
+export interface ConviteEmailPayload {
+  email: string;
+  iniciais: string;
+  role: UserRole;
+  conviteUrl: string;
+  adminNome?: string;
+}
+
+/**
+ * Sends official team invitation email to a new collaborator
+ */
+export async function sendConviteColaboradorEmail(
+  payload: ConviteEmailPayload
+): Promise<{ success: boolean; message: string }> {
+  const { email, iniciais, role, conviteUrl, adminNome = 'Hugo Portugal' } = payload;
+  const roleLabel = role === 'administrador'
+    ? 'Administrador (Acesso Total)'
+    : role === 'gestor'
+    ? 'Gestor de Operações'
+    : 'Técnico de Oficina & Exterior';
+
+  const roleColor = role === 'administrador'
+    ? '#9333ea'
+    : role === 'gestor'
+    ? '#0284c7'
+    : '#d97706';
+
+  const subject = `[Oficina HP] Convite para a Equipa • Ativação de Conta (${iniciais})`;
+
+  const htmlContent = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="pt">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Convite de Colaborador - Oficina HP</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b1120; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #e2e8f0;">
+  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#0b1120" style="width: 100%; padding: 30px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#0f172a" style="max-width: 580px; width: 100%; background-color: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);">
+          
+          <!-- Brand Header -->
+          <tr>
+            <td bgcolor="#0284c7" style="background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%); padding: 24px 28px;">
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <span style="display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #bae6fd; font-family: 'Segoe UI', Arial, sans-serif;">
+                      OFICINA HP &bull; SISTEMA DE GESTÃO & FROTAS
+                    </span>
+                    <h1 style="margin: 8px 0 0 0; font-size: 22px; font-weight: 900; color: #ffffff; line-height: 1.2;">
+                      Convite para a Equipa
+                    </h1>
+                  </td>
+                  <td align="right" valign="top">
+                    <span style="display: inline-block; background-color: rgba(255, 255, 255, 0.2); color: #ffffff; font-size: 13px; font-weight: 900; padding: 6px 14px; border-radius: 10px; font-family: monospace;">
+                      ${iniciais}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 28px;">
+              <p style="margin: 0 0 16px 0; font-size: 15px; color: #f8fafc; line-height: 1.5;">
+                Olá,
+              </p>
+              <p style="margin: 0 0 20px 0; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
+                <strong>${adminNome}</strong> convidou-o para integrar a plataforma da <strong>Oficina HP</strong>.
+              </p>
+
+              <!-- Role & Identifier Card -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 0 0 24px 0; background-color: #1e293b; border: 1px solid #334155; border-radius: 12px;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="font-size: 12px; color: #94a3b8; font-weight: 600; padding-bottom: 4px;">Cargo / Função:</td>
+                        <td align="right" style="font-size: 13px; font-weight: 800; color: ${roleColor}; padding-bottom: 4px;">${roleLabel}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-size: 12px; color: #94a3b8; font-weight: 600;">Iniciais no Sistema:</td>
+                        <td align="right" style="font-size: 14px; font-weight: 900; color: #ffffff; font-family: monospace;">${iniciais}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-size: 12px; color: #94a3b8; font-weight: 600; padding-top: 4px;">Email de Acesso:</td>
+                        <td align="right" style="font-size: 12px; color: #38bdf8; font-weight: 700; padding-top: 4px;">${email}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0 0 24px 0; font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                Para começar a utilizar o sistema, clique no botão abaixo para preencher o seu nome e definir a sua palavra-passe pessoal e segura:
+              </p>
+
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin: 0 0 24px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${conviteUrl}" target="_blank" style="display: inline-block; background-color: #0284c7; color: #ffffff; font-size: 14px; font-weight: 800; text-decoration: none; padding: 14px 32px; border-radius: 12px; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4); text-transform: uppercase; letter-spacing: 0.05em;">
+                      Ativar Conta & Definir Palavra-passe &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.5; word-break: break-all;">
+                Se o botão acima não funcionar, copie e cole o seguinte endereço no seu navegador:<br />
+                <a href="${conviteUrl}" style="color: #38bdf8; text-decoration: underline;">${conviteUrl}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#0b1120" style="background-color: #0b1120; padding: 16px 28px; border-top: 1px solid #1e293b; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #475569;">
+                Oficina HP &bull; Gestão Operacional & Frotas &bull; Albergaria-a-Velha
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const sendResult = await postSendEmailApi({
+      to: email,
+      subject,
+      html: htmlContent
+    });
+
+    if (sendResult.success) {
+      return { success: true, message: `Convite enviado com sucesso para ${email}` };
+    }
+    return { success: false, message: sendResult.error || 'Erro ao enviar email de convite' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Falha de comunicação ao enviar convite' };
   }
 }

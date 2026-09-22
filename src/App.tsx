@@ -22,6 +22,7 @@ import { TemposResposta } from './pages/TemposResposta';
 import { Configuracoes } from './pages/Configuracoes';
 import { MobileApp } from './pages/MobileApp';
 import { Login } from './pages/Login';
+import { RegistoConviteModal } from './components/RegistoConviteModal';
 
 import { db, STORAGE_KEYS } from './services/dbService';
 import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
@@ -206,6 +207,12 @@ export default function App() {
     return fromDb && fromDb.length > 0 ? fromDb : USERS;
   });
 
+  // Check if opening via invitation link (?convite=TOKEN)
+  const [conviteToken, setConviteToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('convite');
+  });
+
   // Selected item for cross-module navigation
   const [selectedFolha, setSelectedFolha] = useState<FolhaServico | null>(null);
 
@@ -388,6 +395,28 @@ export default function App() {
     setSelectedFolha(null);
     setActiveTab('oficina');
   };
+
+  // If opening via invite token link, show registration modal
+  if (conviteToken) {
+    return (
+      <RegistoConviteModal
+        token={conviteToken}
+        onClose={() => {
+          setConviteToken(null);
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('convite');
+            window.history.replaceState({}, document.title, url.pathname);
+          }
+        }}
+        onRegisterSuccess={(newUser) => {
+          setConviteToken(null);
+          loadAllData();
+          handleLogin(newUser);
+        }}
+      />
+    );
+  }
 
   // If not authenticated, render Login Screen
   if (!isAuthenticated) {

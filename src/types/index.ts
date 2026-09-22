@@ -430,6 +430,17 @@ export interface UserProfile {
   criadoEm?: string;
 }
 
+export interface UserInvitation {
+  id: string;
+  email: string;
+  iniciais: string;
+  role: UserRole;
+  token: string;
+  criadoEm: string;
+  criadoPor?: string;
+  status: 'pendente' | 'aceite' | 'cancelado';
+}
+
 export interface RolePermissions {
   canAccessConfig: boolean;
   canAccessAutomacoes: boolean;

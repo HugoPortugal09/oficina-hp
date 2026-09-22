@@ -24,7 +24,12 @@ import {
   Cloud,
   CloudUpload,
   CloudDownload,
-  Mail
+  Mail,
+  Send,
+  Copy,
+  Clock,
+  ExternalLink,
+  CheckCircle2
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Modal } from '../components/Modal';
@@ -32,7 +37,8 @@ import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { checkPocketBaseConnection } from '../services/pocketbase';
 import { syncPullFromCloud, uploadAllLocalToCloud, syncPushToCloud } from '../services/pocketbaseSync';
-import type { ConfiguracaoOficina, UserProfile, UserRole } from '../types';
+import { sendConviteColaboradorEmail } from '../services/emailService';
+import type { ConfiguracaoOficina, UserProfile, UserRole, UserInvitation } from '../types';
 import { USERS, isAdminEmail, ADMIN_EMAILS } from '../types';
 
 interface ConfiguracoesProps {
@@ -67,6 +73,174 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     avatar: '',
     descricao: ''
   });
+
+  // Invitations State
+  const [convites, setConvites] = useState<UserInvitation[]>(() => {
+    return db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
+  });
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteIniciais, setInviteIniciais] = useState('');
+  const [inviteRole, setInviteRole] = useState<UserRole>('tecnico');
+  const [inviteCargo, setInviteCargo] = useState('');
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [inviteStatusMsg, setInviteStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null);
+  const [teamTab, setTeamTab] = useState<'colaboradores' | 'convites'>('colaboradores');
+
+  useEffect(() => {
+    const handleDbChanged = () => {
+      const fromDbUsers = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES);
+      setUtilizadores(fromDbUsers && fromDbUsers.length > 0 ? fromDbUsers : USERS);
+      setConvites(db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || []);
+    };
+    window.addEventListener('oficina_hp_db_changed', handleDbChanged);
+    return () => window.removeEventListener('oficina_hp_db_changed', handleDbChanged);
+  }, []);
+
+  const handleOpenInviteModal = () => {
+    setInviteEmail('');
+    setInviteIniciais('');
+    setInviteRole('tecnico');
+    setInviteCargo('');
+    setInviteStatusMsg(null);
+    setGeneratedInviteLink(null);
+    setIsInviteModalOpen(true);
+  };
+
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteStatusMsg(null);
+    setGeneratedInviteLink(null);
+
+    const cleanEmail = inviteEmail.trim().toLowerCase();
+    const cleanIniciais = inviteIniciais.trim().toUpperCase();
+
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setInviteStatusMsg({ type: 'error', text: 'Por favor insira um endereço de email válido.' });
+      return;
+    }
+
+    if (!cleanIniciais || cleanIniciais.length < 2 || cleanIniciais.length > 3) {
+      setInviteStatusMsg({ type: 'error', text: 'As iniciais na oficina devem ter entre 2 e 3 letras (ex: JS, HP).' });
+      return;
+    }
+
+    // Check if user already exists
+    const existingUser = utilizadores.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+    if (existingUser) {
+      setInviteStatusMsg({ type: 'error', text: `Já existe um utilizador registado com este email (${existingUser.nome}).` });
+      return;
+    }
+
+    setIsSendingInvite(true);
+
+    try {
+      const token = db.generateId('inv');
+      const origin = typeof window !== 'undefined' && window.location.origin
+        ? window.location.origin
+        : 'https://oficina-hp.up.railway.app';
+      const conviteUrl = `${origin}/?convite=${token}`;
+
+      const newInvite: UserInvitation = {
+        id: token,
+        email: cleanEmail,
+        iniciais: cleanIniciais,
+        role: inviteRole,
+        token: token,
+        criadoEm: new Date().toISOString(),
+        criadoPor: 'Hugo Portugal (Administrador)',
+        status: 'pendente',
+        cargo: inviteCargo.trim() || undefined
+      };
+
+      const currentConvites = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
+      // If there was an older pending invite for this email, replace it
+      const filtered = currentConvites.filter(c => c.email.toLowerCase() !== cleanEmail || c.status === 'aceite');
+      const updatedConvites = [newInvite, ...filtered];
+
+      db.save(STORAGE_KEYS.CONVITES, updatedConvites);
+      setConvites(updatedConvites);
+      syncPushToCloud(STORAGE_KEYS.CONVITES, updatedConvites).catch(() => {});
+
+      // Send email via backend service
+      const emailResult = await sendConviteColaboradorEmail({
+        email: cleanEmail,
+        iniciais: cleanIniciais,
+        role: inviteRole,
+        conviteUrl: conviteUrl,
+        adminNome: 'Hugo Portugal'
+      });
+
+      setGeneratedInviteLink(conviteUrl);
+
+      if (emailResult.success) {
+        setInviteStatusMsg({
+          type: 'success',
+          text: `Convite enviado com sucesso para ${cleanEmail}! O colaborador receberá o link para definir a palavra-passe.`
+        });
+      } else {
+        setInviteStatusMsg({
+          type: 'error',
+          text: `Convite registado, mas houve falha no envio do email (${emailResult.message}). Pode copiar o link abaixo e enviar diretamente por WhatsApp.`
+        });
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.CONVITES } }));
+      }
+    } catch (err: any) {
+      setInviteStatusMsg({ type: 'error', text: err?.message || 'Erro ao gerar convite.' });
+    } finally {
+      setIsSendingInvite(false);
+    }
+  };
+
+  const handleResendInvite = async (convite: UserInvitation) => {
+    const origin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'https://oficina-hp.up.railway.app';
+    const conviteUrl = `${origin}/?convite=${convite.token}`;
+
+    const res = await sendConviteColaboradorEmail({
+      email: convite.email,
+      iniciais: convite.iniciais,
+      role: convite.role,
+      conviteUrl: conviteUrl,
+      adminNome: 'Hugo Portugal'
+    });
+
+    if (res.success) {
+      alert(`Convite reenviado com sucesso para ${convite.email}!`);
+    } else {
+      alert(`Falha ao reenviar email: ${res.message}. Pode copiar o link manualmente: ${conviteUrl}`);
+    }
+  };
+
+  const handleCancelInvite = (conviteId: string) => {
+    if (!confirm('Deseja realmente cancelar este convite?')) return;
+    const current = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
+    const updated = current.filter(c => c.id !== conviteId && c.token !== conviteId);
+    db.save(STORAGE_KEYS.CONVITES, updated);
+    setConvites(updated);
+    syncPushToCloud(STORAGE_KEYS.CONVITES, updated).catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.CONVITES } }));
+    }
+  };
+
+  const handleCopyLink = (token: string) => {
+    const origin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'https://oficina-hp.up.railway.app';
+    const link = `${origin}/?convite=${token}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(link);
+      alert('Link do convite copiado para a área de transferência!');
+    } else {
+      prompt('Copie o link do convite abaixo:', link);
+    }
+  };
 
   const handleCreateNewUser = () => {
     setEditingUser({
@@ -633,104 +807,6 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
         </div>
       </form>
 
-      {/* User Accounts & Roles Management */}
-      <GlassCard>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <Users className="w-5 h-5 text-purple-400" />
-            <div>
-              <h3 className="text-base font-bold text-white">Gestão de Utilizadores & Perfis de Acesso</h3>
-              <p className="text-xs text-slate-400">
-                O Administrador pode criar e gerir novos utilizadores, definindo o tipo de utilizador (Administrador, Gestor, Técnico)
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleCreateNewUser}
-            className="glass-btn py-2 px-4 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 shadow-lg shadow-purple-600/30 self-start sm:self-auto"
-          >
-            <UserPlus className="w-4 h-4" />
-            Novo Utilizador
-          </button>
-        </div>
-
-        {/* Users List Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {utilizadores.map(u => {
-            return (
-              <div
-                key={u.id}
-                className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/90 hover:border-slate-700 transition-all flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-md ${
-                        u.role === 'administrador'
-                          ? 'bg-purple-600'
-                          : u.role === 'gestor'
-                          ? 'bg-sky-600'
-                          : 'bg-amber-600'
-                      }`}>
-                        {u.avatar}
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-white">{u.nome}</h4>
-                        <span className="text-[10px] text-slate-400 font-mono">{u.email || 'Sem email'}</span>
-                      </div>
-                    </div>
-
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase ${
-                      u.role === 'administrador'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                        : u.role === 'gestor'
-                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    }`}>
-                      {u.role === 'administrador' ? '👑 Admin' : u.role === 'gestor' ? '💼 Gestor' : '🔧 Técnico'}
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-300 mt-2.5 line-clamp-2 leading-relaxed bg-slate-900/60 p-2 rounded-xl border border-slate-800/60">
-                    {u.descricao || (
-                      u.role === 'administrador'
-                        ? 'Acesso total a todas as áreas e configurações.'
-                        : u.role === 'gestor'
-                        ? 'Acesso de consulta + tarefas em serviços (sem alteração de peças ou preços).'
-                        : 'Operacional da oficina e serviços (sem orçamentos e sem preços).'
-                    )}
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleEditUser(u)}
-                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg text-xs flex items-center gap-1 font-medium transition-colors"
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                    <span>Editar</span>
-                  </button>
-
-                  {u.id !== 'usr_admin' && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteUser(u.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg text-xs flex items-center gap-1 font-medium transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Eliminar</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </GlassCard>
-
       {/* Backup & Data Management */}
       <GlassCard>
         <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-800">
@@ -781,7 +857,7 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
         </div>
       </GlassCard>
 
-      {/* Team Management Card */}
+      {/* Team Management & Invitations Card */}
       <GlassCard>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -789,90 +865,261 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
             <div>
               <h3 className="text-base font-bold text-white">Equipa & Controlo de Acessos</h3>
               <p className="text-xs text-slate-400">
-                Gestão dos colaboradores da oficina, credenciais individuais e níveis de permissão
+                Convites de novos colaboradores por email, credenciais e níveis de permissão
               </p>
             </div>
           </div>
 
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={handleOpenInviteModal}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-hp-600 to-sky-600 hover:from-hp-500 hover:to-sky-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-hp-600/25 transition-all cursor-pointer"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              Convidar Colaborador
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateNewUser}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1 border border-slate-700 transition-all cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Manual
+            </button>
+          </div>
+        </div>
+
+        {/* Navigation Tabs between Active Users and Pending Invites */}
+        <div className="flex items-center gap-2 pt-3 border-b border-slate-800/80">
           <button
             type="button"
-            onClick={handleCreateNewUser}
-            className="px-3.5 py-1.5 rounded-xl bg-hp-600 hover:bg-hp-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-hp-600/20 transition-all cursor-pointer self-start sm:self-auto"
+            onClick={() => setTeamTab('colaboradores')}
+            className={`pb-2.5 px-3 text-xs font-bold transition-all relative flex items-center gap-2 cursor-pointer ${
+              teamTab === 'colaboradores'
+                ? 'text-hp-400 border-b-2 border-hp-400'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
-            <UserPlus className="w-3.5 h-3.5" />
-            Adicionar Colaborador
+            <span>Colaboradores Ativos</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 font-mono text-slate-300">
+              {utilizadores.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTeamTab('convites')}
+            className={`pb-2.5 px-3 text-xs font-bold transition-all relative flex items-center gap-2 cursor-pointer ${
+              teamTab === 'convites'
+                ? 'text-hp-400 border-b-2 border-hp-400'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>Convites Enviados</span>
+            {convites.filter(c => c.status === 'pendente').length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold animate-pulse">
+                {convites.filter(c => c.status === 'pendente').length}
+              </span>
+            )}
           </button>
         </div>
 
-        {/* Users List Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
-          {utilizadores.map(u => {
-            const isUserAdmin = u.role === 'administrador' || isAdminEmail(u.email);
-            return (
-              <div
-                key={u.id}
-                className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-slate-700/80 transition-all flex items-start justify-between gap-3 group"
-              >
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className={`w-10 h-10 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 ${
-                    isUserAdmin
-                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                      : u.role === 'gestor'
-                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  }`}>
-                    {u.avatar || u.nome.substring(0, 2).toUpperCase()}
+        {/* Tab 1: Active Collaborators List */}
+        {teamTab === 'colaboradores' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
+            {utilizadores.map(u => {
+              const isUserAdmin = u.role === 'administrador' || isAdminEmail(u.email);
+              return (
+                <div
+                  key={u.id}
+                  className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-slate-700/80 transition-all flex items-start justify-between gap-3 group"
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className={`w-10 h-10 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 ${
+                      isUserAdmin
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                        : u.role === 'gestor'
+                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}>
+                      {u.avatar || u.nome.substring(0, 2).toUpperCase()}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-white truncate">{u.nome}</h4>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                          isUserAdmin
+                            ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            : u.role === 'gestor'
+                            ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {isUserAdmin ? 'Administrador' : u.role === 'gestor' ? 'Gestor' : 'Técnico'}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 truncate mt-0.5 font-medium">
+                        {u.email || 'Sem email associado'}
+                      </div>
+
+                      <div className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                        {u.descricao || (isUserAdmin ? 'Acesso total' : u.role === 'gestor' ? 'Gestão operacional' : 'Técnico de oficina')}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-xs font-bold text-white truncate">{u.nome}</h4>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
-                        isUserAdmin
-                          ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
-                          : u.role === 'gestor'
-                          ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-                          : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                      }`}>
-                        {isUserAdmin ? 'Administrador' : u.role === 'gestor' ? 'Gestor' : 'Técnico'}
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 truncate mt-0.5 font-medium">
-                      {u.email || 'Sem email associado'}
-                    </div>
-
-                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-1">
-                      {u.descricao || (isUserAdmin ? 'Acesso total' : u.role === 'gestor' ? 'Gestão operacional' : 'Técnico de oficina')}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleEditUser(u)}
-                    title="Editar colaborador"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                  </button>
-
-                  {!isUserAdmin && (
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleDeleteUser(u.id)}
-                      title="Eliminar colaborador"
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                      onClick={() => handleEditUser(u)}
+                      title="Editar colaborador"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Edit className="w-3.5 h-3.5" />
                     </button>
-                  )}
+
+                    {!isUserAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(u.id)}
+                        title="Eliminar colaborador"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Tab 2: Pending Invitations List */}
+        {teamTab === 'convites' && (
+          <div className="pt-4 space-y-3">
+            {convites.length === 0 ? (
+              <div className="py-8 text-center rounded-2xl bg-slate-950/40 border border-slate-800/60 p-6">
+                <Mail className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                <h4 className="text-xs font-bold text-slate-300">Nenhum convite enviado até ao momento</h4>
+                <p className="text-[11px] text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+                  Envie um convite para o email do novo colaborador com as iniciais definidas para que ele possa escolher a sua própria palavra-passe.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenInviteModal}
+                  className="px-4 py-2 rounded-xl bg-hp-600 hover:bg-hp-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  Enviar Primeiro Convite
+                </button>
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {convites.map(c => {
+                  const isAccepted = c.status === 'aceite';
+                  const isCanceled = c.status === 'cancelado';
+                  return (
+                    <div
+                      key={c.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                        isAccepted
+                          ? 'bg-slate-950/40 border-slate-800/50 opacity-70'
+                          : isCanceled
+                          ? 'bg-rose-950/10 border-rose-900/30 opacity-60'
+                          : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-hp-500/20 text-hp-300 border border-hp-500/30 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                            {c.iniciais}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white font-mono truncate">{c.email}</span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${
+                                c.role === 'administrador'
+                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                                  : c.role === 'gestor'
+                                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              }`}>
+                                {c.role === 'administrador' ? '👑 Admin' : c.role === 'gestor' ? '💼 Gestor' : '🔧 Técnico'}
+                              </span>
+                            </div>
+
+                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-slate-500" />
+                                {new Date(c.criadoEm).toLocaleDateString('pt-PT')}
+                              </span>
+                              {c.cargo && <span>&bull; {c.cargo}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          {isAccepted ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Aceite
+                            </span>
+                          ) : isCanceled ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              Cancelado
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              ⏳ Aguarda Registo
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons for pending invite */}
+                      {!isAccepted && !isCanceled && (
+                        <div className="pt-2 border-t border-slate-800/70 flex items-center justify-end gap-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(c.token)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Copiar link de ativação para enviar por WhatsApp"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>Copiar Link</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleResendInvite(c)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-sky-400 hover:text-sky-300 border border-slate-700 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Reenviar email de convite"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>Reenviar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCancelInvite(c.id)}
+                            className="px-2 py-1 rounded-lg hover:bg-rose-500/10 text-slate-500 hover:text-rose-400 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Cancelar convite"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Permissions Summary Note */}
         <div className="mt-4 p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
@@ -1086,6 +1333,205 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Invite Collaborator Modal */}
+      {isInviteModalOpen && (
+        <Modal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+          title="Convidar Colaborador para a Equipa"
+          subtitle="O Administrador define o email, as iniciais e o nível de acesso. O colaborador recebe um email com link para definir a sua palavra-passe."
+          maxWidth="2xl"
+        >
+          <form onSubmit={handleSendInvite} className="space-y-4">
+            {inviteStatusMsg && (
+              <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                inviteStatusMsg.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}>
+                {inviteStatusMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                )}
+                <div className="space-y-1">
+                  <span className="leading-relaxed block">{inviteStatusMsg.text}</span>
+                  {generatedInviteLink && (
+                    <div className="mt-2 pt-2 border-t border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="font-mono text-[10px] text-slate-300 truncate max-w-sm">
+                        {generatedInviteLink}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.clipboard) {
+                            navigator.clipboard.writeText(generatedInviteLink);
+                            alert('Link copiado!');
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        Copiar Link WhatsApp
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Email do Colaborador *
+                </label>
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  placeholder="ex: colab@oficinahp.pt ou gmail..."
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1 flex items-center justify-between">
+                  <span>Iniciais na Oficina (2 a 3 Letras) *</span>
+                  <span className="text-[10px] text-hp-400 font-normal">Usadas nas Folhas e Tarefas</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={3}
+                  placeholder="ex: JS, HP, MP..."
+                  value={inviteIniciais}
+                  onChange={e => setInviteIniciais(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-black uppercase tracking-wider focus:outline-none focus:border-hp-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Função / Especialidade (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ex: Mecânico Geral, Eletricista, Apoio Técnico..."
+                  value={inviteCargo}
+                  onChange={e => setInviteCargo(e.target.value)}
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
+                />
+              </div>
+            </div>
+
+            {/* Role Selection */}
+            <div>
+              <label className="text-xs font-bold text-white block mb-2">
+                Nível de Permissão na Aplicação *
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* Administrador */}
+                <button
+                  type="button"
+                  onClick={() => setInviteRole('administrador')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                    inviteRole === 'administrador'
+                      ? 'bg-purple-950/40 border-purple-500 ring-1 ring-purple-500'
+                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-base">👑</span>
+                    <Badge variant="info">Acesso Total</Badge>
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-white">Administrador</h5>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      Acesso total a todas as áreas, finanças, utilizadores e configurações.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Gestor */}
+                <button
+                  type="button"
+                  onClick={() => setInviteRole('gestor')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                    inviteRole === 'gestor'
+                      ? 'bg-sky-950/40 border-sky-500 ring-1 ring-sky-500'
+                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-base">💼</span>
+                    <Badge variant="primary">Gestão</Badge>
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-white">Gestor</h5>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      Planeamento semanal, tarefas, orçamentos e visitas. Sem acesso a configurações.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Técnico */}
+                <button
+                  type="button"
+                  onClick={() => setInviteRole('tecnico')}
+                  className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                    inviteRole === 'tecnico'
+                      ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500'
+                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-base">🔧</span>
+                    <Badge variant="warning">Oficina</Badge>
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-white">Técnico</h5>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      Operacional de oficina e exterior, tarefas e peças. Sem acesso a orçamentos ou preços.
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsInviteModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                {generatedInviteLink ? 'Concluir' : 'Cancelar'}
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSendingInvite}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-hp-600 to-sky-600 hover:from-hp-500 hover:to-sky-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-hp-600/30 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSendingInvite ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>A Enviar Convite...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Enviar Convite por Email</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

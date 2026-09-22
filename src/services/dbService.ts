@@ -33,6 +33,7 @@ const STORAGE_KEYS = {
   VISITAS: 'oficina_hp_visitas',
   VISITAS_CLIENTE: 'oficina_hp_visitas',
   UTILIZADORES: 'oficina_hp_utilizadores',
+  CONVITES: 'oficina_hp_convites',
   AUTOMACOES: 'oficina_hp_automacoes',
   CONFIGURACAO: 'oficina_hp_configuracao',
 };
@@ -1148,6 +1149,7 @@ export const db = {
       tarefas: this.get(STORAGE_KEYS.TAREFAS),
       visitas: this.get(STORAGE_KEYS.VISITAS),
       utilizadores: this.get(STORAGE_KEYS.UTILIZADORES),
+      convites: this.get(STORAGE_KEYS.CONVITES),
       configuracao: this.getConfig()
     };
     return JSON.stringify(dump, null, 2);
@@ -1168,6 +1170,7 @@ export const db = {
       if (data.tarefas) this.save(STORAGE_KEYS.TAREFAS, data.tarefas);
       if (data.visitas) this.save(STORAGE_KEYS.VISITAS, data.visitas);
       if (data.utilizadores) this.save(STORAGE_KEYS.UTILIZADORES, data.utilizadores);
+      if (data.convites) this.save(STORAGE_KEYS.CONVITES, data.convites);
       if (data.configuracao) this.saveConfig(data.configuracao);
       return true;
     } catch {
