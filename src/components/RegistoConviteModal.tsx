@@ -3,6 +3,7 @@ import { Shield, Lock, Mail, Eye, EyeOff, UserCheck, CheckCircle2, AlertCircle, 
 import type { UserInvitation, UserProfile, UserRole } from '../types';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { syncPushToCloud, syncPullFromCloud } from '../services/pocketbaseSync';
+import { hashPassword } from '../utils/securityUtils';
 
 interface RegistoConviteModalProps {
   token: string;
@@ -94,12 +95,13 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
       // 1. Create the new user profile
       const cleanEmail = invitation.email.trim().toLowerCase();
       const currentUsers = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || [];
+      const hashedPassword = await hashPassword(password);
       
       const newUser: UserProfile = {
         id: db.generateId('usr'),
         nome: nome.trim(),
         email: cleanEmail,
-        password: password,
+        password: hashedPassword,
         role: invitation.role,
         avatar: (invitation.iniciais || nome.substring(0, 2)).toUpperCase(),
         descricao: invitation.cargo || (

@@ -46,11 +46,14 @@ import {
   GraduationCap,
   Handshake,
   ShieldCheck,
-  Send
+  Send,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { checkPocketBaseConnection } from '../services/pocketbase';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
@@ -272,6 +275,26 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveBanner, setSaveBanner] = useState<string | null>(null);
 
+  // Cloud sync status state
+  const [pbStatus, setPbStatus] = useState<{ connected: boolean; message: string }>({
+    connected: false,
+    message: 'A verificar ligação...'
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const check = async () => {
+      const res = await checkPocketBaseConnection();
+      if (isMounted) setPbStatus(res);
+    };
+    check();
+    const interval = setInterval(check, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   // File Input Refs for direct native camera capture & gallery
   const allAiPhotosInputRef = useRef<HTMLInputElement>(null);
   const allAiCameraInputRef = useRef<HTMLInputElement>(null);
@@ -423,10 +446,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   // Save Folha (from AI or Manual Entry)
   const handleSaveFolha = async (folhaData: Partial<FolhaServico>) => {
-    if (!folhaData.matricula) {
+    let finalMatricula = (folhaData.matricula || '').trim().toUpperCase();
+    if (!finalMatricula && folhaData.equipamentoId) {
+      const eq = equipamentos.find(e => e.id === folhaData.equipamentoId);
+      if (eq?.matricula) finalMatricula = eq.matricula.trim().toUpperCase();
+    }
+    if (!finalMatricula && folhaData.nSerie?.trim()) {
+      finalMatricula = folhaData.nSerie.trim().toUpperCase();
+    }
+    if (!finalMatricula) {
       alert('Por favor, indique a matrícula da viatura ou equipamento.');
       return;
     }
+    folhaData.matricula = finalMatricula;
 
     setIsSaving(true);
     const newNum = folhaData.numero || db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
@@ -1278,8 +1310,28 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           </div>
         </div>
 
-        {/* Header Actions: Theme & Switch to Desktop */}
-        <div className="flex items-center gap-2">
+        {/* Header Actions: Sync Status, Theme & Switch to Desktop */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              syncPullFromCloud().then(ok => {
+                if (ok) {
+                  setSaveBanner('Base de dados sincronizada com a nuvem!');
+                  setTimeout(() => setSaveBanner(null), 3000);
+                }
+              });
+            }}
+            title={pbStatus.message}
+            className={`px-2 py-1.5 rounded-xl text-[10px] font-mono font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+              pbStatus.connected
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+            }`}
+          >
+            {pbStatus.connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+            <span>{pbStatus.connected ? 'Online' : 'Offline'}</span>
+          </button>
+
           <button
             onClick={onToggleTheme}
             className={`p-2.5 rounded-2xl border transition-colors ${

@@ -438,28 +438,31 @@ export const Oficina: React.FC<OficinaProps> = ({
     let resolvedModelo = fs.modelo;
     let resolvedKms = fs.kmsAtuais;
     let resolvedHoras = fs.horasAtuais;
+    let resolvedMatricula = (fs.matricula || '').trim();
 
-    if (fs.matricula) {
-      const cleanPlate = fs.matricula.trim().toUpperCase();
-      const normPlate = cleanPlate.replace(/[^A-Z0-9]/gi, '');
-      const match = equipamentos.find(
-        e => (fs.equipamentoId && e.id === fs.equipamentoId) ||
-             (e.matricula && e.matricula.trim().toUpperCase() === cleanPlate) ||
-             (e.matricula && normPlate && e.matricula.replace(/[^A-Z0-9]/gi, '') === normPlate)
-      );
+    // Tenta encontrar o equipamento quer por ID, quer por matrícula, quer por número de série
+    const cleanPlate = resolvedMatricula.toUpperCase();
+    const normPlate = cleanPlate.replace(/[^A-Z0-9]/gi, '');
+    const match = equipamentos.find(
+      e => (resolvedEquipId && e.id === resolvedEquipId) ||
+           (cleanPlate && e.matricula && e.matricula.trim().toUpperCase() === cleanPlate) ||
+           (normPlate && e.matricula && e.matricula.replace(/[^A-Z0-9]/gi, '') === normPlate) ||
+           (fs.nSerie && e.nSerie && e.nSerie.trim().toUpperCase() === fs.nSerie.trim().toUpperCase())
+    );
 
-      if (match) {
-        resolvedEquipId = match.id;
-        if (!resolvedEmpresaId && match.empresaId) resolvedEmpresaId = match.empresaId;
-        if (!resolvedMarca && match.marca) resolvedMarca = match.marca;
-        if (!resolvedModelo && match.modelo) resolvedModelo = match.modelo;
-        if (!resolvedKms && match.kmsAtuais) resolvedKms = match.kmsAtuais;
-        if (!resolvedHoras && match.horasAtuais) resolvedHoras = match.horasAtuais;
-      }
+    if (match) {
+      resolvedEquipId = match.id;
+      if (!resolvedMatricula && match.matricula) resolvedMatricula = match.matricula;
+      if (!resolvedEmpresaId && match.empresaId) resolvedEmpresaId = match.empresaId;
+      if (!resolvedMarca && match.marca) resolvedMarca = match.marca;
+      if (!resolvedModelo && match.modelo) resolvedModelo = match.modelo;
+      if (!resolvedKms && match.kmsAtuais) resolvedKms = match.kmsAtuais;
+      if (!resolvedHoras && match.horasAtuais) resolvedHoras = match.horasAtuais;
     }
 
     setEditingFolha({
       ...fs,
+      matricula: resolvedMatricula,
       equipamentoId: resolvedEquipId,
       empresaId: resolvedEmpresaId,
       marca: resolvedMarca,
@@ -467,7 +470,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       kmsAtuais: resolvedKms,
       horasAtuais: resolvedHoras
     });
-    setPlateQuery(fs.matricula || '');
+    setPlateQuery(resolvedMatricula || '');
     setAiNoteSuggestion(null);
     setTaskCreatedFeedback(null);
     setIsModalOpen(true);
@@ -582,9 +585,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       localizacaoTipo: isOficina ? 'oficina' : prev.localizacaoTipo,
       distanciaKms: isOficina ? 0 : prev.distanciaKms,
       status: isEF ? defaultStatus : (prev.status ? prev.status : defaultStatus),
-      pecas: nextPecas,
-      matricula: newTipo === 'Contrato' && prev.equipamentoId && !contractEquipIds.includes(prev.equipamentoId)
-        ? '' : prev.matricula
+      pecas: nextPecas
     }));
   };
 
@@ -955,9 +956,18 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleSaveFolha = () => {
-    const rawPlate = (editingFolha.matricula || plateQuery || '').trim().toUpperCase();
+    let rawPlate = (editingFolha.matricula || plateQuery || '').trim().toUpperCase();
+    if (!rawPlate && editingFolha.equipamentoId) {
+      const matchedEq = equipamentos.find(e => e.id === editingFolha.equipamentoId);
+      if (matchedEq?.matricula) {
+        rawPlate = matchedEq.matricula.trim().toUpperCase();
+      }
+    }
+    if (!rawPlate && editingFolha.nSerie?.trim()) {
+      rawPlate = editingFolha.nSerie.trim().toUpperCase();
+    }
     if (!rawPlate) {
-      alert('Por favor, introduza a matrícula da viatura ou equipamento.');
+      alert('Por favor, introduza a matrícula ou identificação da viatura/equipamento.');
       return;
     }
 
@@ -2326,7 +2336,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                     <input
                       type="text"
                       placeholder="Escreva a matrícula para pesquisar..."
-                      value={plateQuery}
+                      value={plateQuery !== undefined && plateQuery !== '' ? plateQuery : (editingFolha.matricula || '')}
                       onChange={e => {
                         const val = e.target.value.toUpperCase();
                         setPlateQuery(val);
@@ -2349,9 +2359,10 @@ export const Oficina: React.FC<OficinaProps> = ({
                         }
                       }}
                       onBlur={() => {
-                        if (plateQuery) {
-                          const val = plateQuery.trim().toUpperCase();
-                          setEditingFolha(prev => ({ ...prev, matricula: val }));
+                        const current = (plateQuery || editingFolha.matricula || '').trim().toUpperCase();
+                        if (current) {
+                          setPlateQuery(current);
+                          setEditingFolha(prev => ({ ...prev, matricula: current }));
                         }
                       }}
                       onFocus={() => setIsPlateDropdownOpen(true)}

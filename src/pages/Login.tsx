@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Wrench, Shield, Lock, Mail, Eye, EyeOff, KeyRound, UserCheck, Users, Sparkles } from 'lucide-react';
 import type { UserProfile } from '../types';
 import { isAdminEmail, ADMIN_EMAILS } from '../types';
+import { verifyPassword } from '../utils/securityUtils';
 
 interface LoginProps {
   utilizadores: UserProfile[];
@@ -17,78 +18,77 @@ export const Login: React.FC<LoginProps> = ({ utilizadores, onLogin, theme }) =>
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      const cleanEmail = email.trim().toLowerCase();
-      
-      // 1. Find user in registered list
-      let user = utilizadores.find(
-        u => (u.email && u.email.toLowerCase() === cleanEmail) ||
-             (u.nome && u.nome.toLowerCase() === cleanEmail) ||
-             (u.nome && u.nome.toLowerCase().includes(cleanEmail))
-      );
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // 1. Find user in registered list
+    let user = utilizadores.find(
+      u => (u.email && u.email.toLowerCase() === cleanEmail) ||
+           (u.nome && u.nome.toLowerCase() === cleanEmail) ||
+           (u.nome && u.nome.toLowerCase().includes(cleanEmail))
+    );
 
-      // 2. If it's a designated Administrator email but not yet in the array, instantiate it
-      if (!user && isAdminEmail(cleanEmail)) {
-        user = {
-          id: `u_admin_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
-          nome: cleanEmail.includes('hugo') ? 'Hugo Portugal (Administrador)' : 'Administrador',
-          email: cleanEmail,
-          role: 'administrador',
-          avatar: cleanEmail.includes('hugo') ? 'HP' : 'AD',
-          password: 'admin',
-          descricao: 'Administrador Principal • Acesso total e configurações',
-          ativo: true
-        };
-      }
+    // 2. If it's a designated Administrator email but not yet in the array, instantiate it
+    if (!user && isAdminEmail(cleanEmail)) {
+      user = {
+        id: `u_admin_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`,
+        nome: cleanEmail.includes('hugo') ? 'Hugo Portugal (Administrador)' : 'Administrador',
+        email: cleanEmail,
+        role: 'administrador',
+        avatar: cleanEmail.includes('hugo') ? 'HP' : 'AD',
+        password: 'admin',
+        descricao: 'Administrador Principal • Acesso total e configurações',
+        ativo: true
+      };
+    }
 
-      if (!user) {
-        setError('Email ou utilizador não encontrado no sistema. Verifique os dados inseridos.');
-        setIsLoading(false);
-        return;
-      }
-
-      if (user.ativo === false) {
-        setError('Esta conta de colaborador foi desativada pelo Administrador.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Check if user is administrator
-      const isUserAdmin = user.role === 'administrador' || isAdminEmail(user.email);
-      const expectedPassword = user.password || (isUserAdmin ? 'admin' : '123');
-
-      // Strict password validation (no cross-role bypass)
-      if (password !== expectedPassword) {
-        setError('Palavra-passe incorreta. Tente novamente.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Ensure admin role if email is an admin email
-      if (isAdminEmail(user.email) && user.role !== 'administrador') {
-        user = { ...user, role: 'administrador' };
-      }
-
-      if (rememberMe) {
-        try {
-          localStorage.setItem('oficina_hp_session_user_id', user.id);
-          localStorage.setItem('oficina_hp_active_user_id', user.id);
-        } catch {}
-      }
-
+    if (!user) {
+      setError('Email ou utilizador não encontrado no sistema. Verifique os dados inseridos.');
       setIsLoading(false);
-      onLogin(user);
-    }, 350);
+      return;
+    }
+
+    if (user.ativo === false) {
+      setError('Esta conta de colaborador foi desativada pelo Administrador.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Check if user is administrator
+    const isUserAdmin = user.role === 'administrador' || isAdminEmail(user.email);
+    const expectedPassword = user.password || (isUserAdmin ? 'admin' : '123');
+
+    // Secure password verification (supports SHA-256 hash and legacy match)
+    const isPasswordValid = await verifyPassword(password, expectedPassword);
+    if (!isPasswordValid) {
+      setError('Palavra-passe incorreta. Tente novamente.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Ensure admin role if email is an admin email
+    if (isAdminEmail(user.email) && user.role !== 'administrador') {
+      user = { ...user, role: 'administrador' };
+    }
+
+    if (rememberMe) {
+      try {
+        localStorage.setItem('oficina_hp_session_user_id', user.id);
+        localStorage.setItem('oficina_hp_active_user_id', user.id);
+      } catch {}
+    }
+
+    setIsLoading(false);
+    onLogin(user);
   };
 
   const handleSelectPreFill = (u: UserProfile) => {
     setEmail(u.email);
-    setPassword(u.password || (u.role === 'administrador' ? 'admin' : '123'));
+    setPassword('');
     setError(null);
   };
 
