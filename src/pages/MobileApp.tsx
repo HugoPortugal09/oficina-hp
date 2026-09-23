@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Wrench,
   Camera,
@@ -996,16 +996,63 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     return { count30, count90, count360 };
   };
 
-  const filteredFolhas = folhas.filter(f => {
-    const q = searchTerm.toLowerCase();
-    const matchesQ =
-      f.numero.toLowerCase().includes(q) ||
-      f.matricula.toLowerCase().includes(q) ||
-      (f.marca && f.marca.toLowerCase().includes(q));
+  const empresaMap = useMemo(() => new Map(empresas.map(e => [e.id, e])), [empresas]);
+  const equipMap = useMemo(() => new Map(equipamentos.map(eq => [eq.id, eq])), [equipamentos]);
+  const clientMap = useMemo(() => new Map(clientes.map(c => [c.id, c])), [clientes]);
 
-    const matchesStatus = statusFilter === 'TODAS' || f.status === statusFilter || f.status.startsWith(statusFilter);
-    return matchesQ && matchesStatus;
-  }).sort(sortByDateDesc(f => f.data, f => f.numero));
+  const filteredFolhas = useMemo(() => {
+    const rawSearch = searchTerm.trim();
+    const searchTerms = rawSearch
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    const searchCompact = rawSearch.replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+    return folhas.filter(f => {
+      const matchesStatus = statusFilter === 'TODAS' || f.status === statusFilter || f.status.startsWith(statusFilter);
+      if (!matchesStatus) return false;
+
+      if (searchTerms.length === 0) return true;
+
+      const emp = f.empresaId ? empresaMap.get(f.empresaId) : (f.equipamentoId ? empresaMap.get(equipMap.get(f.equipamentoId)?.empresaId || '') : undefined);
+      const cli = f.clienteId ? clientMap.get(f.clienteId) : undefined;
+
+      const plateRaw = f.matricula || '';
+      const plateCompact = plateRaw.replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+      const haystack = [
+        f.numero || '',
+        plateRaw,
+        f.marca || '',
+        f.modelo || '',
+        f.nSerie || '',
+        emp?.nome || '',
+        emp?.nif || '',
+        cli?.nome || '',
+        f.pessoaPresente || '',
+        f.localizacao || '',
+        f.anomalias || '',
+        f.notasCliente || '',
+        f.notasInternas || '',
+        ...(f.servicos?.map(s => s.descricao) || []),
+        ...(f.pecas?.map(p => `${p.referencia} ${p.designacao}`) || [])
+      ].join(' ')
+       .toLowerCase()
+       .normalize('NFD')
+       .replace(/[\u0300-\u036f]/g, '');
+
+      const allTermsMatch = searchTerms.every(term => haystack.includes(term));
+      if (allTermsMatch) return true;
+
+      if (searchCompact.length >= 2 && plateCompact.includes(searchCompact)) {
+        return true;
+      }
+
+      return false;
+    }).sort(sortByDateDesc(f => f.data, f => f.numero));
+  }, [folhas, searchTerm, statusFilter, empresaMap, equipMap, clientMap]);
 
   // Handlers for Mobile selectedFolha interactive editing
   const handleToggleServiceConcluido = (servicoId: string, isAdicional: boolean) => {

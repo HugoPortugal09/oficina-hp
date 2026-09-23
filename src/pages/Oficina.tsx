@@ -1473,22 +1473,84 @@ export const Oficina: React.FC<OficinaProps> = ({
     setNewMessageText('');
   };
 
-  // Filtered Folhas
-  const filteredFolhas = folhas.filter(f => {
-    const matchesSearch =
-      f.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.matricula.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.marca.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (f.anomalias && f.anomalias.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Pre-index companies, equipments, and clients for instant O(1) matching during search
+  const empresaMap = useMemo(() => new Map(empresas.map(e => [e.id, e])), [empresas]);
+  const equipMap = useMemo(() => new Map(equipamentos.map(eq => [eq.id, eq])), [equipamentos]);
+  const clientMap = useMemo(() => new Map(clientes.map(c => [c.id, c])), [clientes]);
 
-    const matchesStatus = filterStatus === 'TODOS' || f.status === filterStatus;
-    const matchesTipo = filterTipos.length === 0 || filterTipos.includes(f.tipo);
-    const matchesReq = filterRequisicao === 'TODOS' || (f.requisicao || 'Não') === filterRequisicao;
-    const matchesFat = filterFaturacao === 'TODOS' || (f.faturacao || 'Pendente') === filterFaturacao;
+  // Filtered Folhas with multi-field search (Customer name, plate, FS number, anomaly, parts, notes)
+  const filteredFolhas = useMemo(() => {
+    const rawSearch = searchTerm.trim();
+    const searchTerms = rawSearch
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    const searchCompact = rawSearch.replace(/[^a-z0-9]/gi, '').toLowerCase();
 
-    return matchesSearch && matchesStatus && matchesTipo && matchesReq && matchesFat;
-  }).sort(sortByDateDesc(f => f.data, f => f.numero));
+    return folhas.filter(f => {
+      // 1. Status Filter
+      if (filterStatus !== 'TODOS' && f.status !== filterStatus) return false;
+
+      // 2. Tipo Filter
+      if (filterTipos.length > 0 && !filterTipos.includes(f.tipo)) return false;
+
+      // 3. Requisicao Filter
+      if (filterRequisicao !== 'TODOS' && (f.requisicao || 'Não') !== filterRequisicao) return false;
+
+      // 4. Faturacao Filter
+      if (filterFaturacao !== 'TODOS' && (f.faturacao || 'Pendente') !== filterFaturacao) return false;
+
+      // 5. Search Text Filter
+      if (searchTerms.length === 0) return true;
+
+      // Resolve associated company & client
+      const emp = f.empresaId ? empresaMap.get(f.empresaId) : (f.equipamentoId ? empresaMap.get(equipMap.get(f.equipamentoId)?.empresaId || '') : undefined);
+      const cli = f.clienteId ? clientMap.get(f.clienteId) : undefined;
+
+      const plateRaw = f.matricula || '';
+      const plateCompact = plateRaw.replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+      // Build searchable haystack
+      const haystackParts = [
+        f.numero || '',
+        plateRaw,
+        f.marca || '',
+        f.modelo || '',
+        f.nSerie || '',
+        emp?.nome || '',
+        emp?.nif || '',
+        cli?.nome || '',
+        f.pessoaPresente || '',
+        f.localizacao || '',
+        f.anomalias || '',
+        f.notasCliente || '',
+        f.notasInternas || '',
+        ...(f.servicos?.map(s => s.descricao) || []),
+        ...(f.servicosAdicionais?.map(s => s.descricao) || []),
+        ...(f.pecas?.map(p => `${p.referencia} ${p.designacao}`) || []),
+        ...(f.pecasAdicionais?.map(p => `${p.referencia} ${p.designacao}`) || [])
+      ];
+
+      const haystackNormalized = haystackParts
+        .join(' ')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+      // Check if all searched terms match
+      const allTermsMatch = searchTerms.every(term => haystackNormalized.includes(term));
+      if (allTermsMatch) return true;
+
+      // Check compact plate search (e.g. "bz42vv" matching "BZ-42-VV")
+      if (searchCompact.length >= 2 && plateCompact.includes(searchCompact)) {
+        return true;
+      }
+
+      return false;
+    }).sort(sortByDateDesc(f => f.data, f => f.numero));
+  }, [folhas, searchTerm, filterStatus, filterTipos, filterRequisicao, filterFaturacao, empresaMap, equipMap, clientMap]);
 
   const hasAdicionais = ((editingFolha.servicosAdicionais?.length || 0) > 0) || ((editingFolha.pecasAdicionais?.length || 0) > 0);
 
