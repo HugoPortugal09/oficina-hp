@@ -41,13 +41,16 @@ import {
   Mail,
   Loader2,
   X,
-  Printer
+  Printer,
+  Link2
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { CameraScannerModal } from '../components/CameraScannerModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
+import { cleanMatricula } from '../utils/validationUtils';
+import { getShareableFolhaUrl } from '../utils/routeUtils';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF, generatePropostaPDF, generateFolhasServicoA3PDF, type FolhasServicoA3Row } from '../services/pdfService';
@@ -87,6 +90,7 @@ interface OficinaProps {
   onOpenScanner: () => void;
   selectedFolhaToOpen?: FolhaServico | null;
   onClearSelectedFolha?: () => void;
+  onSelectFolha?: (folha: FolhaServico) => void;
   currentUser?: UserProfile;
 }
 
@@ -275,9 +279,29 @@ export const Oficina: React.FC<OficinaProps> = ({
   onOpenScanner,
   selectedFolhaToOpen,
   onClearSelectedFolha,
+  onSelectFolha,
   currentUser
 }) => {
   const permissions = getPermissionsForRole(currentUser?.role || 'administrador');
+  const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    if (onClearSelectedFolha) onClearSelectedFolha();
+  };
+
+  const handleCopyShareLink = () => {
+    if (!editingFolha) return;
+    const url = getShareableFolhaUrl(editingFolha);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        setCopyLinkFeedback('Link copiado!');
+        setTimeout(() => setCopyLinkFeedback(null), 2500);
+      }).catch(() => {
+        setCopyLinkFeedback('Erro ao copiar');
+      });
+    }
+  };
   const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
     try {
       const saved = localStorage.getItem('oficina_hp_view_oficina');
@@ -474,13 +498,13 @@ export const Oficina: React.FC<OficinaProps> = ({
     setAiNoteSuggestion(null);
     setTaskCreatedFeedback(null);
     setIsModalOpen(true);
+    if (onSelectFolha) onSelectFolha(fs);
   };
 
   // Open modal if prop passed
   useEffect(() => {
     if (selectedFolhaToOpen) {
       handleOpenFolhaModal(selectedFolhaToOpen);
-      if (onClearSelectedFolha) onClearSelectedFolha();
     }
   }, [selectedFolhaToOpen]);
 
@@ -956,11 +980,11 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleSaveFolha = () => {
-    let rawPlate = (editingFolha.matricula || plateQuery || '').trim().toUpperCase();
+    let rawPlate = cleanMatricula(editingFolha.matricula || plateQuery || '');
     if (!rawPlate && editingFolha.equipamentoId) {
       const matchedEq = equipamentos.find(e => e.id === editingFolha.equipamentoId);
       if (matchedEq?.matricula) {
-        rawPlate = matchedEq.matricula.trim().toUpperCase();
+        rawPlate = cleanMatricula(matchedEq.matricula);
       }
     }
     if (!rawPlate && editingFolha.nSerie?.trim()) {
@@ -1098,7 +1122,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       setTimeout(() => setSaveFeedback(null), 4000);
     }
 
-    setIsModalOpen(false);
+    handleCloseModal();
   };
 
   const handleSendEntregaFormacaoEmailManual = async () => {
@@ -1241,7 +1265,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   const handleDeleteFolha = (id: string) => {
     if (confirm('Tem a certeza que deseja eliminar esta Folha de Serviço?')) {
       db.delete(STORAGE_KEYS.FOLHAS_SERVICO, id);
-      setIsModalOpen(false);
+      handleCloseModal();
     }
   };
 
@@ -2126,7 +2150,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       {isModalOpen && (
         <Modal
           isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          onClose={handleCloseModal}
           title={`${editingFolha.id?.startsWith('fs_new') ? 'Nova' : 'Editar'} Folha de Serviço: ${editingFolha.numero}`}
           subtitle="Registo técnico de oficina, serviços executados, materiais e historial"
           maxWidth="4xl"
@@ -2147,6 +2171,16 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
 
               <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleCopyShareLink}
+                  className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-hp-400 hover:text-hp-300 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                  title="Copiar link direto para partilhar por WhatsApp ou Email"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  {copyLinkFeedback || 'Copiar Link'}
+                </button>
+
                 {hasAdicionais && (
                   <button
                     type="button"
@@ -2172,7 +2206,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={handleCloseModal}
                   className="py-1.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors"
                 >
                   Cancelar
@@ -3780,7 +3814,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={handleCloseModal}
                   className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors"
                 >
                   Cancelar

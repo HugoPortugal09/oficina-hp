@@ -29,6 +29,7 @@ import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { formatDate } from '../utils/dateUtils';
+import { isValidNif, cleanPhone } from '../utils/validationUtils';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel } from '../utils/statusColors';
 import type { Empresa, Estaleiro, Equipamento, Cliente, FolhaServico } from '../types';
 
@@ -227,15 +228,30 @@ export const Empresas: React.FC<EmpresasProps> = ({
       return;
     }
 
+    if (editingEmpresa.nif && editingEmpresa.nif.trim()) {
+      const cleanNif = editingEmpresa.nif.trim().replace(/\s+/g, '');
+      if (!isValidNif(cleanNif)) {
+        if (!confirm(`O NIF "${cleanNif}" não parece ser um NIF português válido (algoritmo módulo 11). Deseja guardar mesmo assim?`)) {
+          return;
+        }
+      }
+    }
+
+    const empresaToSave: Partial<Empresa> = {
+      ...editingEmpresa,
+      nif: editingEmpresa.nif?.trim().replace(/\s+/g, '') || '',
+      telefone: editingEmpresa.telefone ? cleanPhone(editingEmpresa.telefone) : ''
+    };
+
     const currentList = db.get<Empresa>(STORAGE_KEYS.EMPRESAS);
-    const existingIndex = currentList.findIndex(e => e.id === editingEmpresa.id);
+    const existingIndex = currentList.findIndex(e => e.id === empresaToSave.id);
 
     if (existingIndex >= 0) {
-      db.update(STORAGE_KEYS.EMPRESAS, editingEmpresa.id!, editingEmpresa);
-      setFeedbackMessage(`Empresa "${editingEmpresa.nome}" atualizada com sucesso!`);
+      db.update(STORAGE_KEYS.EMPRESAS, empresaToSave.id!, empresaToSave);
+      setFeedbackMessage(`Empresa "${empresaToSave.nome}" atualizada com sucesso!`);
     } else {
-      db.insert(STORAGE_KEYS.EMPRESAS, editingEmpresa as Empresa);
-      setFeedbackMessage(`Empresa "${editingEmpresa.nome}" registada com sucesso!`);
+      db.insert(STORAGE_KEYS.EMPRESAS, empresaToSave as Empresa);
+      setFeedbackMessage(`Empresa "${empresaToSave.nome}" registada com sucesso!`);
     }
 
     setTimeout(() => setFeedbackMessage(null), 4000);
@@ -596,7 +612,20 @@ export const Empresas: React.FC<EmpresasProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1">NIF</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-400">NIF</label>
+                  {editingEmpresa.nif && editingEmpresa.nif.trim().length >= 9 && (
+                    isValidNif(editingEmpresa.nif) ? (
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                        ✓ NIF Válido
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                        ⚠ NIF Inválido
+                      </span>
+                    )
+                  )}
+                </div>
                 <input
                   type="text"
                   value={editingEmpresa.nif || ''}

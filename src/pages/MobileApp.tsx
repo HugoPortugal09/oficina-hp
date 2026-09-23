@@ -48,12 +48,15 @@ import {
   ShieldCheck,
   Send,
   Wifi,
-  WifiOff
+  WifiOff,
+  Link2
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { checkPocketBaseConnection } from '../services/pocketbase';
+import { cleanMatricula } from '../utils/validationUtils';
+import { parseCurrentRoute, getShareableFolhaUrl, findFolhaByParam } from '../utils/routeUtils';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
 import { generateFolhaServicoPDF } from '../services/pdfService';
@@ -169,6 +172,65 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   // Selected Folha for Full Mobile Detail / Edit
   const [selectedFolha, setSelectedFolha] = useState<FolhaServico | null>(null);
+  const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+
+  const handleOpenMobileFolha = (f: FolhaServico) => {
+    setSelectedFolha(f);
+    if (typeof window !== 'undefined') {
+      const path = `/mobile/${encodeURIComponent(f.numero || f.id)}`;
+      if (window.location.pathname !== path) {
+        window.history.pushState({ mobileFolhaId: f.id }, '', path);
+      }
+    }
+  };
+
+  const handleCloseMobileFolha = () => {
+    setSelectedFolha(null);
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/mobile/')) {
+      window.history.pushState({ isMobile: true }, '', '/mobile');
+    }
+  };
+
+  const handleCopyMobileShareLink = (folha: FolhaServico) => {
+    const url = getShareableFolhaUrl(folha, true);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        setCopyLinkFeedback('Link copiado!');
+        setTimeout(() => setCopyLinkFeedback(null), 2500);
+      }).catch(() => {
+        setCopyLinkFeedback('Erro ao copiar');
+      });
+    }
+  };
+
+  // Listen to popstate (back button) so mobile users don't exit the app when pressing back
+  useEffect(() => {
+    const handlePopState = () => {
+      const parsed = parseCurrentRoute();
+      if (!parsed.folhaParam) {
+        setSelectedFolha(null);
+      } else if (folhas.length > 0) {
+        const found = findFolhaByParam(folhas, parsed.folhaParam);
+        if (found) {
+          setSelectedFolha(found);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [folhas]);
+
+  // Open Folha if URL has deep link param (e.g. /mobile/FS2026-0001 or ?folha=FS2026-0001)
+  useEffect(() => {
+    const parsed = parseCurrentRoute();
+    if (parsed.folhaParam && folhas.length > 0 && !selectedFolha) {
+      const found = findFolhaByParam(folhas, parsed.folhaParam);
+      if (found) {
+        setSelectedFolha(found);
+      }
+    }
+  }, [folhas]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('TODAS');
 
@@ -642,7 +704,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setAiPecasPhotos([]);
     setAiVoiceNotes('');
     setAiResult(null);
-    setSelectedFolha(null);
+    handleCloseMobileFolha();
     setActiveTab('folhas');
   };
 
@@ -1461,7 +1523,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 filteredFolhas.map(f => (
                   <div
                     key={f.id}
-                    onClick={() => setSelectedFolha(f)}
+                    onClick={() => handleOpenMobileFolha(f)}
                     className={`p-4 rounded-3xl border transition-all active:scale-[0.98] cursor-pointer space-y-3 shadow-sm ${
                       theme === 'light'
                         ? 'bg-white border-slate-200 hover:border-hp-400'
@@ -1519,20 +1581,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         {activeTab === 'folhas' && selectedFolha && (
           <div className="space-y-4 animate-in fade-in pb-8">
             {/* Back header */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <button
-                onClick={() => setSelectedFolha(null)}
+                onClick={handleCloseMobileFolha}
                 className="flex items-center gap-2 text-xs font-bold text-hp-400 py-2 px-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:text-white"
               >
                 <ArrowLeft className="w-4 h-4" /> Voltar à Lista
               </button>
 
-              <button
-                onClick={handleSaveSelectedFolha}
-                className="glass-btn py-2 px-4 rounded-2xl text-xs font-bold text-white flex items-center gap-1.5 shadow-lg shadow-hp-600/30"
-              >
-                <Check className="w-4 h-4" /> Guardar Folha
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopyMobileShareLink(selectedFolha)}
+                  className="py-2 px-3 bg-slate-900 border border-slate-800 hover:border-slate-700 text-hp-400 hover:text-hp-300 rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                  title="Copiar link direto para partilhar por WhatsApp"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  {copyLinkFeedback || 'Copiar Link'}
+                </button>
+
+                <button
+                  onClick={handleSaveSelectedFolha}
+                  className="glass-btn py-2 px-4 rounded-2xl text-xs font-bold text-white flex items-center gap-1.5 shadow-lg shadow-hp-600/30"
+                >
+                  <Check className="w-4 h-4" /> Guardar Folha
+                </button>
+              </div>
             </div>
 
             <div className="p-4 rounded-3xl bg-slate-900/95 border border-slate-800 space-y-4 shadow-xl">

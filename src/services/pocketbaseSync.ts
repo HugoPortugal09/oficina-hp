@@ -54,12 +54,21 @@ function mergeCollectionData(localData: any, cloudData: any): any {
     mergedMap.set(getKey(item, idx), item);
   });
 
-  // Merge or add local items (local items take precedence for field edits, but all unique cloud items are preserved)
+  // Merge or add local items (compare updatedAt timestamps if available)
   localData.forEach((item, idx) => {
     const key = getKey(item, idx);
     if (mergedMap.has(key)) {
       const cloudItem = mergedMap.get(key);
-      mergedMap.set(key, { ...cloudItem, ...item });
+      const localTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+      const cloudTime = cloudItem.updatedAt ? new Date(cloudItem.updatedAt).getTime() : 0;
+
+      if (cloudTime > localTime) {
+        // Cloud is newer: keep cloud fields, but preserve local non-overlapping fields
+        mergedMap.set(key, { ...item, ...cloudItem });
+      } else {
+        // Local is newer or timestamps equal/missing: local fields take precedence
+        mergedMap.set(key, { ...cloudItem, ...item });
+      }
     } else {
       // Local-only item: preserve it!
       mergedMap.set(key, item);

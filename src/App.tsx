@@ -57,6 +57,7 @@ function FullscreenFallback() {
 import { db, STORAGE_KEYS } from './services/dbService';
 import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
 import { startAutomationRunner } from './services/automationRunner';
+import { parseCurrentRoute, buildPath, findFolhaByParam } from './utils/routeUtils';
 import type {
   NavigationTab,
   FolhaServico,
@@ -76,25 +77,22 @@ import type {
 import { USERS, getPermissionsForRole, isAdminEmail } from './types';
 
 export default function App() {
-  // Check if current URL route is /mobile
-  const [isMobileRoute, setIsMobileRoute] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return (
-        window.location.pathname.startsWith('/mobile') ||
-        window.location.search.includes('mobile=1') ||
-        window.location.hash.startsWith('#/mobile')
-      );
-    }
-    return false;
-  });
+  const [isMobileRoute, setIsMobileRoute] = useState<boolean>(() => parseCurrentRoute().isMobile);
+  const [activeTab, setActiveTab] = useState<NavigationTab>(() => parseCurrentRoute().tab);
+  const [conviteToken, setConviteToken] = useState<string | null>(() => parseCurrentRoute().conviteToken);
+  const [pendingFolhaParam, setPendingFolhaParam] = useState<string | null>(() => parseCurrentRoute().folhaParam);
+  const [selectedFolha, setSelectedFolha] = useState<FolhaServico | null>(null);
 
   useEffect(() => {
     const handleLocationChange = () => {
-      setIsMobileRoute(
-        window.location.pathname.startsWith('/mobile') ||
-        window.location.search.includes('mobile=1') ||
-        window.location.hash.startsWith('#/mobile')
-      );
+      const parsed = parseCurrentRoute();
+      setIsMobileRoute(parsed.isMobile);
+      setActiveTab(parsed.tab);
+      setConviteToken(parsed.conviteToken);
+      setPendingFolhaParam(parsed.folhaParam);
+      if (!parsed.folhaParam) {
+        setSelectedFolha(null);
+      }
     };
 
     window.addEventListener('popstate', handleLocationChange);
@@ -102,13 +100,47 @@ export default function App() {
   }, []);
 
   const navigateToMobile = () => {
-    window.history.pushState(null, '', '/mobile');
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ isMobile: true }, '', '/mobile');
+    }
     setIsMobileRoute(true);
   };
 
   const navigateToDesktop = () => {
-    window.history.pushState(null, '', '/');
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ tab: 'dashboard' }, '', '/');
+    }
     setIsMobileRoute(false);
+    setActiveTab('dashboard');
+  };
+
+  const handleSelectTab = (tab: NavigationTab) => {
+    setActiveTab(tab);
+    setIsMobileRoute(false);
+    setSelectedFolha(null);
+    setPendingFolhaParam(null);
+    const path = buildPath(tab);
+    if (typeof window !== 'undefined' && window.location.pathname !== path) {
+      window.history.pushState({ tab }, '', path);
+    }
+  };
+
+  const handleSelectFolhaDirect = (fs: FolhaServico) => {
+    setSelectedFolha(fs);
+    setActiveTab('oficina');
+    setIsMobileRoute(false);
+    const path = buildPath('oficina', fs.numero || fs.id);
+    if (typeof window !== 'undefined' && window.location.pathname !== path) {
+      window.history.pushState({ tab: 'oficina', folhaId: fs.id }, '', path);
+    }
+  };
+
+  const handleClearSelectedFolha = () => {
+    setSelectedFolha(null);
+    setPendingFolhaParam(null);
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/oficina/')) {
+      window.history.pushState({ tab: 'oficina' }, '', '/oficina');
+    }
   };
 
   // Active User Profile State (Administrador, Gestor, Técnico)
@@ -165,14 +197,13 @@ export default function App() {
       localStorage.setItem('oficina_hp_session_user_id', effectiveUser.id);
     } catch {}
     if (effectiveUser.role !== 'administrador' && activeTab === 'configuracoes') {
-      setActiveTab('dashboard');
+      handleSelectTab('dashboard');
     }
     if (effectiveUser.role === 'tecnico' && (activeTab === 'propostas' || activeTab === 'automacoes')) {
-      setActiveTab('dashboard');
+      handleSelectTab('dashboard');
     }
   };
 
-  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('oficina_hp_sidebar_open');
@@ -237,14 +268,16 @@ export default function App() {
     return fromDb && fromDb.length > 0 ? fromDb : USERS;
   });
 
-  // Check if opening via invitation link (?convite=TOKEN)
-  const [conviteToken, setConviteToken] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return new URLSearchParams(window.location.search).get('convite');
-  });
-
-  // Selected item for cross-module navigation
-  const [selectedFolha, setSelectedFolha] = useState<FolhaServico | null>(null);
+  // Automatically resolve and open Folha when URL contains a folha number/id (e.g. /oficina/O26049 or ?folha=O26049)
+  useEffect(() => {
+    if (pendingFolhaParam && folhas.length > 0) {
+      const match = findFolhaByParam(folhas, pendingFolhaParam);
+      if (match) {
+        setSelectedFolha(match);
+        setActiveTab('oficina');
+      }
+    }
+  }, [pendingFolhaParam, folhas]);
 
   const loadAllData = () => {
     setFolhas(db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO));
@@ -395,8 +428,7 @@ export default function App() {
           };
 
           db.insert(STORAGE_KEYS.FOLHAS_SERVICO, newFs);
-          setSelectedFolha(newFs);
-          setActiveTab('oficina');
+          handleSelectFolhaDirect(newFs);
         }
       } else {
         // Register new equipment automatically or open oficina
@@ -411,19 +443,15 @@ export default function App() {
           empresaId: empresas[0]?.id || ''
         };
         db.insert(STORAGE_KEYS.EQUIPAMENTOS, newEq);
-        setActiveTab('equipamentos');
+        handleSelectTab('equipamentos');
       }
     }
   };
 
-  const handleSelectFolhaDirect = (fs: FolhaServico) => {
-    setSelectedFolha(fs);
-    setActiveTab('oficina');
-  };
-
   const handleCreateNewServiceDirect = () => {
     setSelectedFolha(null);
-    setActiveTab('oficina');
+    setPendingFolhaParam(null);
+    handleSelectTab('oficina');
   };
 
   // If opening via invite token link, show registration modal
@@ -486,7 +514,7 @@ export default function App() {
       {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSelectTab}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         theme={theme}
@@ -504,7 +532,7 @@ export default function App() {
         {/* Sticky Top Header Navbar */}
         <Navbar
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleSelectTab}
           onOpenScanner={() => setIsScannerOpen(true)}
           onToggleSidebar={toggleSidebar}
           isSidebarOpen={isSidebarOpen}
@@ -527,7 +555,7 @@ export default function App() {
               propostas={propostas}
               equipamentos={equipamentos}
               empresas={empresas}
-              setActiveTab={setActiveTab}
+              setActiveTab={handleSelectTab}
               onOpenScanner={() => setIsScannerOpen(true)}
               onSelectFolha={handleSelectFolhaDirect}
               onCreateNewService={handleCreateNewServiceDirect}
@@ -555,7 +583,8 @@ export default function App() {
               contratos={contratos}
               onOpenScanner={() => setIsScannerOpen(true)}
               selectedFolhaToOpen={selectedFolha}
-              onClearSelectedFolha={() => setSelectedFolha(null)}
+              onClearSelectedFolha={handleClearSelectedFolha}
+              onSelectFolha={handleSelectFolhaDirect}
               currentUser={currentUser}
             />
           )}
@@ -583,10 +612,7 @@ export default function App() {
               equipamentos={equipamentos}
               clientes={clientes}
               catalogoPecas={pecas}
-              onNavigateToFolha={(newFs) => {
-                setSelectedFolha(newFs);
-                setActiveTab('oficina');
-              }}
+              onNavigateToFolha={handleSelectFolhaDirect}
               currentUser={currentUser}
             />
           )}

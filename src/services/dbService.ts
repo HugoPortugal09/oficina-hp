@@ -18,6 +18,7 @@ import type {
 import { USERS } from '../types';
 import { syncPushToCloud } from './pocketbaseSync';
 import { safeLocalStorageSet, optimizeLocalStorageQuota } from '../utils/storageUtils';
+import { sanitizeFolhaServico } from '../utils/validationUtils';
 
 const STORAGE_KEYS = {
   EMPRESAS: 'oficina_hp_empresas',
@@ -54,7 +55,7 @@ const DEFAULT_CONFIG: ConfiguracaoOficina = {
   ollamaUrl: 'https://oficina-hp-ollama.l1mamt.easypanel.host',
   ollamaModel: 'minicpm-v',
   emailEmissor: 'oficinahpapp@gmail.com',
-  emailAppPassword: 'ewhzzvysccrptkns',
+  emailAppPassword: '',
   emailDestinatarioPlaneamento: 'hugo@grau-maquinaria.com',
   emailPlaneamentoAtivo: true
 };
@@ -644,20 +645,31 @@ export const db = {
   },
 
   insert<T extends { id?: string } = any>(key: string, item: T): T {
+    let sanitizedItem: any = { ...item };
+    if (key === STORAGE_KEYS.FOLHAS_SERVICO) {
+      sanitizedItem = sanitizeFolhaServico(sanitizedItem);
+    } else {
+      sanitizedItem.updatedAt = new Date().toISOString();
+    }
     const list = this.get<T>(key);
-    const updated = [item, ...list];
+    const updated = [sanitizedItem as T, ...list];
     this.save(key, updated);
-    return item;
+    return sanitizedItem as T;
   },
 
   update<T = any>(key: string, id: string, item: Partial<T>): T | undefined {
     const list = this.get<any>(key);
     const index = list.findIndex((i: any) => i.id === id);
     if (index === -1) return undefined;
-    const updatedItem = { ...list[index], ...item } as T;
-    list[index] = updatedItem;
+    let merged = { ...list[index], ...item };
+    if (key === STORAGE_KEYS.FOLHAS_SERVICO) {
+      merged = sanitizeFolhaServico(merged);
+    } else {
+      merged.updatedAt = new Date().toISOString();
+    }
+    list[index] = merged as T;
     this.save(key, list);
-    return updatedItem;
+    return merged as T;
   },
 
   delete(key: string, id: string): boolean {
