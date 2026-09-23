@@ -59,6 +59,7 @@ import { cleanMatricula } from '../utils/validationUtils';
 import { parseCurrentRoute, getShareableFolhaUrl, findFolhaByParam } from '../utils/routeUtils';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
+import { uploadFolhaPhotos, fetchFolhaPhotos } from '../services/photoStorageService';
 import { generateFolhaServicoPDF } from '../services/pdfService';
 import {
   transformPhotosToFolhaWithOllama,
@@ -237,6 +238,34 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Consultation search query
   const [consultaQuery, setConsultaQuery] = useState('');
   const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
+  const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
+  const [photoFeedback, setPhotoFeedback] = useState<string | null>(null);
+
+  // Sync photos from cloud / IndexedDB whenever selectedFolha changes
+  useEffect(() => {
+    if (!selectedFolha?.id) return;
+    let isCancelled = false;
+    fetchFolhaPhotos(selectedFolha.id, selectedFolha.numero).then(remotePhotos => {
+      if (isCancelled || !remotePhotos || remotePhotos.length === 0) return;
+      setSelectedFolha(prev => {
+        if (!prev || prev.id !== selectedFolha.id) return prev;
+        const existing = new Set(prev.fotos || []);
+        const merged = [...(prev.fotos || [])];
+        let hasNew = false;
+        remotePhotos.forEach(p => {
+          if (!existing.has(p)) {
+            merged.push(p);
+            hasNew = true;
+          }
+        });
+        if (!hasNew && merged.length === (prev.fotos || []).length) return prev;
+        return { ...prev, fotos: merged };
+      });
+    }).catch(() => {});
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedFolha?.id]);
 
   // Modals for Adding New Entities in Mobile
   const [isAddEquipamentoOpen, setIsAddEquipamentoOpen] = useState(false);
@@ -1154,35 +1183,51 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const handleSelectedFolhaPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || !selectedFolha || files.length === 0) return;
+    setIsProcessingPhotos(true);
+    setPhotoFeedback('A comprimir fotografias...');
     try {
       const newPhotos: string[] = [];
       for (let i = 0; i < files.length; i++) {
+        setPhotoFeedback(`A processar foto ${i + 1} de ${files.length}...`);
         const compressed = await compressImageFile(files[i], { maxDim: 1024, quality: 0.65, maxSizeBytes: 85 * 1024 });
         if (compressed) newPhotos.push(compressed);
       }
       if (newPhotos.length > 0) {
-        setSelectedFolha(prev => {
-          if (!prev) return null;
-          const updatedPhotos = [...(prev.fotos || []), ...newPhotos];
-          db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, prev.id, { fotos: updatedPhotos });
-          return { ...prev, fotos: updatedPhotos };
-        });
+        setPhotoFeedback('A guardar e enviar para o servidor...');
+        const updatedPhotos = [...(selectedFolha.fotos || []), ...newPhotos];
+
+        // 1. Enviar diretamente para a Cloud PocketBase e guardar localmente no IndexedDB
+        const uploadRes = await uploadFolhaPhotos(selectedFolha.id, selectedFolha.numero, updatedPhotos);
+
+        // 2. Atualizar estado em memória
+        setSelectedFolha(prev => (prev ? { ...prev, fotos: updatedPhotos } : null));
+
+        // 3. Atualizar na base de dados
+        db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { fotos: updatedPhotos });
+
+        if (uploadRes.success) {
+          setPhotoFeedback(`✓ ${newPhotos.length} foto(s) sincronizada(s) com sucesso!`);
+        } else {
+          setPhotoFeedback(`✓ Guardado localmente no dispositivo (offline)`);
+        }
+        setTimeout(() => setPhotoFeedback(null), 4000);
       }
     } catch (err) {
       console.error('Erro ao processar foto na folha:', err);
+      setPhotoFeedback('Erro ao processar foto. Tente novamente.');
+      setTimeout(() => setPhotoFeedback(null), 4000);
     } finally {
+      setIsProcessingPhotos(false);
       if (e.target) e.target.value = '';
     }
   };
 
-  const handleRemoveSelectedFolhaPhoto = (index: number) => {
+  const handleRemoveSelectedFolhaPhoto = async (index: number) => {
     if (!selectedFolha) return;
-    setSelectedFolha(prev => {
-      if (!prev) return null;
-      const updatedPhotos = (prev.fotos || []).filter((_, i) => i !== index);
-      db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, prev.id, { fotos: updatedPhotos });
-      return { ...prev, fotos: updatedPhotos };
-    });
+    const updatedPhotos = (selectedFolha.fotos || []).filter((_, i) => i !== index);
+    setSelectedFolha(prev => (prev ? { ...prev, fotos: updatedPhotos } : null));
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { fotos: updatedPhotos });
+    await uploadFolhaPhotos(selectedFolha.id, selectedFolha.numero, updatedPhotos);
   };
 
   const handleSaveSelectedFolha = () => {
@@ -2961,6 +3006,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     className="hidden"
                   />
                 </div>
+
+                {isProcessingPhotos && (
+                  <div className="p-3 bg-hp-950/80 border border-hp-500/50 rounded-2xl flex items-center gap-2.5 text-xs text-hp-300 font-semibold animate-pulse shadow-lg">
+                    <Clock className="w-4 h-4 animate-spin text-hp-400 shrink-0" />
+                    <span>{photoFeedback || 'A enviar fotografias...'}</span>
+                  </div>
+                )}
+                {photoFeedback && !isProcessingPhotos && (
+                  <div className="p-3 bg-emerald-950/80 border border-emerald-500/50 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-300 font-semibold shadow-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{photoFeedback}</span>
+                  </div>
+                )}
 
                 {selectedFolha.fotos && selectedFolha.fotos.length > 0 && (
                   <div className="grid grid-cols-3 gap-2">

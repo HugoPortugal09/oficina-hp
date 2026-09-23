@@ -53,6 +53,7 @@ import { cleanMatricula } from '../utils/validationUtils';
 import { getShareableFolhaUrl } from '../utils/routeUtils';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
+import { uploadFolhaPhotos, fetchFolhaPhotos } from '../services/photoStorageService';
 import { generateFolhaServicoPDF, generatePropostaPDF, generateFolhasServicoA3PDF, type FolhasServicoA3Row } from '../services/pdfService';
 import { resolvePortugalCoordinates, calculateDistanceKm, OFICINA_HP_BASE } from '../services/portugalGeoService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
@@ -494,6 +495,29 @@ export const Oficina: React.FC<OficinaProps> = ({
       kmsAtuais: resolvedKms,
       horasAtuais: resolvedHoras
     });
+
+    // Sincronizar fotografias dedicadas da Cloud / IndexedDB em tempo real
+    fetchFolhaPhotos(fs.id, fs.numero).then(cloudPhotos => {
+      if (cloudPhotos && cloudPhotos.length > 0) {
+        setEditingFolha(prev => {
+          if (prev.id !== fs.id) return prev;
+          const existing = new Set(prev.fotos || []);
+          const merged = [...(prev.fotos || [])];
+          let hasNew = false;
+          cloudPhotos.forEach(p => {
+            if (!existing.has(p)) {
+              merged.push(p);
+              hasNew = true;
+            }
+          });
+          if (!hasNew && merged.length === (prev.fotos || []).length) return prev;
+          return { ...prev, fotos: merged };
+        });
+      }
+    }).catch(err => {
+      console.warn('[Oficina] Erro ao sincronizar fotos da Cloud:', err);
+    });
+
     setPlateQuery(resolvedMatricula || '');
     setAiNoteSuggestion(null);
     setTaskCreatedFeedback(null);
@@ -836,10 +860,12 @@ export const Oficina: React.FC<OficinaProps> = ({
         if (compressed) newPhotos.push(compressed);
       }
       if (newPhotos.length > 0) {
+        const updated = [...(editingFolha.fotos || []), ...newPhotos];
         setEditingFolha(prev => ({
           ...prev,
-          fotos: [...(prev.fotos || []), ...newPhotos]
+          fotos: updated
         }));
+        uploadFolhaPhotos(editingFolha.id, editingFolha.numero, updated).catch(console.warn);
       }
     } catch (err) {
       console.error('Erro ao carregar fotos:', err);
@@ -859,10 +885,12 @@ export const Oficina: React.FC<OficinaProps> = ({
         if (compressed) newPhotos.push(compressed);
       }
       if (newPhotos.length > 0) {
+        const updated = [...(editingFolha.fotos || []), ...newPhotos];
         setEditingFolha(prev => ({
           ...prev,
-          fotos: [...(prev.fotos || []), ...newPhotos]
+          fotos: updated
         }));
+        uploadFolhaPhotos(editingFolha.id, editingFolha.numero, updated).catch(console.warn);
       }
     } catch (err) {
       console.error('Erro ao processar fotos de Entrega e Formação:', err);
@@ -873,10 +901,12 @@ export const Oficina: React.FC<OficinaProps> = ({
   };
 
   const handleRemovePhoto = (index: number) => {
+    const updated = editingFolha.fotos?.filter((_, i) => i !== index) || [];
     setEditingFolha(prev => ({
       ...prev,
-      fotos: prev.fotos?.filter((_, i) => i !== index)
+      fotos: updated
     }));
+    uploadFolhaPhotos(editingFolha.id, editingFolha.numero, updated).catch(console.warn);
   };
 
   // Status Change with Duration Tracker
@@ -1069,6 +1099,10 @@ export const Oficina: React.FC<OficinaProps> = ({
       db.update(STORAGE_KEYS.FOLHAS_SERVICO, folhaToSave.id, folhaToSave);
     } else {
       db.insert(STORAGE_KEYS.FOLHAS_SERVICO, folhaToSave);
+    }
+
+    if (folhaToSave.fotos && folhaToSave.fotos.length > 0) {
+      uploadFolhaPhotos(folhaToSave.id, folhaToSave.numero, folhaToSave.fotos).catch(console.warn);
     }
 
     // Update equipment mileage / hours and delivery/training in fleet

@@ -2,6 +2,7 @@
  * Storage quota management and resilient localStorage wrapper.
  * Prevents and recovers from DOMException: QuotaExceededError when storing data.
  */
+import { savePhotosToIndexedDB } from '../services/photoStorageService';
 
 export const STORAGE_KEYS = {
   EMPRESAS: 'oficina_hp_empresas',
@@ -206,6 +207,9 @@ export function purgeAllHeavyMediaFromLocalStorage(): void {
         if (Array.isArray(list)) {
           const cleared = list.map((item: any) => {
             const copy = { ...item };
+            if (Array.isArray(copy.fotos) && copy.fotos.length > 0 && copy.id) {
+              savePhotosToIndexedDB(copy.id, copy.fotos, copy.numero).catch(() => {});
+            }
             if ('fotos' in copy) copy.fotos = [];
             if ('fotosCliente' in copy) copy.fotosCliente = [];
             if ('fotoUrl' in copy && typeof copy.fotoUrl === 'string' && copy.fotoUrl.startsWith('data:')) {
@@ -214,7 +218,7 @@ export function purgeAllHeavyMediaFromLocalStorage(): void {
             return copy;
           });
           localStorage.setItem(key, JSON.stringify(cleared));
-          console.log(`[Storage Recovery] Aggressive purge cleared media from ${key}`);
+          console.log(`[Storage Recovery] Aggressive purge preserved photos in IndexedDB and cleared media from ${key}`);
         }
       } catch {}
     }
@@ -251,6 +255,9 @@ export function safeLocalStorageSet(key: string, value: string): void {
               if (Array.isArray(parsed)) {
                 const stripped = parsed.map((item: any) => {
                   const copy = { ...item };
+                  if (Array.isArray(copy.fotos) && copy.fotos.length > 0 && copy.id) {
+                    savePhotosToIndexedDB(copy.id, copy.fotos, copy.numero).catch(() => {});
+                  }
                   if ('fotos' in copy) copy.fotos = [];
                   if ('fotosCliente' in copy) copy.fotosCliente = [];
                   if ('fotoUrl' in copy && typeof copy.fotoUrl === 'string' && copy.fotoUrl.startsWith('data:')) {
