@@ -58,6 +58,7 @@ import { db, STORAGE_KEYS } from './services/dbService';
 import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
 import { startAutomationRunner } from './services/automationRunner';
 import { parseCurrentRoute, buildPath, findFolhaByParam } from './utils/routeUtils';
+import { InstallPwaPrompt } from './components/InstallPwaPrompt';
 import type {
   NavigationTab,
   FolhaServico,
@@ -808,6 +809,9 @@ export default function App() {
           />
         </Suspense>
       )}
+
+      {/* PWA Install Prompt */}
+      <InstallPwaPrompt theme={theme} />
     </div>
   );
 }

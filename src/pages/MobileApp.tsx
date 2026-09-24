@@ -54,6 +54,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { PassaporteTecnicoModal } from '../components/PassaporteTecnicoModal';
+import { InstallPwaPrompt, InstallPwaButton } from '../components/InstallPwaPrompt';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { checkPocketBaseConnection } from '../services/pocketbase';
 import { cleanMatricula } from '../utils/validationUtils';
@@ -1543,6 +1544,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           >
             {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-hp-500" />}
           </button>
+
+          <InstallPwaButton theme={theme} className="hidden sm:flex" />
 
           <button
             onClick={onSwitchToDesktop}
@@ -6122,6 +6125,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           onCreateNewService={handleCreateNewServiceFromPassaporte}
         />
       )}
+
+      {/* Prompt de Instalação PWA */}
+      <InstallPwaPrompt theme={theme} />
 
       {/* 3. BOTTOM PWA NAVIGATION BAR (Big Tactile Icons) */}
       <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-2xl px-1 py-2 flex items-center justify-around shadow-2xl ${
