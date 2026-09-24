@@ -79,68 +79,98 @@ function mergeCollectionData(localData: any, cloudData: any): any {
 }
 
 /**
- * Pushes a specific collection to PocketBase cloud in background
+ * Directly pushes a specific collection or item to PocketBase cloud immediately.
  */
-export async function syncPushToCloud(key: string, data: any): Promise<boolean> {
+async function executePush(key: string, data: any): Promise<boolean> {
+  try {
+    const pb = getPocketBase();
+    
+    // Find if record already exists for this key
+    let existingRecord = null;
+    try {
+      existingRecord = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="${key}"`);
+    } catch (e: any) {
+      // Record doesn't exist yet (404)
+    }
+
+    let payloadData = data;
+    if (existingRecord && Array.isArray(data) && Array.isArray(existingRecord.data)) {
+      // Merge with remote data so concurrent additions aren't wiped
+      payloadData = mergeCollectionData(data, existingRecord.data);
+      // If remote had items not yet in localStorage, write them back
+      if (payloadData.length !== data.length && typeof localStorage !== 'undefined') {
+        safeLocalStorageSet(key, JSON.stringify(payloadData));
+      }
+    }
+
+    if (existingRecord) {
+      await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
+        data: payloadData,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      await pb.collection(SYNC_COLLECTION).create({
+        key: key,
+        data: payloadData,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    syncStatus.lastSyncTime = new Date();
+    syncStatus.connected = true;
+    syncStatus.error = null;
+    return true;
+  } catch (err: any) {
+    console.warn(`[PocketBase Sync] Error syncing ${key}:`, err?.message || err);
+    syncStatus.error = err?.message || 'Erro ao sincronizar com servidor';
+    return false;
+  }
+}
+
+/**
+ * Pushes a specific collection to PocketBase cloud in background (or immediately if options.immediate is true)
+ */
+export async function syncPushToCloud(key: string, data: any, options?: { immediate?: boolean }): Promise<boolean> {
   // Clear any existing debounce timeout for this key
   if (pushTimeouts[key]) {
     clearTimeout(pushTimeouts[key]);
+    delete pushTimeouts[key];
+  }
+
+  if (options?.immediate) {
+    return executePush(key, data);
   }
 
   return new Promise((resolve) => {
     pushTimeouts[key] = setTimeout(async () => {
-      try {
-        const pb = getPocketBase();
-        
-        // Find if record already exists for this key
-        let existingRecord = null;
-        try {
-          existingRecord = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="${key}"`);
-        } catch (e: any) {
-          // Record doesn't exist yet (404)
-        }
-
-        let payloadData = data;
-        if (existingRecord && Array.isArray(data) && Array.isArray(existingRecord.data)) {
-          // Merge with remote data so concurrent additions aren't wiped
-          payloadData = mergeCollectionData(data, existingRecord.data);
-          // If remote had items not yet in localStorage, write them back
-          if (payloadData.length !== data.length && typeof localStorage !== 'undefined') {
-            safeLocalStorageSet(key, JSON.stringify(payloadData));
-          }
-        }
-
-        if (existingRecord) {
-          await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
-            data: payloadData,
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          await pb.collection(SYNC_COLLECTION).create({
-            key: key,
-            data: payloadData,
-            timestamp: new Date().toISOString()
-          });
-        }
-
-        syncStatus.lastSyncTime = new Date();
-        syncStatus.connected = true;
-        syncStatus.error = null;
-        resolve(true);
-      } catch (err: any) {
-        console.warn(`[PocketBase Sync] Error syncing ${key}:`, err?.message || err);
-        syncStatus.error = err?.message || 'Erro ao sincronizar com servidor';
-        resolve(false);
-      }
+      delete pushTimeouts[key];
+      const result = await executePush(key, data);
+      resolve(result);
     }, 300); // 300ms debounce
   });
 }
 
 /**
+ * Directly queries PocketBase for a specific key without doing a full collection pull.
+ */
+export async function fetchRecordFromCloud<T = any>(key: string): Promise<T | null> {
+  try {
+    const pb = getPocketBase();
+    const record = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="${key}"`);
+    if (record && record.data !== undefined) {
+      return record.data as T;
+    }
+  } catch (err: any) {
+    // 404 not found or network error
+  }
+  return null;
+}
+
+/**
  * Pulls all data from PocketBase cloud into local storage
  */
-export async function syncPullFromCloud(): Promise<boolean> {
-  if (syncStatus.isSyncing) return false;
+export async function syncPullFromCloud(options?: { force?: boolean }): Promise<boolean> {
+  if (syncStatus.isSyncing && !options?.force) return false;
   syncStatus.isSyncing = true;
 
   try {

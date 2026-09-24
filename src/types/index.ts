@@ -384,6 +384,7 @@ export interface ConfiguracaoOficina {
   emailAppPassword?: string;
   emailDestinatarioPlaneamento?: string;
   emailPlaneamentoAtivo?: boolean;
+  appPublicUrl?: string; // URL Público / IP da aplicação para partilha de links (convites, folhas, whatsapp)
 }
 
 export interface VisionScanResult {

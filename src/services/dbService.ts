@@ -57,7 +57,8 @@ const DEFAULT_CONFIG: ConfiguracaoOficina = {
   emailEmissor: 'oficinahpapp@gmail.com',
   emailAppPassword: '',
   emailDestinatarioPlaneamento: 'hugo@grau-maquinaria.com',
-  emailPlaneamentoAtivo: true
+  emailPlaneamentoAtivo: true,
+  appPublicUrl: ''
 };
 
 const INITIAL_EMPRESAS: Empresa[] = [

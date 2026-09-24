@@ -35,12 +35,33 @@ export function parseCurrentRoute(
   pathname: string = typeof window !== 'undefined' ? window.location.pathname : '/',
   search: string = typeof window !== 'undefined' ? window.location.search : ''
 ): ParsedRoute {
-  const searchParams = new URLSearchParams(search);
-  const conviteToken = searchParams.get('convite');
-  const queryFolha = searchParams.get('folha');
+  let conviteToken = searchParams.get('convite') || searchParams.get('token') || searchParams.get('inv');
 
   // Normalize path by stripping trailing slashes
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
+
+  // Check query parameters inside hash (e.g. /#/?convite=... or /#convite=...)
+  if (!conviteToken && typeof window !== 'undefined' && window.location.hash) {
+    const hash = window.location.hash;
+    const hashQueryIdx = hash.indexOf('?');
+    if (hashQueryIdx !== -1) {
+      const hashParams = new URLSearchParams(hash.substring(hashQueryIdx));
+      conviteToken = hashParams.get('convite') || hashParams.get('token') || hashParams.get('inv');
+    }
+  }
+
+  // Check path routes: /convite/:token, /invite/:token, /registo/:token
+  if (!conviteToken) {
+    const convitePathMatch = cleanPath.match(/^\/(?:convite|invite|registo)\/([^/?#]+)/i);
+    if (convitePathMatch && convitePathMatch[1]) {
+      conviteToken = decodeURIComponent(convitePathMatch[1].trim());
+    }
+  }
+
+  // Clean any accidental punctuation attached by messaging apps (e.g. trailing '.', ',', '!', '?')
+  if (conviteToken) {
+    conviteToken = conviteToken.trim().replace(/[.,;!?]+$/, '');
+  }
 
   // Check mobile routes
   const isMobile = cleanPath.startsWith('/mobile') || searchParams.has('mobile') || (typeof window !== 'undefined' && window.location.hash.startsWith('#/mobile'));

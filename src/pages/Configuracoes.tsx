@@ -29,7 +29,8 @@ import {
   Copy,
   Clock,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  MessageSquare
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Modal } from '../components/Modal';
@@ -135,12 +136,27 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
 
     setIsSendingInvite(true);
 
+  const getAppBaseUrl = () => {
+    let base = (config.appPublicUrl || '').trim().replace(/\/+$/, '');
+    if (!base && typeof window !== 'undefined' && window.location.origin) {
+      base = window.location.origin;
+    }
+    return base || 'https://oficina-hp.up.railway.app';
+  };
+
+  const buildConviteUrl = (token: string) => {
+    return `${getAppBaseUrl()}/?convite=${token}`;
+  };
+
+  const getWhatsAppShareUrl = (conviteUrl: string, email: string = '') => {
+    const emailInfo = email ? ` (${email})` : '';
+    const text = `Olá! Segue o convite de acesso à equipa da Oficina HP${emailInfo}:\n${conviteUrl}\n\nClica no link para definires o teu nome e a tua palavra-passe.`;
+    return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  };
+
     try {
       const token = db.generateId('inv');
-      const origin = typeof window !== 'undefined' && window.location.origin
-        ? window.location.origin
-        : 'https://oficina-hp.up.railway.app';
-      const conviteUrl = `${origin}/?convite=${token}`;
+      const conviteUrl = buildConviteUrl(token);
 
       const newInvite: UserInvitation = {
         id: token,
@@ -161,7 +177,12 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
 
       db.save(STORAGE_KEYS.CONVITES, updatedConvites);
       setConvites(updatedConvites);
-      syncPushToCloud(STORAGE_KEYS.CONVITES, updatedConvites).catch(() => {});
+
+      // Immediate synchronization to PocketBase Cloud so invite is immediately resolvable across any device
+      await Promise.allSettled([
+        syncPushToCloud(STORAGE_KEYS.CONVITES, updatedConvites, { immediate: true }),
+        syncPushToCloud(`convite_${token}`, newInvite, { immediate: true })
+      ]);
 
       // Send email via backend service
       const emailResult = await sendConviteColaboradorEmail({
@@ -177,12 +198,12 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
       if (emailResult.success) {
         setInviteStatusMsg({
           type: 'success',
-          text: `Convite enviado com sucesso para ${cleanEmail}! O colaborador receberá o link para definir a palavra-passe.`
+          text: `Convite enviado com sucesso para ${cleanEmail}! O colaborador receberá o link por email e também pode partilhar diretamente por WhatsApp.`
         });
       } else {
         setInviteStatusMsg({
           type: 'error',
-          text: `Convite registado, mas houve falha no envio do email (${emailResult.message}). Pode copiar o link abaixo e enviar diretamente por WhatsApp.`
+          text: `Convite registado e ativo! Houve falha no envio do email (${emailResult.message}), mas o link abaixo está pronto a ser enviado diretamente por WhatsApp.`
         });
       }
 
@@ -197,10 +218,7 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
   };
 
   const handleResendInvite = async (convite: UserInvitation) => {
-    const origin = typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : 'https://oficina-hp.up.railway.app';
-    const conviteUrl = `${origin}/?convite=${convite.token}`;
+    const conviteUrl = buildConviteUrl(convite.token);
 
     const res = await sendConviteColaboradorEmail({
       email: convite.email,
@@ -213,27 +231,28 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     if (res.success) {
       alert(`Convite reenviado com sucesso para ${convite.email}!`);
     } else {
-      alert(`Falha ao reenviar email: ${res.message}. Pode copiar o link manualmente: ${conviteUrl}`);
+      alert(`Falha ao reenviar email: ${res.message}. Pode copiar o link manualmente ou enviar por WhatsApp: ${conviteUrl}`);
     }
   };
 
   const handleCancelInvite = (conviteId: string) => {
     if (!confirm('Deseja realmente cancelar este convite?')) return;
     const current = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
+    const target = current.find(c => c.id === conviteId || c.token === conviteId);
     const updated = current.filter(c => c.id !== conviteId && c.token !== conviteId);
     db.save(STORAGE_KEYS.CONVITES, updated);
     setConvites(updated);
-    syncPushToCloud(STORAGE_KEYS.CONVITES, updated).catch(() => {});
+    syncPushToCloud(STORAGE_KEYS.CONVITES, updated, { immediate: true }).catch(() => {});
+    if (target?.token) {
+      syncPushToCloud(`convite_${target.token}`, { ...target, status: 'cancelado' }, { immediate: true }).catch(() => {});
+    }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.CONVITES } }));
     }
   };
 
   const handleCopyLink = (token: string) => {
-    const origin = typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : 'https://oficina-hp.up.railway.app';
-    const link = `${origin}/?convite=${token}`;
+    const link = buildConviteUrl(token);
     if (navigator.clipboard) {
       navigator.clipboard.writeText(link);
       alert('Link do convite copiado para a área de transferência!');
@@ -600,6 +619,23 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
                 onChange={e => setConfig(prev => ({ ...prev, ivaPadrao: Number(e.target.value) }))}
                 className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
               />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="text-xs font-semibold text-slate-300 block mb-1 flex items-center justify-between">
+                <span>URL Público / IP da Aplicação (Partilha de Links & WhatsApp)</span>
+                <span className="text-[10px] text-slate-500 font-normal">Opcional</span>
+              </label>
+              <input
+                type="text"
+                placeholder={typeof window !== 'undefined' ? window.location.origin : 'ex: http://192.168.1.100:3000 ou https://oficinahp.pt'}
+                value={config.appPublicUrl || ''}
+                onChange={e => setConfig(prev => ({ ...prev, appPublicUrl: e.target.value }))}
+                className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-hp-500"
+              />
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                Endereço base utilizado para gerar convites e links partilhados via WhatsApp. Se não preencher, utiliza automaticamente o endereço atual do navegador ({typeof window !== 'undefined' ? window.location.origin : ''}).
+              </span>
             </div>
           </div>
         </GlassCard>
@@ -1093,6 +1129,17 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
                             <span>Copiar Link</span>
                           </button>
 
+                          <a
+                            href={getWhatsAppShareUrl(buildConviteUrl(c.token), c.email)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Partilhar diretamente no WhatsApp"
+                          >
+                            <MessageSquare className="w-3 h-3" />
+                            <span>WhatsApp</span>
+                          </a>
+
                           <button
                             type="button"
                             onClick={() => handleResendInvite(c)}
@@ -1360,23 +1407,44 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
                 <div className="space-y-1">
                   <span className="leading-relaxed block">{inviteStatusMsg.text}</span>
                   {generatedInviteLink && (
-                    <div className="mt-2 pt-2 border-t border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <span className="font-mono text-[10px] text-slate-300 truncate max-w-sm">
-                        {generatedInviteLink}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (navigator.clipboard) {
-                            navigator.clipboard.writeText(generatedInviteLink);
-                            alert('Link copiado!');
-                          }
-                        }}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-                      >
-                        <Copy className="w-3 h-3" />
-                        Copiar Link WhatsApp
-                      </button>
+                    <div className="mt-2.5 pt-2.5 border-t border-emerald-500/20 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/80 p-2 rounded-xl border border-emerald-500/30">
+                        <span className="font-mono text-[10px] text-emerald-300 truncate max-w-sm select-all">
+                          {generatedInviteLink}
+                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (navigator.clipboard) {
+                                navigator.clipboard.writeText(generatedInviteLink);
+                                alert('Link copiado para a área de transferência!');
+                              } else {
+                                prompt('Copie o link abaixo:', generatedInviteLink);
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                            Copiar
+                          </button>
+                          <a
+                            href={getWhatsAppShareUrl(generatedInviteLink, inviteEmail)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            Enviar por WhatsApp
+                          </a>
+                        </div>
+                      </div>
+
+                      {(generatedInviteLink.includes('localhost') || generatedInviteLink.includes('127.0.0.1')) && (
+                        <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-300/90 leading-tight">
+                          💡 <strong>Dica</strong>: Este link utiliza <code>localhost</code>. Se o novo colaborador for abrir o convite no telemóvel, configure o IP da rede ou o URL público nas <strong>Definições da Oficina</strong>.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

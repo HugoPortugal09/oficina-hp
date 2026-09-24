@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Lock, Mail, Eye, EyeOff, UserCheck, CheckCircle2, AlertCircle, Wrench, Sparkles } from 'lucide-react';
 import type { UserInvitation, UserProfile, UserRole } from '../types';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import { syncPushToCloud, syncPullFromCloud } from '../services/pocketbaseSync';
+import { syncPushToCloud, syncPullFromCloud, fetchRecordFromCloud } from '../services/pocketbaseSync';
 import { hashPassword } from '../utils/securityUtils';
 
 interface RegistoConviteModalProps {
@@ -17,8 +17,10 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
   onRegisterSuccess
 }) => {
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('A verificar convite na nuvem...');
   const [invitation, setInvitation] = useState<UserInvitation | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
 
   const [nome, setNome] = useState('');
   const [password, setPassword] = useState('');
@@ -27,46 +29,95 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const findInvite = async () => {
-      setLoading(true);
-      // 1. Try local storage first
-      let convites = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
-      let found = convites.find(c => c.token === token || c.id === token);
+  const cleanToken = (token || '').trim().replace(/[.,;!?]+$/, '');
 
-      // 2. If not found, attempt a cloud pull (in case invite was created on another machine)
-      if (!found) {
-        try {
-          await syncPullFromCloud();
-          convites = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
-          found = convites.find(c => c.token === token || c.id === token);
-        } catch (e) {
-          console.warn('[RegistoConvite] Erro ao sincronizar convites da nuvem:', e);
-        }
-      }
+  const findInvite = async () => {
+    setLoading(true);
+    setStatusMessage(null);
+    setCanRetry(false);
 
+    if (!cleanToken) {
       setLoading(false);
+      setStatusMessage('Código de convite não encontrado no link. Verifique se copiou o link completo.');
+      return;
+    }
 
-      if (!found) {
-        setStatusMessage('Convite não encontrado ou link inválido. Solicite um novo convite ao Administrador.');
-        return;
+    let found: UserInvitation | undefined = undefined;
+
+    // Retry loop (up to 3 attempts, waiting for cloud sync or network)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (attempt > 1) {
+        setLoadingMessage(`A tentar ligar à nuvem (tentativa ${attempt} de 3)...`);
+        await new Promise(r => setTimeout(r, 800));
       }
 
-      if (found.status === 'aceite') {
-        setStatusMessage('Este convite já foi utilizado e a conta já se encontra ativa. Por favor inicie sessão com as suas credenciais.');
-        return;
+      // 1. Try local storage first
+      const localConvites = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
+      found = localConvites.find(c => c.token === cleanToken || c.id === cleanToken);
+      if (found) break;
+
+      // 2. Query PocketBase directly for dedicated single invite record
+      try {
+        setLoadingMessage('A consultar servidor da Oficina HP...');
+        const directCloudInvite = await fetchRecordFromCloud<UserInvitation>(`convite_${cleanToken}`);
+        if (directCloudInvite && (directCloudInvite.token === cleanToken || directCloudInvite.id === cleanToken)) {
+          found = directCloudInvite;
+          // Store locally
+          const updated = [directCloudInvite, ...localConvites.filter(c => c.token !== cleanToken)];
+          db.save(STORAGE_KEYS.CONVITES, updated);
+          break;
+        }
+      } catch (e) {
+        console.warn('[RegistoConvite] Direct cloud lookup failed:', e);
       }
 
-      if (found.status === 'cancelado') {
-        setStatusMessage('Este convite foi revogado ou cancelado pelo Administrador da oficina.');
-        return;
+      // 3. Query PocketBase for the full convites collection
+      try {
+        const cloudConvites = await fetchRecordFromCloud<UserInvitation[]>(STORAGE_KEYS.CONVITES);
+        if (Array.isArray(cloudConvites)) {
+          found = cloudConvites.find(c => c.token === cleanToken || c.id === cleanToken);
+          if (found) {
+            db.save(STORAGE_KEYS.CONVITES, cloudConvites);
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn('[RegistoConvite] Full collection lookup failed:', e);
       }
 
-      setInvitation(found);
-    };
+      // 4. Fallback to pull all data
+      try {
+        await syncPullFromCloud({ force: true });
+        const refreshed = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
+        found = refreshed.find(c => c.token === cleanToken || c.id === cleanToken);
+        if (found) break;
+      } catch (e) {}
+    }
 
+    setLoading(false);
+
+    if (!found) {
+      setStatusMessage('Convite não encontrado ou link expirado/inválido. Solicite um novo convite ao Administrador da Oficina.');
+      setCanRetry(true);
+      return;
+    }
+
+    if (found.status === 'aceite') {
+      setStatusMessage('Este convite já foi utilizado e a conta já se encontra ativa. Por favor inicie sessão com as suas credenciais.');
+      return;
+    }
+
+    if (found.status === 'cancelado') {
+      setStatusMessage('Este convite foi revogado ou cancelado pelo Administrador da oficina.');
+      return;
+    }
+
+    setInvitation(found);
+  };
+
+  useEffect(() => {
     findInvite();
-  }, [token]);
+  }, [cleanToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +145,16 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
     try {
       // 1. Create the new user profile
       const cleanEmail = invitation.email.trim().toLowerCase();
-      const currentUsers = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || [];
+      let currentUsers = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || [];
+      
+      // If local users only has defaults, attempt to pull latest cloud users first
+      try {
+        const cloudUsers = await fetchRecordFromCloud<UserProfile[]>(STORAGE_KEYS.UTILIZADORES);
+        if (Array.isArray(cloudUsers) && cloudUsers.length > 0) {
+          currentUsers = cloudUsers;
+        }
+      } catch (e) {}
+
       const hashedPassword = await hashPassword(password);
       
       const newUser: UserProfile = {
@@ -130,22 +190,33 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
       // 2. Mark invitation as accepted
       const convites = db.get<UserInvitation>(STORAGE_KEYS.CONVITES) || [];
       const updatedConvites = convites.map(c => 
-        (c.token === token || c.id === token)
+        (c.token === cleanToken || c.id === cleanToken)
           ? { ...c, status: 'aceite' as const }
           : c
       );
       db.save(STORAGE_KEYS.CONVITES, updatedConvites);
 
-      // 3. Push to Cloud (PocketBase) asynchronously
-      syncPushToCloud(STORAGE_KEYS.UTILIZADORES, updatedUsers).catch(() => {});
-      syncPushToCloud(STORAGE_KEYS.CONVITES, updatedConvites).catch(() => {});
+      // 3. Push to Cloud (PocketBase) immediately and await confirmation
+      await Promise.allSettled([
+        syncPushToCloud(STORAGE_KEYS.UTILIZADORES, updatedUsers, { immediate: true }),
+        syncPushToCloud(STORAGE_KEYS.CONVITES, updatedConvites, { immediate: true }),
+        syncPushToCloud(`convite_${cleanToken}`, { ...invitation, status: 'aceite' }, { immediate: true })
+      ]);
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { collection: STORAGE_KEYS.UTILIZADORES } }));
-        // Clean URL parameter
-        const url = new URL(window.location.href);
-        url.searchParams.delete('convite');
-        window.history.replaceState({}, document.title, url.pathname);
+        // Clean URL parameters
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('convite');
+          url.searchParams.delete('token');
+          url.searchParams.delete('inv');
+          let newPath = url.pathname;
+          if (/^\/(?:convite|invite|registo)\//i.test(newPath)) {
+            newPath = '/';
+          }
+          window.history.replaceState({}, document.title, newPath + (url.search ? url.search : ''));
+        } catch {}
       }
 
       // 4. Complete login
@@ -199,7 +270,7 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
         {loading && (
           <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-3">
             <div className="w-6 h-6 border-2 border-hp-500 border-t-transparent rounded-full animate-spin" />
-            <span>A validar o seu convite...</span>
+            <span>{loadingMessage}</span>
           </div>
         )}
 
@@ -212,13 +283,24 @@ export const RegistoConviteModal: React.FC<RegistoConviteModalProps> = ({
             <p className="text-xs text-slate-300 leading-relaxed max-w-xs mx-auto">
               {statusMessage}
             </p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-2.5 px-4 rounded-xl bg-hp-600 hover:bg-hp-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
-            >
-              Ir para o Início de Sessão
-            </button>
+            <div className="space-y-2">
+              {canRetry && (
+                <button
+                  type="button"
+                  onClick={findInvite}
+                  className="w-full py-2.5 px-4 rounded-xl bg-hp-600 hover:bg-hp-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                >
+                  Tentar Novamente
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-all cursor-pointer"
+              >
+                Ir para o Início de Sessão
+              </button>
+            </div>
           </div>
         )}
 
