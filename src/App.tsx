@@ -135,6 +135,56 @@ export default function App() {
     }
   };
 
+  const handleCreateNewServiceDirect = (equip?: Equipamento) => {
+    if (equip) {
+      const newFs: FolhaServico = {
+      id: db.generateId('fs'),
+      numero: db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS'),
+      tipo: 'Oficina',
+      data: new Date().toISOString().split('T')[0],
+      status: 'OF - Com requisição - Aguardar agenda',
+      empresaId: equip.empresaId || '',
+      equipamentoId: equip.id,
+      matricula: equip.matricula,
+      marca: equip.marca,
+      modelo: equip.modelo,
+      kmsAtuais: equip.kmsAtuais || 0,
+      horasAtuais: equip.horasAtuais || 0,
+      localizacao: 'Oficina Principal HP',
+      localizacaoTipo: 'oficina',
+      distanciaKms: 0,
+      anomalias: 'Abertura de serviço via Passaporte Técnico.',
+      servicos: [],
+      servicosAdicionais: [],
+      pecas: [],
+      pecasAdicionais: [],
+      mensagens: [
+        {
+          id: db.generateId('msg'),
+          user: currentUser?.nome || 'Oficina HP',
+          text: `Nova intervenção iniciada para o equipamento ${equip.matricula} (${equip.marca} ${equip.modelo}).`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ],
+      fotos: [],
+      fotosCliente: [],
+      notasCliente: '',
+      previsaoRevisaoKms: (equip.kmsAtuais || 0) + 15000,
+      previsaoRevisaoHoras: (equip.horasAtuais || 0) + 500,
+      equipamentoFuncionando: 'Sim'
+    };
+
+    db.insert(STORAGE_KEYS.FOLHAS_SERVICO, newFs);
+    loadAllData();
+    handleSelectFolhaDirect(newFs);
+      return;
+    }
+
+    setSelectedFolha(null);
+    setPendingFolhaParam(null);
+    handleSelectTab('oficina');
+  };
+
   const handleClearSelectedFolha = () => {
     setSelectedFolha(null);
     setPendingFolhaParam(null);
@@ -448,12 +498,6 @@ export default function App() {
     }
   };
 
-  const handleCreateNewServiceDirect = () => {
-    setSelectedFolha(null);
-    setPendingFolhaParam(null);
-    handleSelectTab('oficina');
-  };
-
   // If opening via invite token link, show registration modal
   if (conviteToken) {
     return (
@@ -642,6 +686,7 @@ export default function App() {
               folhas={folhas}
               onOpenScanner={() => setIsScannerOpen(true)}
               onSelectFolha={handleSelectFolhaDirect}
+              onCreateNewServiceDirect={handleCreateNewServiceDirect}
             />
           )}
 

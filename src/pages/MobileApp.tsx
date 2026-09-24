@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
+import { PassaporteTecnicoModal } from '../components/PassaporteTecnicoModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { checkPocketBaseConnection } from '../services/pocketbase';
 import { cleanMatricula } from '../utils/validationUtils';
@@ -272,6 +273,51 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [isAddEmpresaOpen, setIsAddEmpresaOpen] = useState(false);
   const [isAddClienteOpen, setIsAddClienteOpen] = useState(false);
   const [isAddPedidoPecaOpen, setIsAddPedidoPecaOpen] = useState(false);
+  const [passaporteModalEquip, setPassaporteModalEquip] = useState<Equipamento | null>(null);
+
+  const handleCreateNewServiceFromPassaporte = (equip: Equipamento) => {
+    const newFs: FolhaServico = {
+      id: db.generateId('fs'),
+      numero: db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS'),
+      tipo: 'Oficina',
+      data: new Date().toISOString().split('T')[0],
+      status: 'OF - Com requisição - Aguardar agenda',
+      empresaId: equip.empresaId || '',
+      equipamentoId: equip.id,
+      matricula: equip.matricula,
+      marca: equip.marca,
+      modelo: equip.modelo,
+      kmsAtuais: equip.kmsAtuais || 0,
+      horasAtuais: equip.horasAtuais || 0,
+      localizacao: 'Oficina Principal HP',
+      localizacaoTipo: 'oficina',
+      distanciaKms: 0,
+      anomalias: 'Abertura de serviço via Passaporte Técnico.',
+      servicos: [],
+      servicosAdicionais: [],
+      pecas: [],
+      pecasAdicionais: [],
+      mensagens: [
+        {
+          id: db.generateId('msg'),
+          user: currentUser?.nome || 'Oficina HP',
+          text: `Nova intervenção iniciada para o equipamento ${equip.matricula} (${equip.marca} ${equip.modelo}).`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ],
+      fotos: [],
+      fotosCliente: [],
+      notasCliente: '',
+      previsaoRevisaoKms: (equip.kmsAtuais || 0) + 15000,
+      previsaoRevisaoHoras: (equip.horasAtuais || 0) + 500,
+      equipamentoFuncionando: 'Sim'
+    };
+
+    db.insert(STORAGE_KEYS.FOLHAS_SERVICO, newFs);
+    loadData();
+    setPassaporteModalEquip(null);
+    handleOpenMobileFolha(newFs);
+  };
 
   // New Equipment Form State
   const [newEquipamento, setNewEquipamento] = useState<Partial<Equipamento>>({
@@ -5058,6 +5104,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                             <span className="text-[11px] font-mono">Entregue: {formatDate(eq.dataEntrega)}</span>
                           )}
                         </div>
+
+                        {/* Botão Passaporte Técnico & Histórico */}
+                        <button
+                          type="button"
+                          onClick={() => setPassaporteModalEquip(eq)}
+                          className="w-full mt-2 py-2 px-3 rounded-xl bg-hp-500/15 hover:bg-hp-500/25 border border-hp-500/30 text-hp-400 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-[0.98]"
+                        >
+                          <FileText className="w-4 h-4 text-hp-400" />
+                          <span>Ver Passaporte Técnico & Linha do Tempo</span>
+                        </button>
                       </div>
                     );
                   })}
@@ -6051,6 +6107,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           </div>
         )}
       </main>
+
+      {/* Modal Passaporte Técnico do Veículo */}
+      {passaporteModalEquip && (
+        <PassaporteTecnicoModal
+          equipamento={passaporteModalEquip}
+          folhas={folhas}
+          empresa={empresas.find(e => e.id === passaporteModalEquip.empresaId)}
+          onClose={() => setPassaporteModalEquip(null)}
+          onSelectFolha={(f) => {
+            setPassaporteModalEquip(null);
+            handleOpenMobileFolha(f);
+          }}
+          onCreateNewService={handleCreateNewServiceFromPassaporte}
+        />
+      )}
 
       {/* 3. BOTTOM PWA NAVIGATION BAR (Big Tactile Icons) */}
       <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-2xl px-1 py-2 flex items-center justify-around shadow-2xl ${

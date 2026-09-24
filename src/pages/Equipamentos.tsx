@@ -26,6 +26,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
+import { PassaporteTecnicoModal } from '../components/PassaporteTecnicoModal';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { formatDate, formatDateToInput, parseDateToMs } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
@@ -78,6 +79,7 @@ interface EquipamentosProps {
   folhas: FolhaServico[];
   onOpenScanner: () => void;
   onSelectFolha: (fs: FolhaServico) => void;
+  onCreateNewServiceDirect?: (fs?: Partial<FolhaServico>) => void;
 }
 
 export const Equipamentos: React.FC<EquipamentosProps> = ({
@@ -85,7 +87,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   empresas,
   folhas,
   onOpenScanner,
-  onSelectFolha
+  onSelectFolha,
+  onCreateNewServiceDirect
 }) => {
   const safeEquipamentos = Array.isArray(equipamentos) ? equipamentos : [];
   const safeEmpresas = Array.isArray(empresas) ? empresas : [];
@@ -968,150 +971,17 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
         </Modal>
       )}
 
-      {/* Modal: Histórico de Folhas de Serviço da Viatura */}
+      {/* Modal: Passaporte Técnico & Histórico Integral da Viatura */}
       {servicesModalEquip && (
-        <Modal
-          isOpen={!!servicesModalEquip}
+        <PassaporteTecnicoModal
+          isOpen={Boolean(servicesModalEquip)}
           onClose={() => setServicesModalEquip(null)}
-          title={`Intervenções & Folhas de Serviço • ${servicesModalEquip.matricula}`}
-          subtitle={`${servicesModalEquip.marca} ${servicesModalEquip.modelo} • ${safeEmpresas.find(e => e.id === servicesModalEquip.empresaId)?.nome || 'Cliente Geral'}`}
-          maxWidth="4xl"
-        >
-          {(() => {
-            const latestData = getEquipamentoLatestData(servicesModalEquip, safeFolhas);
-            const equipFolhas = latestData.matchingFolhas;
-
-            if (equipFolhas.length === 0) {
-              return (
-                <div className="py-12 text-center text-slate-400 space-y-3">
-                  <Wrench className="w-12 h-12 mx-auto text-slate-600" />
-                  <p className="text-sm font-medium">
-                    Ainda não existem folhas de serviço registadas para a viatura{' '}
-                    <span className="font-mono font-bold text-white">{servicesModalEquip.matricula}</span>.
-                  </p>
-                </div>
-              );
-            }
-
-            return (
-              <div className="space-y-4">
-                {/* Resumo da Viatura */}
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs">
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Intervenções</span>
-                      <span className="font-mono font-extrabold text-hp-400 text-sm">{equipFolhas.length} Folha(s)</span>
-                    </div>
-                    <div className="h-6 w-px bg-slate-800" />
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Quilómetros Atuais</span>
-                      <span className="font-mono font-bold text-emerald-400 text-sm">{latestData.latestKms.toLocaleString()} Km</span>
-                    </div>
-                    <div className="h-6 w-px bg-slate-800" />
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Horas de Trabalho</span>
-                      <span className="font-mono font-bold text-amber-400 text-sm">{latestData.latestHoras} h</span>
-                    </div>
-                  </div>
-                  <span className="text-slate-400 text-[11px] italic">
-                    💡 Clique numa folha ou no botão "Abrir" para editar diretamente.
-                  </span>
-                </div>
-
-                {/* Tabela de Folhas de Serviço */}
-                <div className="overflow-x-auto rounded-xl border border-slate-800 max-h-[60vh] overflow-y-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800 uppercase tracking-wider text-[10px] sticky top-0 z-10">
-                      <tr>
-                        <th className="py-2.5 px-3">Nº Folha</th>
-                        <th className="py-2.5 px-3">Data</th>
-                        <th className="py-2.5 px-3">Tipo</th>
-                        <th className="py-2.5 px-3">Estado</th>
-                        <th className="py-2.5 px-3 font-mono text-right">Kms / Horas</th>
-                        <th className="py-2.5 px-3">Trabalhos / Anomalias</th>
-                        <th className="py-2.5 px-3 text-right">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                      {equipFolhas.map(f => (
-                        <tr
-                          key={f.id}
-                          onClick={() => {
-                            setServicesModalEquip(null);
-                            onSelectFolha(f);
-                          }}
-                          className="hover:bg-hp-600/15 cursor-pointer transition-colors group"
-                        >
-                          <td className="py-3 px-3">
-                            <span className="font-mono font-extrabold text-hp-400 group-hover:underline text-xs">
-                              {f.numero}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 font-mono text-slate-300 whitespace-nowrap">
-                            {formatDate(f.dataConclusao || f.data)}
-                          </td>
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 border border-slate-700 text-slate-300">
-                              {f.tipo || 'Oficina'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <Badge
-                              variant={
-                                f.status?.includes('Concluído') || f.status?.includes('Feito')
-                                  ? 'success'
-                                  : f.status?.includes('Em curso') || f.status?.includes('intervencionado')
-                                  ? 'primary'
-                                  : f.status?.includes('Aguardar')
-                                  ? 'warning'
-                                  : 'info'
-                              }
-                            >
-                              {f.status || 'Em aberto'}
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-3 font-mono text-right whitespace-nowrap">
-                            {f.kmsAtuais ? <span className="text-emerald-400 font-bold">{Number(f.kmsAtuais).toLocaleString()} km</span> : null}
-                            {f.kmsAtuais && f.horasAtuais ? <span className="text-slate-500 mx-1">•</span> : null}
-                            {f.horasAtuais ? <span className="text-amber-400">{f.horasAtuais} h</span> : null}
-                            {!f.kmsAtuais && !f.horasAtuais && <span className="text-slate-500">-</span>}
-                          </td>
-                          <td className="py-3 px-3 text-slate-400 max-w-xs truncate">
-                            {f.anomalias || (f.servicos && f.servicos.length > 0 ? f.servicos.map(s => s.descricao).join(', ') : '-')}
-                          </td>
-                          <td className="py-3 px-3 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                setServicesModalEquip(null);
-                                onSelectFolha(f);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-hp-500 hover:bg-hp-600 text-white font-semibold text-[11px] inline-flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
-                            >
-                              <span>Abrir</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex justify-end pt-2 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setServicesModalEquip(null)}
-                    className="py-1.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
-                  >
-                    Fechar
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
-        </Modal>
+          equipamento={servicesModalEquip}
+          empresas={safeEmpresas}
+          folhas={safeFolhas}
+          onSelectFolha={onSelectFolha}
+          onCreateFolha={onCreateNewServiceDirect ? (eq) => onCreateNewServiceDirect({ equipamentoId: eq.id, matricula: eq.matricula, empresaId: eq.empresaId }) : undefined}
+        />
       )}
     </div>
   );

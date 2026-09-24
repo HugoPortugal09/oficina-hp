@@ -2487,4 +2487,373 @@ export function generatePlaneamentoSemanalA4PDF(options: PlaneamentoSemanalA4Opt
   return doc;
 }
 
+/**
+ * Generates an executive A4 Technical Passport and Service History PDF for a vehicle / equipment.
+ */
+export function generatePassaporteTecnicoPDF(
+  equipamento: Equipamento,
+  empresa?: Empresa,
+  folhas?: FolhaServico[]
+): jsPDF {
+  const doc = new jsPDF({ compress: true });
+
+  const runAutoTable = (options: any) => {
+    const fn = (autoTable as any)?.default?.default || (autoTable as any)?.default || autoTable;
+    if (typeof fn === 'function') {
+      fn(doc, options);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(options);
+    }
+  };
+
+  const safeFolhas = Array.isArray(folhas) ? folhas : (db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || []);
+  const matchingFolhas = safeFolhas
+    .filter(f => (
+      (equipamento.id && f.equipamentoId === equipamento.id) ||
+      (equipamento.matricula && f.matricula && f.matricula.trim().toUpperCase() === equipamento.matricula.trim().toUpperCase())
+    ))
+    .sort((a, b) => parseDateToMs(a.dataConclusao || a.data || a.criadoEm) - parseDateToMs(b.dataConclusao || b.data || b.criadoEm)); // oldest to newest for chronological history
+
+  // Calculate stats
+  const latestFolhaWithKms = [...matchingFolhas].reverse().find(f => f.kmsAtuais !== undefined && Number(f.kmsAtuais) > 0);
+  const latestFolhaWithHoras = [...matchingFolhas].reverse().find(f => f.horasAtuais !== undefined && Number(f.horasAtuais) > 0);
+  const currentKms = latestFolhaWithKms?.kmsAtuais ? Number(latestFolhaWithKms.kmsAtuais) : (equipamento.kmsAtuais || 0);
+  const currentHoras = latestFolhaWithHoras?.horasAtuais ? Number(latestFolhaWithHoras.horasAtuais) : (equipamento.horasAtuais || 0);
+
+  // Replaced parts aggregation & labor hours sum
+  const partsMap = new Map<string, { ref: string; desc: string; totalQty: number; lastDate: string; lastFolha: string }>();
+  let totalLaborHours = 0;
+
+  matchingFolhas.forEach(f => {
+    if (Array.isArray(f.servicos)) {
+      f.servicos.forEach(s => {
+        totalLaborHours += Number(s.tempo) || 0;
+      });
+    }
+    if (Array.isArray(f.pecas)) {
+      f.pecas.forEach(p => {
+        const ref = (p.referencia || p.codigo || '').trim();
+        const desc = (p.designacao || p.descricao || 'Peça').trim();
+        const key = `${ref}__${desc}`.toLowerCase();
+        const qty = Number(p.quantidade) || 1;
+        const dateStr = formatDate(f.dataConclusao || f.data);
+        const folhaNum = f.numero || '';
+
+        if (partsMap.has(key)) {
+          const existing = partsMap.get(key)!;
+          existing.totalQty += qty;
+          existing.lastDate = dateStr;
+          existing.lastFolha = folhaNum;
+        } else {
+          partsMap.set(key, { ref: ref || '-', desc, totalQty: qty, lastDate: dateStr, lastFolha: folhaNum });
+        }
+      });
+    }
+  });
+
+  const partsList = Array.from(partsMap.values()).sort((a, b) => b.totalQty - a.totalQty);
+
+  // 1. Full-bleed Hero Header (Dark Navy #0b1528)
+  doc.setFillColor(11, 21, 40);
+  doc.rect(0, 0, 210, 36, 'F');
+
+  doc.setFillColor(16, 185, 129); // Emerald accent border #10b981
+  doc.rect(0, 35, 210, 1.2, 'F');
+
+  // Logo Grau Maquinaria
+  try {
+    doc.addImage(GRAU_LOGO_BASE64, 'PNG', 12, 6, 42, 22);
+  } catch (e) {
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('OFICINA HP', 14, 20);
+  }
+
+  // Header Title & Date
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('PASSAPORTE TÉCNICO', 198, 15, { align: 'right' });
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text('HISTÓRICO INTEGRAL DE INTERVENÇÕES & MANUTENÇÃO', 198, 21, { align: 'right' });
+  doc.text(`Data de Emissão: ${getTodayFormatted()}`, 198, 27, { align: 'right' });
+
+  // 2. Identification Cards (Side by side)
+  let y = 43;
+
+  // Card Left: Vehicle Identification
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(12, y, 92, 42, 3, 3, 'F');
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(12, y, 92, 42, 3, 3, 'S');
+
+  // Top header bar of left card
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(12, y, 92, 8, 3, 3, 'F');
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('IDENTIFICAÇÃO DA VIATURA / EQUIPAMENTO', 16, y + 5.5);
+
+  // License plate badge
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(15, 23, 42);
+  doc.roundedRect(16, y + 11, 28, 7.5, 1.5, 1.5, 'FD');
+  doc.setFontSize(9.5);
+  doc.setFont('courier', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(equipamento.matricula || 'S/ MATRÍCULA', 30, y + 16, { align: 'center' });
+
+  // Brand / Model
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${equipamento.marca || ''} ${equipamento.modelo || ''}`.trim() || 'Equipamento', 48, y + 16.5);
+
+  // Chassis / Serie
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Nº Série / Chassi: ${equipamento.numeroSerie || 'Não especificado'}`, 16, y + 24);
+  doc.text(`Tipo / Categoria: ${equipamento.tipo || 'Ligeiro'}`, 16, y + 29.5);
+  if (equipamento.ano) {
+    doc.text(`Ano de Fabrico: ${equipamento.ano}`, 16, y + 35);
+  } else if (equipamento.dataEntrega) {
+    doc.text(`Data de Entrega: ${formatDate(equipamento.dataEntrega)}`, 16, y + 35);
+  } else {
+    doc.text(`Status: Operacional`, 16, y + 35);
+  }
+
+  // Card Right: Client & Utilization Metrics
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(108, y, 90, 42, 3, 3, 'F');
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(108, y, 90, 42, 3, 3, 'S');
+
+  // Top header bar of right card
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(108, y, 90, 8, 3, 3, 'F');
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('CLIENTE & INDICADORES OPERACIONAIS', 112, y + 5.5);
+
+  const empName = empresa?.nome || 'Cliente / Empresa Geral';
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(empName.length > 38 ? empName.substring(0, 38) + '...' : empName, 112, y + 15);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  if (empresa?.nif) {
+    doc.text(`NIF: ${empresa.nif}`, 112, y + 20);
+  }
+  if (empresa?.localidade || empresa?.cidade) {
+    doc.text(`Localidade: ${empresa.localidade || empresa.cidade}`, 112, y + 24.5);
+  }
+
+  // 3 Mini-stats at bottom of right card
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(112, y + 27, 26, 12, 1.5, 1.5, 'FD');
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('QUILÓMETROS', 125, y + 31.5, { align: 'center' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129); // Emerald
+  doc.text(`${currentKms.toLocaleString()} km`, 125, y + 36.5, { align: 'center' });
+
+  doc.roundedRect(140, y + 27, 26, 12, 1.5, 1.5, 'FD');
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('HORAS TRABALHO', 153, y + 31.5, { align: 'center' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(217, 119, 6); // Amber
+  doc.text(`${currentHoras} h`, 153, y + 36.5, { align: 'center' });
+
+  doc.roundedRect(168, y + 27, 26, 12, 1.5, 1.5, 'FD');
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('INTERVENÇÕES', 181, y + 31.5, { align: 'center' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(3, 105, 161); // Sky blue
+  doc.text(`${matchingFolhas.length} FS`, 181, y + 36.5, { align: 'center' });
+
+  // 3. Section Title: HISTÓRICO DE INTERVENÇÕES
+  y = 92;
+  doc.setFillColor(15, 23, 42); // Navy
+  doc.rect(12, y, 4, 10, 'F');
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('HISTÓRICO CRONOLÓGICO DE INTERVENÇÕES', 20, y + 7);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Total de assistência registada: ${totalLaborHours.toFixed(1)}h`, 198, y + 7, { align: 'right' });
+
+  // 4. Table of Interventions
+  const tableData = matchingFolhas.map((f, idx) => {
+    const dataStr = formatDate(f.dataConclusao || f.data);
+    const numStr = f.numero || `FS-${idx + 1}`;
+    const tipoStr = f.tipo || 'Oficina';
+    const statusStr = (f.status || 'Concluído').replace(/^[A-Z0-9\s-]+-\s*/, '');
+    const kmsStr = f.kmsAtuais ? `${Number(f.kmsAtuais).toLocaleString()} km` : '-';
+    const horasStr = f.horasAtuais ? `${f.horasAtuais}h` : '';
+    const odoStr = kmsStr !== '-' && horasStr ? `${kmsStr}\n${horasStr}` : kmsStr !== '-' ? kmsStr : horasStr || '-';
+    const trabStr = f.anomalias || (f.servicos && f.servicos.length > 0 ? f.servicos.map(s => s.descricao).join('\n') : 'Manutenção / Revisão periódica');
+    const pecasStr = f.pecas && f.pecas.length > 0 ? f.pecas.map(p => `${p.quantidade || 1}x ${p.designacao || p.descricao}`).join(', ') : '-';
+    const tecStr = f.tecnico || f.tecnicoPlaneado || '-';
+
+    return [
+      dataStr,
+      numStr,
+      tipoStr,
+      odoStr,
+      trabStr,
+      pecasStr,
+      tecStr,
+      statusStr
+    ];
+  });
+
+  runAutoTable({
+    startY: y + 13,
+    head: [['Data', 'Nº Folha', 'Tipo', 'Kms / Horas', 'Trabalhos Executados', 'Peças / Materiais Aplicados', 'Téc.', 'Estado']],
+    body: tableData.length > 0 ? tableData : [['-', '-', '-', '-', 'Nenhuma intervenção registada.', '-', '-', '-']],
+    theme: 'grid',
+    styles: {
+      fontSize: 7,
+      cellPadding: 2.2,
+      overflow: 'linebreak',
+      textColor: [30, 41, 59]
+    },
+    headStyles: {
+      fillColor: [11, 21, 40],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7
+    },
+    columnStyles: {
+      0: { cellWidth: 18, halign: 'center' },
+      1: { cellWidth: 18, fontStyle: 'bold', halign: 'center', textColor: [3, 105, 161] },
+      2: { cellWidth: 18 },
+      3: { cellWidth: 20, halign: 'center', font: 'courier' },
+      4: { cellWidth: 46 },
+      5: { cellWidth: 40 },
+      6: { cellWidth: 12, halign: 'center' },
+      7: { cellWidth: 16, halign: 'center', fontStyle: 'bold' }
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
+    margin: { left: 12, right: 12 }
+  });
+
+  let finalY = (doc as any).lastAutoTable?.finalY || 200;
+
+  // 5. Consolidated Parts Table (if parts exist)
+  if (partsList.length > 0) {
+    if (finalY > 230) {
+      doc.addPage();
+      finalY = 20;
+    } else {
+      finalY += 8;
+    }
+
+    doc.setFillColor(15, 23, 42); // Navy
+    doc.rect(12, finalY, 4, 8, 'F');
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('PEÇAS & COMPONENTES APLICADOS NO VEÍCULO (RESUMO CONSOLIDADO)', 20, finalY + 6);
+
+    const partsTableData = partsList.map(item => [
+      item.ref,
+      item.desc,
+      String(item.totalQty),
+      item.lastDate,
+      item.lastFolha
+    ]);
+
+    runAutoTable({
+      startY: finalY + 10,
+      head: [['Referência', 'Designação da Peça', 'Qtd Total', 'Última Substituição', 'Nº Folha']],
+      body: partsTableData,
+      theme: 'grid',
+      styles: {
+        fontSize: 7,
+        cellPadding: 2,
+        overflow: 'linebreak',
+        textColor: [30, 41, 59]
+      },
+      headStyles: {
+        fillColor: [30, 41, 59],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7
+      },
+      columnStyles: {
+        0: { cellWidth: 35, font: 'courier', fontStyle: 'bold' },
+        1: { cellWidth: 85 },
+        2: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+        3: { cellWidth: 26, halign: 'center' },
+        4: { cellWidth: 20, halign: 'center', fontStyle: 'bold', textColor: [3, 105, 161] }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      margin: { left: 12, right: 12 }
+    });
+  }
+
+  // 6. Executive Footer on all pages
+  const totalPages = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    const footerY = 287;
+    const textY = 292;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, footerY, 210, 10, 'F');
+
+    doc.setFillColor(16, 185, 129); // Emerald accent line
+    doc.rect(0, footerY, 210, 0.8, 'F');
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRAUMP', 12, textY);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(203, 213, 225);
+    doc.text(' • Oficina HP Gestão & Frotas', 26, textY);
+
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      `Passaporte Técnico • Viatura: ${equipamento.matricula || ''} (${equipamento.marca || ''} ${equipamento.modelo || ''})`,
+      105,
+      textY,
+      { align: 'center' }
+    );
+
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Página ${i} de ${totalPages}`, 198, textY, { align: 'right' });
+  }
+
+  return doc;
+}
+
 
