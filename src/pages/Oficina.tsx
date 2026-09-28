@@ -2277,6 +2277,44 @@ export const Oficina: React.FC<OficinaProps> = ({
                   {copyLinkFeedback || 'Copiar Link'}
                 </button>
 
+                {/* Botão Gerar & Gravar PDF no PC */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const emp = empresas.find(e => e.id === editingFolha.empresaId);
+                    const eq = equipamentos.find(e => e.id === editingFolha.equipamentoId || (editingFolha.matricula && e.matricula.toUpperCase() === editingFolha.matricula.toUpperCase()));
+                    generateFolhaServicoPDF(editingFolha as FolhaServico, emp, eq);
+                  }}
+                  className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  title="Gerar e descarregar documento PDF oficial no computador"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-hp-400" />
+                  Gerar PDF
+                </button>
+
+                {/* Botão Enviar por Email */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const emp = empresas.find(e => e.id === editingFolha.empresaId);
+                    handleSendFolhaEmail(editingFolha as FolhaServico, emp);
+                  }}
+                  disabled={sendingEmailFolhaId === editingFolha.id}
+                  className={`py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border ${
+                    sendingEmailFolhaId === editingFolha.id
+                      ? 'bg-sky-950/70 text-sky-400 border-sky-500/40 animate-pulse'
+                      : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border-sky-500/40'
+                  }`}
+                  title="Enviar resumo da folha e PDF em anexo para o seu email e hugo@grau-maquinaria.com"
+                >
+                  {sendingEmailFolhaId === editingFolha.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                  ) : (
+                    <Mail className="w-3.5 h-3.5" />
+                  )}
+                  <span>{sendingEmailFolhaId === editingFolha.id ? 'A enviar...' : 'Enviar por Email'}</span>
+                </button>
+
                 {hasAdicionais && (
                   <button
                     type="button"
@@ -3907,6 +3945,44 @@ export const Oficina: React.FC<OficinaProps> = ({
                     Gerar Orçamento de Adicionais
                   </button>
                 )}
+
+                {/* Botão Gerar & Gravar PDF no PC */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const emp = empresas.find(e => e.id === editingFolha.empresaId);
+                    const eq = equipamentos.find(e => e.id === editingFolha.equipamentoId || (editingFolha.matricula && e.matricula.toUpperCase() === editingFolha.matricula.toUpperCase()));
+                    generateFolhaServicoPDF(editingFolha as FolhaServico, emp, eq);
+                  }}
+                  className="py-2 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  title="Gerar e descarregar documento PDF oficial no computador"
+                >
+                  <FileDown className="w-4 h-4 text-hp-400" />
+                  Gerar PDF
+                </button>
+
+                {/* Botão Enviar por Email */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const emp = empresas.find(e => e.id === editingFolha.empresaId);
+                    handleSendFolhaEmail(editingFolha as FolhaServico, emp);
+                  }}
+                  disabled={sendingEmailFolhaId === editingFolha.id}
+                  className={`py-2 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border ${
+                    sendingEmailFolhaId === editingFolha.id
+                      ? 'bg-sky-950/70 text-sky-400 border-sky-500/40 animate-pulse'
+                      : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border-sky-500/40'
+                  }`}
+                  title="Enviar resumo da folha e PDF em anexo para o seu email e hugo@grau-maquinaria.com"
+                >
+                  {sendingEmailFolhaId === editingFolha.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                  ) : (
+                    <Mail className="w-4 h-4" />
+                  )}
+                  <span>{sendingEmailFolhaId === editingFolha.id ? 'A enviar...' : 'Enviar por Email'}</span>
+                </button>
 
                 <button
                   type="button"

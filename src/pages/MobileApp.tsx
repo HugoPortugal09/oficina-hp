@@ -68,7 +68,7 @@ import {
   analyzeInternalNotesWithOllama,
   type AiFolhaGenerationResult
 } from '../services/ollamaService';
-import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendNovoContactoEmail } from '../services/emailService';
+import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendNovoContactoEmail, sendFolhaServicoEmail } from '../services/emailService';
 import { estimateDistanceKm, getGoogleMapsDirectionsUrl } from '../services/distanceService';
 import type {
   FolhaServico,
@@ -203,6 +203,35 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       }).catch(() => {
         setCopyLinkFeedback('Erro ao copiar');
       });
+    }
+  };
+
+  const [isSendingFolhaEmail, setIsSendingFolhaEmail] = useState(false);
+
+  const handleSendMobileFolhaEmail = async (folha: FolhaServico) => {
+    setIsSendingFolhaEmail(true);
+    const emp = empresas.find(e => e.id === folha.empresaId);
+    const eq = equipamentos.find(e => e.id === folha.equipamentoId || (folha.matricula && e.matricula.toUpperCase() === folha.matricula.toUpperCase()));
+    const userEmail = currentUser?.email || 'o seu email';
+    setSaveBanner(`A enviar Folha ${folha.numero} por email para ${userEmail} e hugo@grau-maquinaria.com...`);
+    try {
+      const res = await sendFolhaServicoEmail({
+        folha,
+        empresa: emp,
+        equipamento: eq,
+        currentUser
+      });
+      if (res.success) {
+        setSaveBanner(`Folha ${folha.numero} enviada com sucesso para: ${res.recipients.join(', ')}`);
+      } else {
+        setSaveBanner(`Não foi possível enviar o email: ${res.message}`);
+      }
+      setTimeout(() => setSaveBanner(null), 8000);
+    } catch (err: any) {
+      setSaveBanner(`Erro ao enviar email: ${err?.message || err}`);
+      setTimeout(() => setSaveBanner(null), 6000);
+    } finally {
+      setIsSendingFolhaEmail(false);
     }
   };
 
@@ -1730,7 +1759,36 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 <ArrowLeft className="w-4 h-4" /> Voltar à Lista
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => generateFolhaServicoPDF(selectedFolha, empresas.find(e => e.id === selectedFolha.empresaId))}
+                  className="py-2 px-3 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  title="Gerar e descarregar documento PDF oficial no telemóvel"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-hp-400" />
+                  <span>PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendMobileFolhaEmail(selectedFolha)}
+                  disabled={isSendingFolhaEmail}
+                  className={`py-2 px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border ${
+                    isSendingFolhaEmail
+                      ? 'bg-sky-950 text-sky-400 border-sky-500/40 animate-pulse'
+                      : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border-sky-500/40'
+                  }`}
+                  title="Enviar resumo da folha e PDF em anexo para o seu email e hugo@grau-maquinaria.com"
+                >
+                  {isSendingFolhaEmail ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                  ) : (
+                    <Mail className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isSendingFolhaEmail ? 'A enviar...' : 'Email'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => handleCopyMobileShareLink(selectedFolha)}
@@ -3147,18 +3205,41 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveSelectedFolha}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-hp-600 to-indigo-600 hover:from-hp-500 hover:to-indigo-500 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-hp-600/30 active:scale-[0.99] transition-all"
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-hp-600 to-indigo-600 hover:from-hp-500 hover:to-indigo-500 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-hp-600/30 active:scale-[0.99] transition-all cursor-pointer"
                 >
                   <Check className="w-5 h-5 stroke-[2.5]" /> Guardar Alterações da Folha
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => generateFolhaServicoPDF(selectedFolha, empresas.find(e => e.id === selectedFolha.empresaId))}
-                  className="w-full py-3 rounded-2xl bg-slate-950 hover:bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center gap-2 border border-slate-800 transition-all"
-                >
-                  <FileDown className="w-4 h-4 text-hp-400" /> Descarregar PDF da Folha
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => generateFolhaServicoPDF(selectedFolha, empresas.find(e => e.id === selectedFolha.empresaId))}
+                    className="w-full py-3 px-3 rounded-2xl bg-slate-950 hover:bg-slate-800 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-slate-800 transition-all shadow-sm cursor-pointer"
+                    title="Gerar e descarregar documento PDF oficial no telemóvel"
+                  >
+                    <FileDown className="w-4 h-4 text-hp-400" />
+                    <span>Descarregar PDF da Folha</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSendMobileFolhaEmail(selectedFolha)}
+                    disabled={isSendingFolhaEmail}
+                    className={`w-full py-3 px-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 border transition-all shadow-sm cursor-pointer ${
+                      isSendingFolhaEmail
+                        ? 'bg-sky-950 text-sky-400 border-sky-500/40 animate-pulse'
+                        : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border-sky-500/40'
+                    }`}
+                    title="Enviar resumo da folha e PDF em anexo para o seu email e hugo@grau-maquinaria.com"
+                  >
+                    {isSendingFolhaEmail ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                    ) : (
+                      <Mail className="w-4 h-4 text-sky-400" />
+                    )}
+                    <span>{isSendingFolhaEmail ? 'A enviar email...' : 'Enviar Resumo & PDF por Email'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

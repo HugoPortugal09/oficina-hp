@@ -1425,18 +1425,28 @@ export async function sendFolhaServicoEmail(payload: FolhaServicoEmailPayload): 
   
   if (currentUser?.email && currentUser.email.includes('@')) {
     emailsSet.add(currentUser.email.trim().toLowerCase());
+  } else {
+    try {
+      const savedUserId = localStorage.getItem('oficina_hp_session_user_id') || localStorage.getItem('oficina_hp_active_user_id');
+      if (savedUserId) {
+        const users = db.get<UserProfile>(STORAGE_KEYS.UTILIZADORES) || USERS;
+        const found = users.find(u => u.id === savedUserId || (u.email && u.email.toLowerCase() === savedUserId.toLowerCase()));
+        if (found?.email && found.email.includes('@')) {
+          emailsSet.add(found.email.trim().toLowerCase());
+        }
+      }
+    } catch {}
   }
 
-  let adminEmail = 'hugo@grau-maquinaria.com';
+  // Sempre adicionar hugo@grau-maquinaria.com
+  emailsSet.add('hugo@grau-maquinaria.com');
+
   try {
     const config = db.getConfig();
     if (config.emailDestinatarioPlaneamento && config.emailDestinatarioPlaneamento.includes('@')) {
-      adminEmail = config.emailDestinatarioPlaneamento.trim().toLowerCase();
+      emailsSet.add(config.emailDestinatarioPlaneamento.trim().toLowerCase());
     }
   } catch {}
-
-  emailsSet.add(adminEmail);
-  emailsSet.add('hugo@grau-maquinaria.com');
 
   const recipients = Array.from(emailsSet).filter(e => e && e.includes('@'));
 
