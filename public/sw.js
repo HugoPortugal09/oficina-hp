@@ -1,39 +1,19 @@
-// Oficina HP - Service Worker v1.0.0
-const CACHE_NAME = 'oficina-hp-cache-v1';
-const OFFLINE_URL = '/';
+// Oficina HP - Service Worker v2.0.0 (Safe Network-First & Auto-Recovery)
+const CACHE_NAME = 'oficina-hp-v2';
 
-const PRECACHE_ASSETS = [
-  '/',
-  '/mobile',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/favicon.svg',
-  '/grau_logo.png',
-  '/pwa-192x192.png',
-  '/pwa-512x512.png',
-  '/apple-touch-icon.png'
-];
-
-// 1. Install event: Pre-cache shell assets
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
-        console.warn('[SW] Non-critical precache warning:', err);
-      });
-    }).then(() => self.skipWaiting())
-  );
+  // Activate immediately without waiting for old tabs to close
+  self.skipWaiting();
 });
 
-// 2. Activate event: Clean up previous caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('[SW] Clearing old cache:', cacheName);
-            return caches.delete(cacheName);
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('[SW] Clearing old cache version:', key);
+            return caches.delete(key);
           }
         })
       );
@@ -41,62 +21,57 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Fetch event: Stale-While-Revalidate with Navigation Fallback
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Skip non-GET requests and API calls (PocketBase, external APIs)
-  if (req.method !== 'GET') return;
-  if (url.pathname.startsWith('/api/') || url.port === '8090' || url.protocol.startsWith('chrome-extension:')) {
-    return;
-  }
+  // Only handle GET requests from the same origin
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // A. Navigation (HTML pages)
+  // Never touch backend APIs
+  if (url.pathname.startsWith('/api/') || url.port === '8090') return;
+
+  // 1. Navigation (HTML pages): ALWAYS Network-First
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match(OFFLINE_URL) || await cache.match('/index.html');
-        return cached || new Response('Offline - Oficina HP', {
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        });
-      })
-    );
-    return;
-  }
-
-  // B. Static Assets (CSS, JS, Fonts, Images)
-  if (
-    url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|webp|woff2?|ttf|ico)$/) ||
-    url.hostname.includes('fonts.googleapis.com') ||
-    url.hostname.includes('fonts.gstatic.com')
-  ) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(req);
-        const fetchPromise = fetch(req).then((networkRes) => {
-          if (networkRes && networkRes.status === 200) {
-            cache.put(req, networkRes.clone());
+      fetch(req)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
           }
-          return networkRes;
-        }).catch(() => null);
-
-        return cached || (await fetchPromise);
-      })
+          return response;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match(req) || await cache.match('/') || await cache.match('/index.html');
+          return cached || fetch(req);
+        })
     );
     return;
   }
 
-  // C. Fallback default
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      return cached || fetch(req);
-    })
-  );
+  // 2. Application Chunks & Assets: Network-First with safe fallback
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      fetch(req)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(req);
+          if (cached) return cached;
+          return fetch(req);
+        })
+    );
+    return;
+  }
 });
 
-// Listen for skip waiting message from app client
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();

@@ -31,7 +31,8 @@ const MIME_TYPES = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
-  '.pdf': 'application/pdf'
+  '.pdf': 'application/pdf',
+  '.webmanifest': 'application/manifest+json; charset=UTF-8'
 };
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'hp_app_sec_98fbc71a3d42';
@@ -186,9 +187,15 @@ const server = http.createServer(async (req, res) => {
         res.end('500 Internal Server Error');
         return;
       }
+
+      const isNoCacheFile = ext === '.html' || pathname === '/sw.js' || pathname.endsWith('sw.js') || pathname === '/manifest.webmanifest' || pathname.endsWith('manifest.webmanifest');
+      const cacheControl = isNoCacheFile
+        ? 'no-cache, no-store, must-revalidate, max-age=0'
+        : (pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=86400');
+
       res.writeHead(200, {
         'Content-Type': contentType,
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000'
+        'Cache-Control': cacheControl
       });
       res.end(content);
     });
