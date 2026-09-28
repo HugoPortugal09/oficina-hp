@@ -2922,19 +2922,66 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
       }
 
       // 3. Serviços concluídos ou com data
-      const mainDate = formatDateToInput(f.dataConclusao || f.dataEntradaOficina || f.data);
-      if (weekIsoStrings.has(mainDate)) {
-        const entry = getOrCreate(mainDate);
-        entry.types.add(f.tipo || 'Oficina');
-        entry.horas = Math.max(entry.horas, totalHoras);
-        entry.pecas = Math.max(entry.pecas, countPecas);
-        if (f.tecnicoPlaneado) entry.tecnicos.add(cleanPersonName(f.tecnicoPlaneado));
-        f.servicos?.forEach(s => { if (s.tecnico) entry.tecnicos.add(cleanPersonName(s.tecnico)); });
-        f.servicosAdicionais?.forEach(s => { if (s.tecnico) entry.tecnicos.add(cleanPersonName(s.tecnico)); });
-        const desc = (f.anomalias || f.servicos?.[0]?.descricao || f.notasInternas || '').trim();
-        if (desc && !entry.descriptions.includes(desc)) {
-          entry.descriptions.push(desc);
+      const completedServicos = [
+        ...(f.servicos?.filter(s => s.concluido) || []),
+        ...(f.servicosAdicionais?.filter(s => s.concluido) || [])
+      ];
+      const completedPecas = [
+        ...(f.pecas?.filter(p => p.concluido) || []),
+        ...(f.pecasAdicionais?.filter(p => p.concluido) || [])
+      ];
+      const hasChecked = completedServicos.length > 0 || completedPecas.length > 0 || isConcluido;
+
+      if (hasChecked) {
+        const datesMap = new Map<string, { servicos: typeof completedServicos; pecas: typeof completedPecas }>();
+        if (completedServicos.length > 0 || completedPecas.length > 0) {
+          completedServicos.forEach(s => {
+            const d = formatDateToInput(s.dataConclusao) || formatDateToInput(f.dataConclusao || f.data);
+            if (d) {
+              if (!datesMap.has(d)) datesMap.set(d, { servicos: [], pecas: [] });
+              datesMap.get(d)!.servicos.push(s);
+            }
+          });
+          completedPecas.forEach(p => {
+            const d = formatDateToInput(p.dataConclusao) || formatDateToInput(f.dataConclusao || f.data);
+            if (d) {
+              if (!datesMap.has(d)) datesMap.set(d, { servicos: [], pecas: [] });
+              datesMap.get(d)!.pecas.push(p);
+            }
+          });
+        } else if (isConcluido) {
+          const d = formatDateToInput(f.dataConclusao || f.dataPlaneada || f.dataEntradaOficina || f.data);
+          if (d) datesMap.set(d, { servicos: [], pecas: [] });
         }
+
+        datesMap.forEach((group, dateKey) => {
+          if (weekIsoStrings.has(dateKey)) {
+            const entry = getOrCreate(dateKey);
+            entry.types.add(f.tipo || 'Oficina');
+            const groupHoras = group.servicos.reduce((acc, s) => acc + (s.horas || 0), 0) || (isConcluido ? totalHoras : 0);
+            const groupCountServicos = group.servicos.length || (isConcluido ? countServicos : 0);
+            const groupCountPecas = group.pecas.reduce((acc, p) => acc + (p.qtd || 1), 0) || (isConcluido ? countPecas : 0);
+
+            entry.horas = Math.max(entry.horas, groupHoras);
+            entry.pecas = Math.max(entry.pecas, groupCountPecas);
+            if (isConcluido || groupCountServicos > 0 || groupCountPecas > 0) {
+              entry.concluido = true;
+            }
+
+            if (f.tecnicoPlaneado) entry.tecnicos.add(cleanPersonName(f.tecnicoPlaneado));
+            group.servicos.forEach(s => {
+              if (s.tecnico) entry.tecnicos.add(cleanPersonName(s.tecnico));
+              if (s.descricao && !entry.descriptions.includes(s.descricao)) entry.descriptions.push(s.descricao);
+            });
+            f.servicosAdicionais?.forEach(s => {
+              if (s.tecnico) entry.tecnicos.add(cleanPersonName(s.tecnico));
+            });
+            const desc = (f.anomalias || f.notasInternas || '').trim();
+            if (desc && entry.descriptions.length === 0) {
+              entry.descriptions.push(desc);
+            }
+          }
+        });
       }
     });
 
