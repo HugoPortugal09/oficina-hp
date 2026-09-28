@@ -86,7 +86,7 @@ export const PassaporteTecnicoModal: React.FC<PassaporteTecnicoModalProps> = ({
   const totalLaborHours = useMemo(() => {
     return matchingFolhasNewest.reduce((acc, f) => {
       if (Array.isArray(f.servicos)) {
-        return acc + f.servicos.reduce((sAcc, s) => sAcc + (Number(s.tempo) || 0), 0);
+        return acc + f.servicos.reduce((sAcc, s) => sAcc + (Number((s as any).tempo ?? s.horas) || 0), 0);
       }
       return acc;
     }, 0);
@@ -106,10 +106,10 @@ export const PassaporteTecnicoModal: React.FC<PassaporteTecnicoModalProps> = ({
     matchingFolhasNewest.forEach(f => {
       if (Array.isArray(f.pecas)) {
         f.pecas.forEach(p => {
-          const ref = (p.referencia || p.codigo || '').trim();
-          const desc = (p.designacao || p.descricao || 'Peça').trim();
+          const ref = (p.referencia || (p as any).codigo || '').trim();
+          const desc = (p.designacao || (p as any).descricao || 'Peça').trim();
           const key = `${ref}__${desc}`.toLowerCase();
-          const qty = Number(p.quantidade) || 1;
+          const qty = Number(p.qtd ?? (p as any).quantidade) || 1;
           const dateStr = formatDate(f.dataConclusao || f.data);
           const folhaNum = f.numero || '';
 
@@ -148,11 +148,11 @@ export const PassaporteTecnicoModal: React.FC<PassaporteTecnicoModalProps> = ({
   // Next revision recommendation calculation
   const nextRevision = useMemo(() => {
     // Check if the latest folha specifies next revision
-    const latestFolhaWithRev = matchingFolhasNewest.find(f => f.proximaRevisaoKms || f.proximaRevisaoHoras || f.proximaRevisaoData);
+    const latestFolhaWithRev = matchingFolhasNewest.find(f => f.previsaoRevisaoKms || f.previsaoRevisaoHoras || (f as any).proximaRevisaoKms || (f as any).proximaRevisaoHoras || (f as any).proximaRevisaoData);
     if (latestFolhaWithRev) {
-      const targetKms = Number(latestFolhaWithRev.proximaRevisaoKms) || 0;
-      const targetHoras = Number(latestFolhaWithRev.proximaRevisaoHoras) || 0;
-      const targetData = latestFolhaWithRev.proximaRevisaoData;
+      const targetKms = Number(latestFolhaWithRev.previsaoRevisaoKms || (latestFolhaWithRev as any).proximaRevisaoKms) || 0;
+      const targetHoras = Number(latestFolhaWithRev.previsaoRevisaoHoras || (latestFolhaWithRev as any).proximaRevisaoHoras) || 0;
+      const targetData = (latestFolhaWithRev as any).proximaRevisaoData;
       const kmsRemaining = targetKms > 0 ? targetKms - currentKms : null;
       const horasRemaining = targetHoras > 0 ? targetHoras - currentHoras : null;
 
@@ -249,7 +249,7 @@ export const PassaporteTecnicoModal: React.FC<PassaporteTecnicoModalProps> = ({
               <h2 className="text-base sm:text-lg font-black text-white mt-1 truncate">
                 {equipamento.marca} {equipamento.modelo}
                 <span className="text-xs font-normal text-slate-400 font-mono ml-2">
-                  (Nº Série: {equipamento.numeroSerie || 'N/D'})
+                  (Nº Série: {equipamento.nSerie || (equipamento as any).numeroSerie || 'N/D'})
                 </span>
               </h2>
             </div>
@@ -524,10 +524,10 @@ export const PassaporteTecnicoModal: React.FC<PassaporteTecnicoModalProps> = ({
                               </div>
                             ) : null}
 
-                            {(f.tecnico || f.tecnicoPlaneado) && (
+                            {((f as any).tecnico || f.tecnicoPlaneado || (f.servicos && f.servicos.find(s => s.tecnico)?.tecnico)) && (
                               <div className="flex items-center gap-1 ml-auto text-slate-300 font-sans">
                                 <User className="w-3 h-3 text-hp-400" />
-                                <span className="text-[11px]">Técnico: <b>{f.tecnico || f.tecnicoPlaneado}</b></span>
+                                <span className="text-[11px]">Técnico: <b>{(f as any).tecnico || f.tecnicoPlaneado || (f.servicos && f.servicos.find(s => s.tecnico)?.tecnico)}</b></span>
                               </div>
                             )}
                           </div>
@@ -549,8 +549,8 @@ export const PassaporteTecnicoModal: React.FC<PassaporteTecnicoModalProps> = ({
                                     key={pIdx}
                                     className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700/80 text-[11px] text-slate-300 flex items-center gap-1"
                                   >
-                                    <b className="text-hp-400 font-mono">{p.quantidade || 1}x</b>
-                                    <span>{p.designacao || p.descricao}</span>
+                                    <b className="text-hp-400 font-mono">{p.qtd ?? (p as any).quantidade ?? 1}x</b>
+                                    <span>{p.designacao || (p as any).descricao || 'Peça'}</span>
                                     {p.referencia && (
                                       <span className="font-mono text-[9px] text-slate-500">({p.referencia})</span>
                                     )}

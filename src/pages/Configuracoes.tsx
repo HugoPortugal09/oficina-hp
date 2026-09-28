@@ -99,6 +99,24 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     return () => window.removeEventListener('oficina_hp_db_changed', handleDbChanged);
   }, []);
 
+  const getAppBaseUrl = () => {
+    let base = (config.appPublicUrl || '').trim().replace(/\/+$/, '');
+    if (!base && typeof window !== 'undefined' && window.location.origin) {
+      base = window.location.origin;
+    }
+    return base || 'https://oficina-hp.up.railway.app';
+  };
+
+  const buildConviteUrl = (token: string) => {
+    return `${getAppBaseUrl()}/?convite=${token}`;
+  };
+
+  const getWhatsAppShareUrl = (conviteUrl: string, email: string = '') => {
+    const emailInfo = email ? ` (${email})` : '';
+    const text = `Olá! Segue o convite de acesso à equipa da Oficina HP${emailInfo}:\n${conviteUrl}\n\nClica no link para definires o teu nome e a tua palavra-passe.`;
+    return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  };
+
   const handleOpenInviteModal = () => {
     setInviteEmail('');
     setInviteIniciais('');
@@ -135,24 +153,6 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     }
 
     setIsSendingInvite(true);
-
-  const getAppBaseUrl = () => {
-    let base = (config.appPublicUrl || '').trim().replace(/\/+$/, '');
-    if (!base && typeof window !== 'undefined' && window.location.origin) {
-      base = window.location.origin;
-    }
-    return base || 'https://oficina-hp.up.railway.app';
-  };
-
-  const buildConviteUrl = (token: string) => {
-    return `${getAppBaseUrl()}/?convite=${token}`;
-  };
-
-  const getWhatsAppShareUrl = (conviteUrl: string, email: string = '') => {
-    const emailInfo = email ? ` (${email})` : '';
-    const text = `Olá! Segue o convite de acesso à equipa da Oficina HP${emailInfo}:\n${conviteUrl}\n\nClica no link para definires o teu nome e a tua palavra-passe.`;
-    return `https://wa.me/?text=${encodeURIComponent(text)}`;
-  };
 
     try {
       const token = db.generateId('inv');

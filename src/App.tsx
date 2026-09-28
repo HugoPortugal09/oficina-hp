@@ -136,7 +136,7 @@ export default function App() {
     }
   };
 
-  const handleCreateNewServiceDirect = (equip?: Equipamento) => {
+  const handleCreateNewServiceDirect = (equip?: any) => {
     if (equip) {
       const newFs: FolhaServico = {
       id: db.generateId('fs'),

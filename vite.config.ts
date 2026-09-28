@@ -18,7 +18,8 @@ export default defineConfig({
           req.on('data', chunk => { body += chunk; });
           req.on('end', async () => {
             try {
-              const nodemailer = await import('nodemailer');
+              // @ts-ignore
+              const nodemailer = (await import('nodemailer')) as any;
               const payload = JSON.parse(body);
               const transporter = nodemailer.default.createTransport({
                 service: 'gmail',

@@ -439,6 +439,7 @@ export interface UserInvitation {
   token: string;
   criadoEm: string;
   criadoPor?: string;
+  cargo?: string;
   status: 'pendente' | 'aceite' | 'cancelado';
 }
 

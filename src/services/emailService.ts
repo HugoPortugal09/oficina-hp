@@ -1937,7 +1937,7 @@ export async function sendVisitaEmail(payload: VisitaEmailPayload): Promise<{
 
               <!-- Informacao de Registo -->
               <div style="font-size: 12px; color: #0f172a; border-top: 1px solid #cbd5e1; padding-top: 12px;">
-                Agendado por: <strong style="color: #0f172a;">${currentUser?.nome || visita.tecnico}</strong> ${currentUser?.email ? `(${currentUser.email})` : ''} &bull; Data de Registo: ${formatDate(visita.dataCriacao || new Date())}
+                Agendado por: <strong style="color: #0f172a;">${currentUser?.nome || visita.tecnico}</strong> ${currentUser?.email ? `(${currentUser.email})` : ''} &bull; Data de Registo: ${formatDate(visita.dataCriacao || new Date().toISOString())}
               </div>
 
             </td>
@@ -2579,7 +2579,7 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
       const items: PlaneamentoSemanalDayItem[] = [
         ...dayFolhas.map((f): PlaneamentoSemanalDayItem => {
           const emp = empresas.find(e => e.id === f.empresaId);
-          const local = f.localizacao?.trim() || f.moradaIntervencao?.trim() || f.localIntervencao?.trim() || '';
+          const local = f.localizacao?.trim() || (f as any).moradaIntervencao?.trim() || (f as any).localIntervencao?.trim() || '';
           const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim();
           const anomalia = (f.anomalias || f.notasInternas || '').trim();
 

@@ -43,6 +43,7 @@ import {
   FolderOpen,
   Compass,
   PackageCheck,
+  Loader2,
   GraduationCap,
   Handshake,
   ShieldCheck,
@@ -2899,20 +2900,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                               {p.concluido && <Check className="w-4 h-4" />}
                             </button>
 
-                            <div className="flex-1 space-y-1">
-                              <SearchablePartSelect
-                                value={p.pecaId}
-                                referencia={p.referencia}
-                                isLivre={p.isLivre}
-                                catalogo={catalogoPecas}
-                                onSelect={part => handleSelectCatalogPart(part, p.id, true)}
+                            <div className="grid grid-cols-3 gap-1.5 flex-1">
+                              <input
+                                type="text"
+                                placeholder="Ref..."
+                                value={p.referencia || ''}
+                                onChange={e => handleUpdatePartInSelected(p.id, 'referencia', e.target.value, true)}
+                                className="py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] text-amber-400 font-mono font-bold"
                               />
                               <input
                                 type="text"
-                                value={p.designacao}
                                 placeholder="Designação da peça adicional..."
+                                value={p.designacao}
                                 onChange={e => handleUpdatePartInSelected(p.id, 'designacao', e.target.value, true)}
-                                className={`w-full bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none ${
+                                className={`col-span-2 py-1.5 px-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white ${
                                   p.concluido ? 'line-through text-slate-400' : ''
                                 }`}
                               />
@@ -6195,15 +6196,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       {/* Modal Passaporte Técnico do Veículo */}
       {passaporteModalEquip && (
         <PassaporteTecnicoModal
+          isOpen={!!passaporteModalEquip}
           equipamento={passaporteModalEquip}
           folhas={folhas}
-          empresa={empresas.find(e => e.id === passaporteModalEquip.empresaId)}
+          empresas={empresas}
           onClose={() => setPassaporteModalEquip(null)}
           onSelectFolha={(f) => {
             setPassaporteModalEquip(null);
             handleOpenMobileFolha(f);
           }}
-          onCreateNewService={handleCreateNewServiceFromPassaporte}
+          onCreateFolha={handleCreateNewServiceFromPassaporte}
         />
       )}
 

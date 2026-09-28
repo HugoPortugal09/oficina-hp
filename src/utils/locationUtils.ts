@@ -5,7 +5,7 @@ import type { FolhaServico } from '../types';
  */
 export function isGraumpLocation(folha?: Partial<FolhaServico> | null): boolean {
   if (!folha) return false;
-  const loc = `${folha.localizacao || ''} ${folha.moradaIntervencao || ''} ${folha.localIntervencao || ''}`.toUpperCase();
+  const loc = `${folha.localizacao || ''} ${(folha as any).moradaIntervencao || ''} ${(folha as any).localIntervencao || ''}`.toUpperCase();
   if (
     loc.includes('GRAUMP') ||
     loc.includes('VISTA ALEGRE') ||

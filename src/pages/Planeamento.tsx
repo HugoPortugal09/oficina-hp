@@ -574,7 +574,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
         const items: PlaneamentoSemanalDayItem[] = [
           ...dayFolhas.map((f): PlaneamentoSemanalDayItem => {
             const emp = empresas.find(e => e.id === f.empresaId);
-            const local = f.localizacao?.trim() || f.moradaIntervencao?.trim() || f.localIntervencao?.trim() || '';
+            const local = f.localizacao?.trim() || (f as any).moradaIntervencao?.trim() || (f as any).localIntervencao?.trim() || '';
             const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim();
             const anomalia = (f.anomalias || f.notasInternas || '').trim();
 

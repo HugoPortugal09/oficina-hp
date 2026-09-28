@@ -105,7 +105,7 @@ export const EmpresaValidationSchema = z.object({
 export function sanitizeFolhaServico<T extends Record<string, any>>(folha: T): T {
   if (!folha || typeof folha !== 'object') return folha;
 
-  const copy = { ...folha };
+  const copy: any = { ...folha };
 
   // 1. Higienizar matrícula
   if (typeof copy.matricula === 'string') {

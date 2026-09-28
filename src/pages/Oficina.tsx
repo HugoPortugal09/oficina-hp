@@ -865,7 +865,7 @@ export const Oficina: React.FC<OficinaProps> = ({
           ...prev,
           fotos: updated
         }));
-        uploadFolhaPhotos(editingFolha.id, editingFolha.numero, updated).catch(console.warn);
+        uploadFolhaPhotos(editingFolha.id || '', editingFolha.numero || '', updated).catch(console.warn);
       }
     } catch (err) {
       console.error('Erro ao carregar fotos:', err);
@@ -890,7 +890,7 @@ export const Oficina: React.FC<OficinaProps> = ({
           ...prev,
           fotos: updated
         }));
-        uploadFolhaPhotos(editingFolha.id, editingFolha.numero, updated).catch(console.warn);
+        uploadFolhaPhotos(editingFolha.id || '', editingFolha.numero || '', updated).catch(console.warn);
       }
     } catch (err) {
       console.error('Erro ao processar fotos de Entrega e Formação:', err);
@@ -906,7 +906,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       ...prev,
       fotos: updated
     }));
-    uploadFolhaPhotos(editingFolha.id, editingFolha.numero, updated).catch(console.warn);
+    uploadFolhaPhotos(editingFolha.id || '', editingFolha.numero || '', updated).catch(console.warn);
   };
 
   // Status Change with Duration Tracker
@@ -1049,9 +1049,7 @@ export const Oficina: React.FC<OficinaProps> = ({
         kmsAtuais: editingFolha.kmsAtuais || 0,
         horasAtuais: editingFolha.horasAtuais || 0,
         ano: new Date().getFullYear(),
-        tipo: 'Viatura',
-        estado: 'Operacional',
-        ativo: true
+        tipo: 'Viatura'
       };
       db.insert(STORAGE_KEYS.EQUIPAMENTOS, newEquip);
       targetEquip = newEquip;
@@ -1580,7 +1578,7 @@ export const Oficina: React.FC<OficinaProps> = ({
           e => e.id === f.equipamentoId || e.matricula.toUpperCase() === f.matricula.toUpperCase()
         );
 
-        let targetAddress = f.localizacao?.trim() || f.moradaIntervencao?.trim() || f.localIntervencao?.trim() || '';
+        let targetAddress = f.localizacao?.trim() || (f as any).moradaIntervencao?.trim() || (f as any).localIntervencao?.trim() || '';
         if (!targetAddress) {
           if (f.tipo === 'Oficina') {
             targetAddress = 'Oficina Principal (Albergaria-a-Velha)';
@@ -1611,7 +1609,7 @@ export const Oficina: React.FC<OficinaProps> = ({
           localidade: targetAddress || `${coords.cidade}, ${coords.distrito}`,
           distritoRegiao: `${coords.distrito} (${coords.regiao})`,
           distKm: `${distKmNum} Km`,
-          contacto: cli?.telemovel || cli?.telefone || emp?.telefone || emp?.email || '-'
+          contacto: cli?.telemovel || (cli as any)?.telefone || emp?.telefone || emp?.email || '-'
         };
       });
 

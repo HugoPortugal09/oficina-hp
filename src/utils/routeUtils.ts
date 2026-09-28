@@ -35,6 +35,8 @@ export function parseCurrentRoute(
   pathname: string = typeof window !== 'undefined' ? window.location.pathname : '/',
   search: string = typeof window !== 'undefined' ? window.location.search : ''
 ): ParsedRoute {
+  const searchParams = new URLSearchParams(search);
+  const queryFolha = searchParams.get('folha') || searchParams.get('fs') || searchParams.get('id');
   let conviteToken = searchParams.get('convite') || searchParams.get('token') || searchParams.get('inv');
 
   // Normalize path by stripping trailing slashes

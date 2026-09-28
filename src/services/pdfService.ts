@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, Cliente, ConfiguracaoOficina } from '../types';
 import { db, STORAGE_KEYS } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
-import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays } from '../utils/dateUtils';
+import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, parseDateToMs } from '../utils/dateUtils';
 import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
 export function createFolhaServicoPDFDoc(
@@ -409,8 +409,8 @@ export function createFolhaServicoPDFDoc(
 
   const rawRevKms = folha.previsaoRevisaoKms;
   const rawRevHoras = folha.previsaoRevisaoHoras;
-  const hasRevKms = rawRevKms !== undefined && rawRevKms !== null && rawRevKms !== '' && !isNaN(Number(rawRevKms)) && Number(rawRevKms) !== 0;
-  const hasRevHoras = rawRevHoras !== undefined && rawRevHoras !== null && rawRevHoras !== '' && !isNaN(Number(rawRevHoras)) && Number(rawRevHoras) !== 0;
+  const hasRevKms = rawRevKms !== undefined && rawRevKms !== null && String(rawRevKms) !== '' && !isNaN(Number(rawRevKms)) && Number(rawRevKms) !== 0;
+  const hasRevHoras = rawRevHoras !== undefined && rawRevHoras !== null && String(rawRevHoras) !== '' && !isNaN(Number(rawRevHoras)) && Number(rawRevHoras) !== 0;
 
   if (folha.tipo !== 'Validação e Preparação' && (hasRevKms || hasRevHoras)) {
     doc.setFontSize(8.5);
@@ -432,6 +432,12 @@ export function createFolhaServicoPDFDoc(
     curY += 5;
   }
 
+  const techName = cleanPersonName(
+    (folha.servicos && folha.servicos.find(s => s.tecnico)?.tecnico) ||
+    folha.tecnicoPlaneado ||
+    folha.criadoPor ||
+    'Grau Máquinas'
+  );
   const dataRegisto = formatDate(folha.data) || getTodayFormatted();
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
@@ -1285,8 +1291,8 @@ export interface TemposRespostaPDFConfig {
     folha: FolhaServico;
     empresaNome: string;
     isConcluido: boolean;
-    imobilizacao?: { days: number; text: string };
-    diasRequisicao?: { days: number; text: string };
+    imobilizacao?: { days: number; text: string } | null;
+    diasRequisicao?: { days: number; text: string } | null;
     isCritico: boolean;
   }>;
 }
@@ -1325,8 +1331,8 @@ export function generateTemposRespostaPDF(
     folha: FolhaServico;
     empresaNome: string;
     isConcluido: boolean;
-    imobilizacao?: { days: number; text: string };
-    diasRequisicao?: { days: number; text: string };
+    imobilizacao?: { days: number; text: string } | null;
+    diasRequisicao?: { days: number; text: string } | null;
     isCritico: boolean;
   }> = [];
 
@@ -1397,8 +1403,8 @@ export function generateTemposRespostaPDF(
         folha: f,
         empresaNome: emp?.nome || 'Cliente / Não especificado',
         isConcluido,
-        imobilizacao,
-        diasRequisicao,
+        imobilizacao: imobilizacao || undefined,
+        diasRequisicao: diasRequisicao || undefined,
         isCritico
       };
     }).sort((a, b) => {
@@ -2527,15 +2533,15 @@ export function generatePassaporteTecnicoPDF(
   matchingFolhas.forEach(f => {
     if (Array.isArray(f.servicos)) {
       f.servicos.forEach(s => {
-        totalLaborHours += Number(s.tempo) || 0;
+        totalLaborHours += Number((s as any).tempo ?? s.horas) || 0;
       });
     }
     if (Array.isArray(f.pecas)) {
       f.pecas.forEach(p => {
-        const ref = (p.referencia || p.codigo || '').trim();
-        const desc = (p.designacao || p.descricao || 'Peça').trim();
+        const ref = (p.referencia || (p as any).codigo || '').trim();
+        const desc = (p.designacao || (p as any).descricao || 'Peça').trim();
         const key = `${ref}__${desc}`.toLowerCase();
-        const qty = Number(p.quantidade) || 1;
+        const qty = Number(p.qtd ?? (p as any).quantidade) || 1;
         const dateStr = formatDate(f.dataConclusao || f.data);
         const folhaNum = f.numero || '';
 
@@ -2618,7 +2624,7 @@ export function generatePassaporteTecnicoPDF(
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text(`Nº Série / Chassi: ${equipamento.numeroSerie || 'Não especificado'}`, 16, y + 24);
+  doc.text(`Nº Série / Chassi: ${equipamento.nSerie || (equipamento as any).numeroSerie || 'Não especificado'}`, 16, y + 24);
   doc.text(`Tipo / Categoria: ${equipamento.tipo || 'Ligeiro'}`, 16, y + 29.5);
   if (equipamento.ano) {
     doc.text(`Ano de Fabrico: ${equipamento.ano}`, 16, y + 35);
@@ -2654,8 +2660,9 @@ export function generatePassaporteTecnicoPDF(
   if (empresa?.nif) {
     doc.text(`NIF: ${empresa.nif}`, 112, y + 20);
   }
-  if (empresa?.localidade || empresa?.cidade) {
-    doc.text(`Localidade: ${empresa.localidade || empresa.cidade}`, 112, y + 24.5);
+  const locStr = (empresa as any)?.localidade || (empresa as any)?.cidade || (empresa as any)?.morada || (empresa as any)?.moradaSede;
+  if (locStr) {
+    doc.text(`Localidade: ${locStr}`, 112, y + 24.5);
   }
 
   // 3 Mini-stats at bottom of right card
@@ -2714,8 +2721,8 @@ export function generatePassaporteTecnicoPDF(
     const horasStr = f.horasAtuais ? `${f.horasAtuais}h` : '';
     const odoStr = kmsStr !== '-' && horasStr ? `${kmsStr}\n${horasStr}` : kmsStr !== '-' ? kmsStr : horasStr || '-';
     const trabStr = f.anomalias || (f.servicos && f.servicos.length > 0 ? f.servicos.map(s => s.descricao).join('\n') : 'Manutenção / Revisão periódica');
-    const pecasStr = f.pecas && f.pecas.length > 0 ? f.pecas.map(p => `${p.quantidade || 1}x ${p.designacao || p.descricao}`).join(', ') : '-';
-    const tecStr = f.tecnico || f.tecnicoPlaneado || '-';
+    const pecasStr = f.pecas && f.pecas.length > 0 ? f.pecas.map(p => `${p.qtd ?? (p as any).quantidade ?? 1}x ${p.designacao || (p as any).descricao || 'Peça'}`).join(', ') : '-';
+    const tecStr = (f as any).tecnico || f.tecnicoPlaneado || (f.servicos && f.servicos.find(s => s.tecnico)?.tecnico) || '-';
 
     return [
       dataStr,
