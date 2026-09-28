@@ -19,19 +19,36 @@ import {
   PlusCircle,
   BellRing,
   Bot,
-  Timer
+  Timer,
+  RotateCcw
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
-import { db, STORAGE_KEYS } from '../services/dbService';
-import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail } from '../services/emailService';
+import { db, STORAGE_KEYS, INITIAL_AUTOMACOES } from '../services/dbService';
+import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail, sendWeeklyAtividadeSemanalEmail } from '../services/emailService';
 import type { AutomacaoItem, TipoAutomacao, FolhaServico, VisitaCliente, Empresa } from '../types';
 
 export const Automacoes: React.FC = () => {
   const [automacoes, setAutomacoes] = useState<AutomacaoItem[]>(() => {
     const list = db.get<AutomacaoItem>(STORAGE_KEYS.AUTOMACOES);
-    return list.length > 0 ? list : [];
+    if (!list || list.length === 0) {
+      db.save(STORAGE_KEYS.AUTOMACOES, INITIAL_AUTOMACOES);
+      return INITIAL_AUTOMACOES;
+    }
+    // Check if any default automations are missing and merge them
+    let changed = false;
+    const merged = [...list];
+    INITIAL_AUTOMACOES.forEach(initAuto => {
+      if (!merged.some(a => a.id === initAuto.id || a.tipo === initAuto.tipo)) {
+        merged.push(initAuto);
+        changed = true;
+      }
+    });
+    if (changed) {
+      db.save(STORAGE_KEYS.AUTOMACOES, merged);
+    }
+    return merged;
   });
 
   const [newEmailInputs, setNewEmailInputs] = useState<Record<string, string>>({});
@@ -47,7 +64,11 @@ export const Automacoes: React.FC = () => {
   useEffect(() => {
     const handleDbChange = () => {
       const list = db.get<AutomacaoItem>(STORAGE_KEYS.AUTOMACOES);
-      setAutomacoes(list);
+      if (list && list.length > 0) {
+        setAutomacoes(list);
+      } else {
+        setAutomacoes(INITIAL_AUTOMACOES);
+      }
     };
     window.addEventListener('oficina_hp_db_changed', handleDbChange);
     return () => window.removeEventListener('oficina_hp_db_changed', handleDbChange);
@@ -152,6 +173,25 @@ export const Automacoes: React.FC = () => {
           success: result.success,
           msg: result.message
         });
+      } else if (auto.tipo === 'email_atividade_semanal') {
+        const rawFolhas = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
+        const empresas = db.get<Empresa>(STORAGE_KEYS.EMPRESAS);
+
+        const result = await sendWeeklyAtividadeSemanalEmail({
+          destinatarios: auto.destinatarios,
+          folhas: rawFolhas,
+          empresas
+        });
+
+        const nowStr = `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const updated = automacoes.map(a => a.id === auto.id ? { ...a, ultimoDisparo: nowStr } : a);
+        saveList(updated);
+
+        setStatusFeedback({
+          id: auto.id,
+          success: result.success,
+          msg: result.message
+        });
       } else {
         await new Promise(r => setTimeout(r, 800));
         setStatusFeedback({
@@ -176,6 +216,25 @@ export const Automacoes: React.FC = () => {
     if (confirm('Tem a certeza que deseja eliminar esta automação?')) {
       const updated = automacoes.filter(a => a.id !== id);
       saveList(updated);
+    }
+  };
+
+  const handleRestoreDefaults = () => {
+    if (confirm('Deseja restaurar e sincronizar as automações predefinidas do sistema (Planeamento, Atividade Semanal, Tempos de Resposta A3, Alerta de Stock, etc.)?')) {
+      const currentList = db.get<AutomacaoItem>(STORAGE_KEYS.AUTOMACOES);
+      const merged = [...INITIAL_AUTOMACOES];
+      currentList.forEach(item => {
+        if (!merged.some(m => m.id === item.id || m.tipo === item.tipo)) {
+          merged.push(item);
+        }
+      });
+      saveList(merged);
+      setStatusFeedback({
+        id: 'global',
+        success: true,
+        msg: 'Automações predefinidas restauradas e sincronizadas com sucesso!'
+      });
+      setTimeout(() => setStatusFeedback(null), 5000);
     }
   };
 
@@ -258,14 +317,33 @@ export const Automacoes: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={handleOpenNewModal}
-          className="glass-btn py-2.5 px-4 rounded-2xl text-xs font-bold text-white shadow-lg shadow-hp-600/20 flex items-center gap-2 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Nova Automação
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <button
+            onClick={handleRestoreDefaults}
+            title="Restaura a lista completa de automações predefinidas do sistema"
+            className="py-2.5 px-3.5 rounded-2xl text-xs font-bold text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700/60 transition-all flex items-center gap-2 shadow-sm"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
+            Restaurar Predefinições
+          </button>
+
+          <button
+            onClick={handleOpenNewModal}
+            className="glass-btn py-2.5 px-4 rounded-2xl text-xs font-bold text-white shadow-lg shadow-hp-600/20 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Nova Automação
+          </button>
+        </div>
       </div>
+
+      {/* Global Status Feedback Banner */}
+      {statusFeedback?.id === 'global' && (
+        <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{statusFeedback.msg}</span>
+        </div>
+      )}
 
       {/* Metrics Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -2,7 +2,7 @@ import { db, STORAGE_KEYS } from './dbService';
 import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente, Cliente, UserRole } from '../types';
 import { USERS } from '../types';
-import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc, generatePlaneamentoSemanalA4PDF, type PlaneamentoSemanalDayCol, type PlaneamentoSemanalDayItem } from './pdfService';
+import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc, generatePlaneamentoSemanalA4PDF, generateAtividadeSemanalA4PDF, type PlaneamentoSemanalDayCol, type PlaneamentoSemanalDayItem, type AtividadeSemanalRow, type AtividadeSemanalPDFPayload } from './pdfService';
 import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput } from '../utils/dateUtils';
 import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
@@ -2786,6 +2786,486 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
       success: false,
       recipients: payload?.destinatarios || ['hugo@grau-maquinaria.com'],
       message: `Erro ao processar envio do planeamento semanal: ${error?.message || String(error)}`
+    };
+  }
+}
+
+// -------------------------------------------------------------
+// Weekly Activity (Atividade Semanal) Email Notification & PDF
+// -------------------------------------------------------------
+
+export interface WeeklyAtividadeSemanalEmailPayload {
+  destinatarios?: string[];
+  weekStartDate?: Date | string;
+  folhas?: FolhaServico[];
+  empresas?: Empresa[];
+}
+
+/**
+ * Generates the weekly activity & production A4 landscape PDF and sends it via email with an executive HTML summary.
+ */
+export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeSemanalEmailPayload): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  try {
+    const rawFolhas = payload?.folhas || db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || [];
+    const empresas = payload?.empresas || db.get<Empresa>(STORAGE_KEYS.EMPRESAS) || [];
+
+    // Calculate Week Days (Monday to Sunday)
+    // If not supplied, defaults to the previous week Monday (for weekly automation runs)
+    let baseDate: Date;
+    if (payload?.weekStartDate) {
+      baseDate = new Date(payload.weekStartDate);
+    } else {
+      const prev = new Date();
+      prev.setDate(prev.getDate() - 7);
+      baseDate = prev;
+    }
+
+    const monday = getMondayDate(baseDate);
+    const weekDays = [
+      { index: 0, label: 'Segunda-feira', short: 'Seg', date: addDaysToDate(monday, 0) },
+      { index: 1, label: 'Terça-feira', short: 'Ter', date: addDaysToDate(monday, 1) },
+      { index: 2, label: 'Quarta-feira', short: 'Qua', date: addDaysToDate(monday, 2) },
+      { index: 3, label: 'Quinta-feira', short: 'Qui', date: addDaysToDate(monday, 3) },
+      { index: 4, label: 'Sexta-feira', short: 'Sex', date: addDaysToDate(monday, 4) },
+      { index: 5, label: 'Sábado', short: 'Sáb', date: addDaysToDate(monday, 5) },
+      { index: 6, label: 'Domingo', short: 'Dom', date: addDaysToDate(monday, 6) }
+    ].map(d => ({
+      ...d,
+      isoStr: formatIsoDate(d.date),
+      formattedDate: `${String(d.date.getDate()).padStart(2, '0')}/${String(d.date.getMonth() + 1).padStart(2, '0')}`
+    }));
+
+    const weekIsoStrings = new Set(weekDays.map(d => d.isoStr));
+    const startIso = weekDays[0].isoStr;
+    const endIso = weekDays[6].isoStr;
+    const startDateStr = formatDate(startIso);
+    const endDateStr = formatDate(endIso);
+
+    interface FolhaDayEntry {
+      dateStr: string;
+      diaSemana: string;
+      numero: string;
+      matricula: string;
+      marcaModelo: string;
+      empresa: string;
+      types: Set<string>;
+      descriptions: string[];
+      tecnicos: Set<string>;
+      horas: number;
+      pecas: number;
+      concluido: boolean;
+    }
+
+    const mapByFolhaAndDay = new Map<string, FolhaDayEntry>();
+
+    rawFolhas.forEach(f => {
+      const emp = empresas.find(e => e.id === f.empresaId);
+      const empresaNome = emp?.nome || (f as any).nomeCliente || 'Cliente Geral';
+      const isConcluido = f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito' || !!f.dataConclusao;
+      
+      const totalHoras = (f.servicos?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0) +
+                         (f.servicosAdicionais?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0);
+      const countPecas = (f.pecas?.reduce((acc, p) => acc + (p.qtd || 1), 0) || 0) +
+                         (f.pecasAdicionais?.reduce((acc, p) => acc + (p.qtd || 1), 0) || 0);
+
+      const keyFor = (d: string) => `${f.numero || f.id}_${d}`;
+      const getOrCreate = (d: string) => {
+        const k = keyFor(d);
+        if (!mapByFolhaAndDay.has(k)) {
+          const dayObj = weekDays.find(wd => wd.isoStr === d);
+          mapByFolhaAndDay.set(k, {
+            dateStr: d,
+            diaSemana: dayObj?.label || 'Dia Útil',
+            numero: f.numero,
+            matricula: f.matricula || 'S/ Matrícula',
+            marcaModelo: `${f.marca || ''} ${f.modelo || ''}`.trim() || 'Equipamento',
+            empresa: empresaNome,
+            types: new Set<string>(),
+            descriptions: [],
+            tecnicos: new Set<string>(),
+            horas: 0,
+            pecas: 0,
+            concluido: isConcluido
+          });
+        }
+        return mapByFolhaAndDay.get(k)!;
+      };
+
+      // 1. Formação
+      if (f.dataFormacao && f.dataFormacao.trim() !== '' && f.dataFormacao !== '-') {
+        const d = formatDateToInput(f.dataFormacao);
+        if (weekIsoStrings.has(d)) {
+          const entry = getOrCreate(d);
+          entry.types.add('Formação');
+          if (f.formacaoPor) entry.tecnicos.add(cleanPersonName(f.formacaoPor));
+          entry.descriptions.push(f.formacaoPor ? `Formação ministrada por ${cleanPersonName(f.formacaoPor)}` : 'Formação técnica');
+          if (f.tipo === 'Entrega e Formação') {
+            entry.horas = Math.max(entry.horas, totalHoras);
+            entry.pecas = Math.max(entry.pecas, countPecas);
+          }
+        }
+      }
+
+      // 2. Entrega
+      if (f.dataEntrega && f.dataEntrega.trim() !== '' && f.dataEntrega !== '-') {
+        const d = formatDateToInput(f.dataEntrega);
+        if (weekIsoStrings.has(d)) {
+          const entry = getOrCreate(d);
+          entry.types.add('Entrega');
+          if (f.entregaPor) entry.tecnicos.add(cleanPersonName(f.entregaPor));
+          entry.descriptions.push(f.entregaPor ? `Entrega efetuada por ${cleanPersonName(f.entregaPor)}` : 'Entrega de viatura');
+        }
+      }
+
+      // 3. Serviços concluídos ou com data
+      const mainDate = formatDateToInput(f.dataConclusao || f.dataEntradaOficina || f.data);
+      if (weekIsoStrings.has(mainDate)) {
+        const entry = getOrCreate(mainDate);
+        entry.types.add(f.tipo || 'Oficina');
+        entry.horas = Math.max(entry.horas, totalHoras);
+        entry.pecas = Math.max(entry.pecas, countPecas);
+        if (f.tecnicoPlaneado) entry.tecnicos.add(cleanPersonName(f.tecnicoPlaneado));
+        f.servicos?.forEach(s => { if (s.tecnico) entry.tecnicos.add(cleanPersonName(s.tecnico)); });
+        f.servicosAdicionais?.forEach(s => { if (s.tecnico) entry.tecnicos.add(cleanPersonName(s.tecnico)); });
+        const desc = (f.anomalias || f.servicos?.[0]?.descricao || f.notasInternas || '').trim();
+        if (desc && !entry.descriptions.includes(desc)) {
+          entry.descriptions.push(desc);
+        }
+      }
+    });
+
+    const rows: AtividadeSemanalRow[] = Array.from(mapByFolhaAndDay.values()).map(entry => {
+      const typeStr = Array.from(entry.types).join(', ') || 'Intervenção';
+      const descStr = entry.descriptions.filter(Boolean).join(' • ') || 'Trabalhos executados';
+      const techsStr = Array.from(entry.tecnicos).join(', ') || 'Hugo Portugal (HP)';
+      return {
+        dateStr: entry.dateStr,
+        diaSemana: entry.diaSemana,
+        numero: entry.numero,
+        matricula: entry.matricula,
+        marcaModelo: entry.marcaModelo,
+        empresa: entry.empresa,
+        types: typeStr,
+        tecnico: techsStr,
+        horas: entry.horas > 0 ? `${entry.horas.toFixed(1)}h` : '—',
+        pecas: String(entry.pecas),
+        concluido: entry.concluido ? 'Sim' : 'Não',
+        desc: descStr
+      };
+    }).sort((a, b) => a.dateStr.localeCompare(b.dateStr) || a.numero.localeCompare(b.numero));
+
+    const totalIntervencoes = rows.length;
+    const totalConcluidas = rows.filter(r => r.concluido === 'Sim').length;
+    const totalHoras = rows.reduce((acc, r) => {
+      const val = parseFloat(r.horas.replace('h', ''));
+      return acc + (isNaN(val) ? 0 : val);
+    }, 0);
+    const totalPecas = rows.reduce((acc, r) => {
+      const val = parseInt(r.pecas, 10);
+      return acc + (isNaN(val) ? 0 : val);
+    }, 0);
+
+    // 1. Generate Executive A4 Landscape PDF
+    let base64Pdf = '';
+    const pdfFilename = `Atividade_Semanal_${startIso}_a_${endIso}.pdf`;
+    try {
+      const doc = generateAtividadeSemanalA4PDF({
+        startDateStr,
+        endDateStr,
+        totalIntervencoes,
+        totalConcluidas,
+        totalHoras,
+        totalPecas,
+        rows
+      });
+      const dataUri = doc.output('datauristring');
+      base64Pdf = dataUri.split(',')[1] || '';
+    } catch (pdfErr) {
+      console.error('[EmailService] Erro ao gerar PDF de Atividade Semanal:', pdfErr);
+    }
+
+    const attachments: any[] = [];
+    if (base64Pdf) {
+      attachments.push({
+        filename: pdfFilename,
+        content: base64Pdf,
+        encoding: 'base64',
+        contentType: 'application/pdf'
+      });
+    }
+
+    // 2. Build HTML Body
+    const rowsHtml = rows.length > 0 ? rows.map((r, idx) => {
+      const bg = idx % 2 === 0 ? '#f8fafc' : '#ffffff';
+      const badgeBg = r.types.toLowerCase().includes('garantia')
+        ? '#fef3c7'
+        : r.types.toLowerCase().includes('formação')
+        ? '#dbeafe'
+        : r.types.toLowerCase().includes('assistência')
+        ? '#e0e7ff'
+        : '#f1f5f9';
+      const badgeText = r.types.toLowerCase().includes('garantia')
+        ? '#92400e'
+        : r.types.toLowerCase().includes('formação')
+        ? '#1e40af'
+        : r.types.toLowerCase().includes('assistência')
+        ? '#3730a3'
+        : '#334155';
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; background: ${bg};">
+          <td style="padding: 9px 10px; font-weight: 700; color: #0284c7; white-space: nowrap;">
+            ${r.numero}<br>
+            <span style="font-size: 10px; color: #64748b; font-weight: normal;">${r.diaSemana} • ${r.dateStr.includes('-') ? r.dateStr.split('-').reverse().join('/') : r.dateStr}</span>
+          </td>
+          <td style="padding: 9px 10px;">
+            ${r.marcaModelo}<br>
+            <span style="font-size: 11px; font-weight: 700; color: #0f172a; font-family: monospace;">${r.matricula}</span>
+          </td>
+          <td style="padding: 9px 10px; font-weight: 600; color: #1e293b;">
+            ${r.empresa}
+          </td>
+          <td style="padding: 9px 10px; white-space: nowrap;">
+            <span style="background: ${badgeBg}; color: ${badgeText}; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">
+              ${r.types}
+            </span>
+          </td>
+          <td style="padding: 9px 10px; text-align: center; font-weight: 700; color: #0284c7; white-space: nowrap;">
+            ${r.horas}
+          </td>
+          <td style="padding: 9px 10px; font-size: 11.5px; color: #475569;">
+            ${r.desc}
+          </td>
+        </tr>
+      `;
+    }).join('') : `
+      <tr>
+        <td colspan="6" style="padding: 18px; text-align: center; color: #94a3b8; font-style: italic;">
+          Sem registo de intervenções na semana selecionada.
+        </td>
+      </tr>
+    `;
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <title>Atividade Semanal - Oficina HP</title>
+</head>
+<body style="font-family:'Segoe UI', Arial, sans-serif; background-color:#f1f5f9; padding:24px 12px; color:#1e293b; margin:0;">
+  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:700px; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #cbd5e1; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+    <!-- Top Bar -->
+    <tr>
+      <td style="background-color:#0b1528; padding:24px 30px; border-bottom:3px solid #10b981;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+              <h1 style="color:#ffffff; margin:0; font-size:20px; font-weight:800; letter-spacing:-0.5px;">OFICINA HP</h1>
+              <p style="color:#94a3b8; margin:4px 0 0 0; font-size:12px;">Gestão de Frotas & Equipamentos • GRAUMP</p>
+            </td>
+            <td align="right">
+              <span style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:6px 12px; border-radius:8px; font-size:11px; font-weight:700; text-transform:uppercase;">
+                ATIVIDADE SEMANAL
+              </span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td style="padding:28px 30px;">
+        <h2 style="color:#0f172a; margin-top:0; font-size:17px; font-weight:800;">
+          📊 Mapa de Resultados da Atividade Semanal (${startDateStr} a ${endDateStr})
+        </h2>
+        <p style="color:#475569; font-size:13.5px; line-height:1.6; margin-bottom:20px;">
+          Segue o relatório consolidado e o mapa detalhado em <strong>PDF A4 Horizontal</strong> da atividade e produção técnica realizada na semana de <strong>${startDateStr} a ${endDateStr}</strong>.
+        </p>
+
+        <!-- Metrics Cards -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+          <tr>
+            <td width="23%" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Intervenções</span>
+              <span style="font-size:20px; color:#0f172a; font-weight:800; display:block; margin-top:4px;">${totalIntervencoes}</span>
+            </td>
+            <td width="2%"></td>
+            <td width="23%" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#166534; font-weight:700; text-transform:uppercase; display:block;">Concluídas</span>
+              <span style="font-size:20px; color:#16a34a; font-weight:800; display:block; margin-top:4px;">${totalConcluidas}</span>
+            </td>
+            <td width="2%"></td>
+            <td width="23%" style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#0369a1; font-weight:700; text-transform:uppercase; display:block;">Mão de Obra</span>
+              <span style="font-size:20px; color:#0284c7; font-weight:800; display:block; margin-top:4px;">${totalHoras.toFixed(1)} h</span>
+            </td>
+            <td width="2%"></td>
+            <td width="23%" style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#92400e; font-weight:700; text-transform:uppercase; display:block;">Peças</span>
+              <span style="font-size:20px; color:#d97706; font-weight:800; display:block; margin-top:4px;">${totalPecas}</span>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Table of Interventions -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:12px; border:1px solid #cbd5e1; margin-bottom:20px; border-radius:8px; overflow:hidden;">
+          <thead>
+            <tr style="background:#0f172a; color:#ffffff; font-size:11px;">
+              <th align="left" style="padding:10px;">Folha / Data</th>
+              <th align="left" style="padding:10px;">Viatura</th>
+              <th align="left" style="padding:10px;">Cliente</th>
+              <th align="left" style="padding:10px;">Tipo</th>
+              <th align="center" style="padding:10px;">Horas</th>
+              <th align="left" style="padding:10px;">Observações</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+
+        <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 12px 16px; margin-top: 20px;">
+          <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="28" valign="middle" style="font-size: 20px; line-height: 1;">📎</td>
+              <td valign="middle">
+                <strong style="color: #065f46; font-size: 13px;">PDF Anexado: ${pdfFilename}</strong>
+                <div style="font-size: 11.5px; color: #047857; margin-top: 2px;">
+                  O mapa oficial em formato horizontal A4 com colunas detalhadas encontra-se anexado para impressão ou arquivamento.
+                </div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background-color:#f8fafc; padding:16px 30px; border-top:1px solid #e2e8f0; text-align:center;">
+        <div style="font-size:12px; font-weight:700; color:#475569;">Oficina HP • Grau Maquinaria</div>
+        <div style="font-size:11px; color:#94a3b8; margin-top:3px;">
+          Automação Semanal • Processado em ${new Date().toLocaleDateString('pt-PT')} às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    // 3. Resolve Recipients
+    const emailsSet = new Set<string>();
+    if (payload?.destinatarios && payload.destinatarios.length > 0) {
+      payload.destinatarios.forEach(e => {
+        if (e && e.includes('@')) emailsSet.add(e.trim().toLowerCase());
+      });
+    }
+
+    try {
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES) || [];
+      const autoItem = autos.find((a: any) => a.tipo === 'email_atividade_semanal');
+      if (autoItem && Array.isArray(autoItem.destinatarios)) {
+        autoItem.destinatarios.forEach((e: string) => {
+          if (e && e.includes('@')) emailsSet.add(e.trim().toLowerCase());
+        });
+      }
+    } catch {}
+
+    if (emailsSet.size === 0) {
+      emailsSet.add('hugo@grau-maquinaria.com');
+    }
+
+    const recipients = Array.from(emailsSet);
+    const subject = `[Oficina HP] 📊 Mapa do Resultado da Atividade Semanal (${startDateStr} a ${endDateStr})`;
+
+    console.log(`[EmailService] A enviar Atividade Semanal para: ${recipients.join(', ')} com anexo ${pdfFilename}`);
+
+    // 4. Send email via /api/send-email
+    let apiDeliverySuccess = false;
+    let apiError = '';
+    try {
+      const sendResult = await postSendEmailApi({
+        to: recipients,
+        subject,
+        html: htmlContent,
+        attachments
+      });
+      if (sendResult.success) {
+        apiDeliverySuccess = true;
+        console.log(`[EmailService] ✅ Email de Atividade Semanal enviado com sucesso (ID: ${sendResult.messageId})`);
+      } else {
+        apiError = sendResult.error || 'Erro no envio';
+        console.warn('[EmailService] ⚠️ Resposta da API:', sendResult.error);
+      }
+    } catch (apiErr: any) {
+      apiError = apiErr?.message || 'Falha de rede';
+      console.warn('[EmailService] ⚠️ Erro ao contactar /api/send-email:', apiErr);
+    }
+
+    // 5. Save email log
+    try {
+      const emailLogEntry = {
+        id: db.generateId('eml'),
+        tipo: 'email_atividade_semanal',
+        destinatarios: recipients,
+        assunto: subject,
+        dataEnvio: new Date().toISOString(),
+        anexosCount: attachments.length,
+        sucesso: apiDeliverySuccess,
+        detalhes: {
+          periodo: `${startDateStr} a ${endDateStr}`,
+          totalIntervencoes,
+          totalConcluidas,
+          totalHoras
+        }
+      };
+      const logs = db.get<any>('oficina_hp_email_logs') || [];
+      db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+
+      // Update automacao item last run
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES) || [];
+      const updatedAutos = autos.map((a: any) => a.tipo === 'email_atividade_semanal' ? {
+        ...a,
+        ultimoDisparo: `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      } : a);
+      db.save(STORAGE_KEYS.AUTOMACOES, updatedAutos);
+
+      // PocketBase backup
+      const pb = getPocketBase();
+      pb.collection('app_data').create({
+        key: `email_atividade_${Date.now()}`,
+        data: {
+          recipients,
+          subject,
+          tipo: 'atividade_semanal',
+          anexosCount: attachments.length,
+          totalIntervencoes,
+          totalConcluidas,
+          totalHoras,
+          sent: apiDeliverySuccess
+        },
+        timestamp: new Date().toISOString()
+      }).catch(() => {});
+    } catch (e) {}
+
+    return {
+      success: apiDeliverySuccess,
+      recipients,
+      message: apiDeliverySuccess
+        ? `Quadro de Atividade Semanal em PDF enviado com sucesso para: ${recipients.join(', ')}`
+        : `Erro ao enviar email (${apiError || 'Serviço indisponível'}). Verifique as credenciais SMTP no Easypanel.`
+    };
+  } catch (error: any) {
+    console.error('[EmailService] Exceção ao enviar atividade semanal:', error);
+    return {
+      success: false,
+      recipients: payload?.destinatarios || ['hugo@grau-maquinaria.com'],
+      message: `Erro ao processar envio de atividade semanal: ${error?.message || String(error)}`
     };
   }
 }

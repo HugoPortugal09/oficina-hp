@@ -477,7 +477,7 @@ const INITIAL_TAREFAS: Tarefa[] = [
   }
 ];
 
-const INITIAL_AUTOMACOES: AutomacaoItem[] = [
+export const INITIAL_AUTOMACOES: AutomacaoItem[] = [
   {
     id: 'auto_001',
     nome: 'Envio do Planeamento Semanal em PDF',

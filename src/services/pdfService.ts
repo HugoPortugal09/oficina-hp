@@ -2863,4 +2863,203 @@ export function generatePassaporteTecnicoPDF(
   return doc;
 }
 
+export interface AtividadeSemanalRow {
+  dateStr: string;
+  diaSemana: string;
+  numero: string;
+  matricula: string;
+  marcaModelo: string;
+  empresa: string;
+  types: string;
+  tecnico: string;
+  horas: string;
+  pecas: string;
+  concluido?: string;
+  desc: string;
+}
+
+export interface AtividadeSemanalPDFPayload {
+  startDateStr: string;
+  endDateStr: string;
+  semanaNum?: number | string;
+  totalIntervencoes: number;
+  totalConcluidas: number;
+  totalHoras: number;
+  totalPecas: number;
+  rows: AtividadeSemanalRow[];
+}
+
+export function generateAtividadeSemanalA4PDF(payload: AtividadeSemanalPDFPayload): jsPDF {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+    compress: true
+  });
+
+  const runAutoTable = (options: any) => {
+    const fn = (autoTable as any)?.default?.default || (autoTable as any)?.default || autoTable;
+    if (typeof fn === 'function') {
+      fn(doc, options);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(options);
+    }
+  };
+
+  // Header Banner
+  doc.setFillColor(11, 21, 40); // Dark Navy Slate
+  doc.rect(0, 0, 297, 34, 'F');
+
+  // Emerald bottom border line
+  doc.setFillColor(16, 185, 129); // #10b981
+  doc.rect(0, 33, 297, 1.2, 'F');
+
+  // Grau Logo
+  try {
+    if (GRAU_LOGO_BASE64) {
+      doc.addImage(GRAU_LOGO_BASE64, 'PNG', 12, 6, 42, 22);
+    } else {
+      throw new Error('No logo');
+    }
+  } catch {
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('OFICINA HP', 14, 20);
+  }
+
+  // Titles
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('QUADRO DE ATIVIDADE SEMANAL & PRODUÇÃO', 285, 14, { align: 'right' });
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  const semanaLabel = payload.semanaNum ? ` (Semana ${payload.semanaNum})` : '';
+  doc.text(`SEMANA: ${payload.startDateStr} a ${payload.endDateStr}${semanaLabel}`, 285, 20, { align: 'right' });
+  doc.text('Oficina Central & Assistência Móvel • GRAUMP', 285, 26, { align: 'right' });
+
+  // Summary Metrics Bar
+  const y = 40;
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(12, y, 273, 16, 2, 2, 'FD');
+  doc.setDrawColor(226, 232, 240);
+
+  // Metric 1: Total Intervenções
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text('TOTAL INTERVENÇÕES', 20, y + 6);
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${payload.totalIntervencoes} Serviços`, 20, y + 12);
+
+  // Metric 2: Concluídas
+  const pctConcl = payload.totalIntervencoes > 0 
+    ? Math.round((payload.totalConcluidas / payload.totalIntervencoes) * 100) 
+    : 100;
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('ESTADO CONCLUÍDO', 85, y + 6);
+  doc.setFontSize(12);
+  doc.setTextColor(16, 185, 129);
+  doc.text(`${payload.totalConcluidas} Concluídas (${pctConcl}%)`, 85, y + 12);
+
+  // Metric 3: Total Horas
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('TOTAL HORAS MÃO DE OBRA', 160, y + 6);
+  doc.setFontSize(12);
+  doc.setTextColor(3, 105, 161);
+  doc.text(`${payload.totalHoras.toFixed(1)} Horas Registadas`, 160, y + 12);
+
+  // Metric 4: Peças
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('PEÇAS & MATERIAIS', 235, y + 6);
+  doc.setFontSize(12);
+  doc.setTextColor(217, 119, 6);
+  doc.text(`${payload.totalPecas} Peças Aplicadas`, 235, y + 12);
+
+  // Table Data
+  const tableData = payload.rows.map(a => [
+    `${a.diaSemana}\n${a.dateStr.includes('-') ? a.dateStr.split('-').reverse().join('/') : a.dateStr}`,
+    a.numero,
+    a.matricula,
+    a.marcaModelo,
+    a.empresa,
+    a.types,
+    a.tecnico,
+    a.horas,
+    a.pecas,
+    a.desc
+  ]);
+
+  runAutoTable({
+    startY: 61,
+    head: [[
+      'Data / Dia',
+      'Nº Folha',
+      'Matrícula',
+      'Viatura / Equipamento',
+      'Cliente / Entidade',
+      'Tipo de Ação',
+      'Técnico',
+      'Horas',
+      'Peças',
+      'Trabalhos / Observações'
+    ]],
+    body: tableData.length > 0 ? tableData : [['—', '—', '—', 'Sem intervenções registadas', '—', '—', '—', '—', '—', '—']],
+    theme: 'grid',
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'center',
+      cellPadding: 3
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2.5,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2
+    },
+    columnStyles: {
+      0: { cellWidth: 24, halign: 'center' },
+      1: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      2: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 42 },
+      5: { cellWidth: 24, halign: 'center' },
+      6: { cellWidth: 26, halign: 'center' },
+      7: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
+      8: { cellWidth: 14, halign: 'center' },
+      9: { cellWidth: 63 }
+    },
+    margin: { left: 12, right: 12 }
+  });
+
+  // Footer
+  const totalPages = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(30, 41, 59);
+    doc.rect(0, 202, 297, 8, 'F');
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRAUMP • Oficina HP Gestão & Frotas', 12, 206.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Relatório Oficial de Atividade Semanal & Produção • Processado por Computador', 148.5, 206.5, { align: 'center' });
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Página ${i} de ${totalPages}`, 285, 206.5, { align: 'right' });
+  }
+
+  return doc;
+}
+
+
 
