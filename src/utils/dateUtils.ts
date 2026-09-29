@@ -184,3 +184,31 @@ export function calculateDiffDays(startDateStr?: string | null, endDateStr?: str
   }
 }
 
+/**
+ * Calculates the standard ISO week number (1 - 53) for any given Date or date string.
+ */
+export function getWeekNumber(dateInput?: Date | string | null): number {
+  if (!dateInput) return 1;
+  let target: Date;
+  if (typeof dateInput === 'string') {
+    // If string like "2026-09-21" or "21/09/2026"
+    const inputClean = formatDateToInput(dateInput) || dateInput;
+    target = new Date(inputClean);
+  } else {
+    target = new Date(dateInput.getTime());
+  }
+  if (isNaN(target.getTime())) return 1;
+
+  // ISO week date week starts on Monday, so dayNr: Monday=0, Sunday=6
+  const dayNr = (target.getDay() + 6) % 7;
+  // Target nearest Thursday: current date + 3 - dayNr
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.getTime();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+  }
+  return 1 + Math.ceil((firstThursday - target.getTime()) / (7 * 86400000));
+}
+
+

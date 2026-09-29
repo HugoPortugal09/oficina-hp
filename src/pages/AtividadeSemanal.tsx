@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
-import { formatDateToInput, cleanPersonName } from '../utils/dateUtils';
+import { formatDateToInput, cleanPersonName, getWeekNumber } from '../utils/dateUtils';
 import type {
   FolhaServico,
   Tarefa,
@@ -563,6 +563,8 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
     };
   }, [currentWeekActivities, weekStartStr, weekEndStr]);
 
+  const currentWeekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
+
   return (
     <div className="space-y-3.5 animate-in fade-in duration-300">
       {/* Top Header & Week Navigation */}
@@ -575,6 +577,9 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
             <div>
               <h1 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
                 Atividade Semanal da Oficina
+                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
+                  Semana {currentWeekNum}
+                </span>
               </h1>
               <p className="text-xs text-slate-400">
                 Registo de Folhas de Serviço executadas e tarefas concluídas na semana
@@ -596,7 +601,7 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
           <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700/80 text-xs font-mono font-bold text-slate-200 flex items-center gap-2 shadow-inner">
             <Calendar className="w-3.5 h-3.5 text-hp-400" />
             <span>
-              {weekDays[0].formattedDayMonth} a {weekDays[6].formattedDayMonth}
+              Semana {currentWeekNum} • {weekDays[0].formattedDayMonth} a {weekDays[6].formattedDayMonth}
             </span>
           </div>
 

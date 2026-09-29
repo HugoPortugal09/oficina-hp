@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { FolhaServico, Proposta, GuiaEnvio, Empresa, Equipamento, Cliente, ConfiguracaoOficina } from '../types';
 import { db, STORAGE_KEYS } from './dbService';
 import { GRAU_LOGO_BASE64 } from './grauLogoBase64';
-import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, parseDateToMs } from '../utils/dateUtils';
+import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, parseDateToMs, getWeekNumber } from '../utils/dateUtils';
 import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
 export function createFolhaServicoPDFDoc(
@@ -2234,6 +2234,7 @@ export interface PlaneamentoSemanalA4Options {
   days: PlaneamentoSemanalDayCol[];
   startDateStr: string; // "21/09/2026"
   endDateStr: string; // "25/09/2026"
+  semanaNum?: number | string;
   selectedTecnico?: string;
   searchTerm?: string;
   totalFolhas: number;
@@ -2250,11 +2251,14 @@ export function generatePlaneamentoSemanalA4PDF(options: PlaneamentoSemanalA4Opt
     days,
     startDateStr,
     endDateStr,
+    semanaNum: customSemanaNum,
     selectedTecnico,
     searchTerm,
     totalFolhas,
     totalVisitas
   } = options;
+
+  const semanaNum = customSemanaNum || (days[0]?.isoStr ? getWeekNumber(days[0].isoStr) : getWeekNumber(startDateStr));
 
   // A4 Landscape: 297mm width x 210mm height
   const doc = new jsPDF({
@@ -2307,9 +2311,9 @@ export function generatePlaneamentoSemanalA4PDF(options: PlaneamentoSemanalA4Opt
   else if (hasDom) scopeLabel = 'Segunda a Sexta + Domingo';
 
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text(`Semana de ${startDateStr} a ${endDateStr} (${scopeLabel})`, 285, 18, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`SEMANA ${semanaNum} • ${startDateStr} a ${endDateStr} (${scopeLabel})`, 285, 18, { align: 'right' });
 
   // Metadata Row
   const tecLabel = selectedTecnico && selectedTecnico !== 'TODOS' ? `TÉCNICO: ${selectedTecnico.toUpperCase()}` : 'TODOS OS TÉCNICOS';
@@ -2479,7 +2483,7 @@ export function generatePlaneamentoSemanalA4PDF(options: PlaneamentoSemanalA4Opt
     // Texto central informativo
     doc.setTextColor(148, 163, 184);
     doc.text(
-      'Planeamento Semanal Operacional • Folha A4 Horizontal • Processado por Computador',
+      `Planeamento Semanal Operacional • Semana ${semanaNum} • Folha A4 Horizontal • Processado por Computador`,
       148.5,
       textY,
       { align: 'center' }
@@ -2934,11 +2938,13 @@ export function generateAtividadeSemanalA4PDF(payload: AtividadeSemanalPDFPayloa
   doc.setTextColor(255, 255, 255);
   doc.text('QUADRO DE ATIVIDADE SEMANAL & PRODUÇÃO', 285, 14, { align: 'right' });
 
+  const semanaNum = payload.semanaNum || (payload.rows[0]?.dateStr ? getWeekNumber(payload.rows[0].dateStr) : getWeekNumber(payload.startDateStr));
   doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text(`SEMANA ${semanaNum} • ${payload.startDateStr} a ${payload.endDateStr}`, 285, 20, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184);
-  const semanaLabel = payload.semanaNum ? ` (Semana ${payload.semanaNum})` : '';
-  doc.text(`SEMANA: ${payload.startDateStr} a ${payload.endDateStr}${semanaLabel}`, 285, 20, { align: 'right' });
   doc.text('Oficina Central & Assistência Móvel • GRAUMP', 285, 26, { align: 'right' });
 
   // Summary Metrics Bar
@@ -3053,7 +3059,7 @@ export function generateAtividadeSemanalA4PDF(payload: AtividadeSemanalPDFPayloa
     doc.setTextColor(255, 255, 255);
     doc.text('GRAUMP • Oficina HP Gestão & Frotas', 12, 206.5);
     doc.setTextColor(148, 163, 184);
-    doc.text('Relatório Oficial de Atividade Semanal & Produção • Processado por Computador', 148.5, 206.5, { align: 'center' });
+    doc.text(`Relatório Oficial de Atividade Semanal & Produção • Semana ${semanaNum} • Processado por Computador`, 148.5, 206.5, { align: 'center' });
     doc.setTextColor(255, 255, 255);
     doc.text(`Página ${i} de ${totalPages}`, 285, 206.5, { align: 'right' });
   }

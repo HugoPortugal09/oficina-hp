@@ -3,7 +3,7 @@ import { getPocketBase } from './pocketbase';
 import type { Tarefa, UserProfile, FolhaServico, Equipamento, Empresa, VisitaCliente, Cliente, UserRole } from '../types';
 import { USERS } from '../types';
 import { generateEntregaFormacaoPDF, generateTemposRespostaPDF, createFolhaServicoPDFDoc, generatePlaneamentoSemanalA4PDF, generateAtividadeSemanalA4PDF, type PlaneamentoSemanalDayCol, type PlaneamentoSemanalDayItem, type AtividadeSemanalRow, type AtividadeSemanalPDFPayload } from './pdfService';
-import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput } from '../utils/dateUtils';
+import { formatDate, getTodayFormatted, cleanPersonName, calculateDiffDays, formatDateToInput, getWeekNumber } from '../utils/dateUtils';
 import { isOficinaOrGraump, isExteriorService, isOpenService } from '../utils/locationUtils';
 
 const INTERNAL_API_KEY = 'hp_app_sec_98fbc71a3d42';
@@ -2277,13 +2277,14 @@ function formatIsoDate(d: Date): string {
 export function buildWeeklyPlaneamentoHtml(options: {
   startDateStr: string;
   endDateStr: string;
+  semanaNum?: number | string;
   days: PlaneamentoSemanalDayCol[];
   totalFolhas: number;
   totalVisitas: number;
   uniqueTecnicos: string[];
   pdfFilename: string;
 }): string {
-  const { startDateStr, endDateStr, days, totalFolhas, totalVisitas, uniqueTecnicos, pdfFilename } = options;
+  const { startDateStr, endDateStr, semanaNum, days, totalFolhas, totalVisitas, uniqueTecnicos, pdfFilename } = options;
   const activeDaysCount = days.filter(d => d.items.length > 0).length;
 
   const daysHtml = days.map(d => {
@@ -2393,7 +2394,7 @@ export function buildWeeklyPlaneamentoHtml(options: {
         <table role="presentation" width="680" align="center" border="0" cellpadding="0" cellspacing="0">
           <tr>
             <td>
-        <![endif]-->
+            <![endif]-->
         <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width: 680px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
           
           <!-- Top Accent Line -->
@@ -2408,13 +2409,13 @@ export function buildWeeklyPlaneamentoHtml(options: {
                 <tr>
                   <td>
                     <span style="display: inline-block; background-color: #059669; color: #ffffff; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 10px; border-radius: 6px; margin-bottom: 8px;">
-                      PLANEAMENTO SEMANAL • RELATÓRIO EXECUTIVO
+                      PLANEAMENTO SEMANAL • ${semanaNum ? `SEMANA ${semanaNum}` : 'RELATÓRIO EXECUTIVO'}
                     </span>
                     <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">
                       Planeamento Técnico & Visitas
                     </h1>
                     <p style="margin: 6px 0 0 0; font-size: 14px; color: #94a3b8;">
-                      Semana de <strong>${startDateStr}</strong> a <strong>${endDateStr}</strong> • Grau Maquinaria / Oficina HP
+                      ${semanaNum ? `Semana <strong>${semanaNum}</strong> • ` : ''}De <strong>${startDateStr}</strong> a <strong>${endDateStr}</strong> • Grau Maquinaria / Oficina HP
                     </p>
                   </td>
                 </tr>
@@ -2640,14 +2641,17 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
     });
     const uniqueTecnicos = Array.from(tecnicosSet);
 
+    const semanaNum = getWeekNumber(monday);
+
     // 1. Generate Executive A4 Landscape PDF
     let base64Pdf = '';
-    const pdfFilename = `Planeamento_Semanal_A4_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
+    const pdfFilename = `Planeamento_Semanal_A4_Semana_${semanaNum}_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
     try {
       const doc = generatePlaneamentoSemanalA4PDF({
         days: dayCols,
         startDateStr,
         endDateStr,
+        semanaNum,
         totalFolhas,
         totalVisitas
       });
@@ -2671,6 +2675,7 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
     const htmlContent = buildWeeklyPlaneamentoHtml({
       startDateStr,
       endDateStr,
+      semanaNum,
       days: dayCols,
       totalFolhas,
       totalVisitas,
@@ -2703,7 +2708,7 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
     }
 
     const recipients = Array.from(emailsSet);
-    const subject = `[Oficina HP] 📅 Planeamento Semanal (${startDateStr} a ${endDateStr})`;
+    const subject = `[Oficina HP] 📅 Planeamento Semanal • Semana ${semanaNum} (${startDateStr} a ${endDateStr})`;
 
     console.log(`[EmailService] A enviar Planeamento Semanal para: ${recipients.join(', ')} com anexo ${pdfFilename}`);
 
@@ -2825,6 +2830,7 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
     }
 
     const monday = getMondayDate(baseDate);
+    const semanaNum = getWeekNumber(monday);
     const weekDays = [
       { index: 0, label: 'Segunda-feira', short: 'Seg', date: addDaysToDate(monday, 0) },
       { index: 1, label: 'Terça-feira', short: 'Ter', date: addDaysToDate(monday, 1) },
@@ -2869,6 +2875,7 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
       
       const totalHoras = (f.servicos?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0) +
                          (f.servicosAdicionais?.reduce((acc, s) => acc + (s.horas || 0), 0) || 0);
+      const countServicos = (f.servicos?.length || 0) + (f.servicosAdicionais?.length || 0);
       const countPecas = (f.pecas?.reduce((acc, p) => acc + (p.qtd || 1), 0) || 0) +
                          (f.pecasAdicionais?.reduce((acc, p) => acc + (p.qtd || 1), 0) || 0);
 
@@ -3018,9 +3025,10 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
 
     // 1. Generate Executive A4 Landscape PDF
     let base64Pdf = '';
-    const pdfFilename = `Atividade_Semanal_${startIso}_a_${endIso}.pdf`;
+    const pdfFilename = `Atividade_Semanal_Semana_${semanaNum}_${startIso}_a_${endIso}.pdf`;
     try {
       const doc = generateAtividadeSemanalA4PDF({
+        semanaNum,
         startDateStr,
         endDateStr,
         totalIntervencoes,
@@ -3116,7 +3124,7 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
             </td>
             <td align="right">
               <span style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:6px 12px; border-radius:8px; font-size:11px; font-weight:700; text-transform:uppercase;">
-                ATIVIDADE SEMANAL
+                ATIVIDADE SEMANAL • SEMANA ${semanaNum}
               </span>
             </td>
           </tr>
@@ -3128,10 +3136,10 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
     <tr>
       <td style="padding:28px 30px;">
         <h2 style="color:#0f172a; margin-top:0; font-size:17px; font-weight:800;">
-          📊 Mapa de Resultados da Atividade Semanal (${startDateStr} a ${endDateStr})
+          📊 Mapa de Resultados da Atividade Semanal — Semana ${semanaNum} (${startDateStr} a ${endDateStr})
         </h2>
         <p style="color:#475569; font-size:13.5px; line-height:1.6; margin-bottom:20px;">
-          Segue o relatório consolidado e o mapa detalhado em <strong>PDF A4 Horizontal</strong> da atividade e produção técnica realizada na semana de <strong>${startDateStr} a ${endDateStr}</strong>.
+          Segue o relatório consolidado e o mapa detalhado em <strong>PDF A4 Horizontal</strong> da atividade e produção técnica realizada na <strong>Semana ${semanaNum}</strong> (de <strong>${startDateStr} a ${endDateStr}</strong>).
         </p>
 
         <!-- Metrics Cards -->
@@ -3228,7 +3236,7 @@ export async function sendWeeklyAtividadeSemanalEmail(payload?: WeeklyAtividadeS
     }
 
     const recipients = Array.from(emailsSet);
-    const subject = `[Oficina HP] 📊 Mapa do Resultado da Atividade Semanal (${startDateStr} a ${endDateStr})`;
+    const subject = `[Oficina HP] 📊 Mapa da Atividade Semanal • Semana ${semanaNum} (${startDateStr} a ${endDateStr}) • ${totalIntervencoes} Serviços (${totalHoras.toFixed(1)}h)`;
 
     console.log(`[EmailService] A enviar Atividade Semanal para: ${recipients.join(', ')} com anexo ${pdfFilename}`);
 

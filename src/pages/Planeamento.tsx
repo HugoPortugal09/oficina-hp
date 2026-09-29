@@ -40,7 +40,7 @@ import type {
 } from '../types';
 import { db, STORAGE_KEYS } from '../services/dbService';
 import { sendVisitaEmail } from '../services/emailService';
-import { formatDate, formatDateToInput, getTodayFormatted } from '../utils/dateUtils';
+import { formatDate, formatDateToInput, getTodayFormatted, getWeekNumber } from '../utils/dateUtils';
 import {
   generatePlaneamentoSemanalA4PDF,
   type PlaneamentoSemanalDayCol,
@@ -299,6 +299,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       };
     });
   }, [currentMonday]);
+
+  const currentWeekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
 
   // Open Folhas de Serviço (not finalized)
   const openFolhas = useMemo(() => {
@@ -622,18 +624,20 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       const startDateStr = formatDate(weekDays[0].isoStr);
       const lastDayObj = activeDays[activeDays.length - 1];
       const endDateStr = formatDate(lastDayObj.isoStr);
+      const semanaNum = getWeekNumber(currentMonday);
 
       const doc = generatePlaneamentoSemanalA4PDF({
         days: dayCols,
         startDateStr,
         endDateStr,
+        semanaNum,
         selectedTecnico: selectedTecnico !== 'TODOS' ? selectedTecnico : undefined,
         searchTerm: searchTerm.trim() || undefined,
         totalFolhas: currentWeekFolhas.length,
         totalVisitas: currentWeekVisitas.length
       });
 
-      const filename = `Planeamento_Semanal_A4_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
+      const filename = `Planeamento_Semanal_A4_Semana_${semanaNum}_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
       doc.save(filename);
 
       try {
@@ -670,6 +674,9 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           <div>
             <h1 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
               Planeamento & Visitas
+              <span className="text-xs font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded-lg">
+                Semana {currentWeekNum}
+              </span>
             </h1>
             <p className="text-xs text-slate-400">
               Agendamento de folhas de serviço abertas e gestão de visitas aos clientes
@@ -690,7 +697,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
             </button>
 
             <span className="px-2 text-xs font-mono font-bold text-slate-200">
-              {weekDays[0].formattedDayMonth} a {weekDays[6].formattedDayMonth}
+              Semana {currentWeekNum} • {weekDays[0].formattedDayMonth} a {weekDays[6].formattedDayMonth}
             </span>
 
             <button
