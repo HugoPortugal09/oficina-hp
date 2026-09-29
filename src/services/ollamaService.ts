@@ -367,16 +367,19 @@ ${notasInternas}
 """
 
 Instruções:
-1. Avalia se o texto contém alguma AÇÃO/TAREFA pendente para realizar (exemplos: enviar peça, enviar orçamento, encomendar peça ao fornecedor, ligar ao cliente, agendar visita, fazer teste de estrada, pedir cotação, etc.).
-2. Se SIM (é uma tarefa/ação concreta), define:
+1. Avalia se o texto contém alguma AÇÃO/TAREFA pendente ou ordem de criação de tarefa (exemplos: "cria uma tarefa...", enviar peça, enviar orçamento, entrar em contacto, ligar, encomendar peça, agendar visita, fazer teste de estrada, etc.).
+2. Se houver frases entre aspas ou um pedido expresso de ação, extrai a ação concreta e limpa para "descricao".
+3. Se indicar um prazo ou dia (ex: "amanhã" = 1 dia, "hoje" = 0 dias, "semana" = 7 dias), define "diasLimite".
+4. Se mencionar um responsável específico (ex: "Gil", "Hugo Portugal"), define "responsavel".
+5. Se solicitar seguimento/alerta (ex: "mandar email a perguntar se foi feito"), inclui em "seguimento".
+6. Se SIM (é uma tarefa/ação concreta), define:
    - "hasActionableTask": true
-   - "descricao": descrição clara e direta da tarefa (ex: "Enviar orçamento de revisão ao cliente", "Encomendar filtro de óleo e correia", "Enviar peça para estaleiro")
+   - "descricao": descrição clara e direta da tarefa
    - "prioridade": uma de "Crítica", "Urgente", "Alta", "Normal", "Baixa"
-   - "responsavel": "Hugo Portugal"
-   - "diasLimite": número de dias a contar de hoje (ex: 1 para urgente, 3 para normal)
+   - "responsavel": nome do responsável (ex: "Gil", "Hugo Portugal")
+   - "diasLimite": número de dias a contar de hoje (ex: 1 para amanhã, 2 para normal)
    - "razao": breve explicação
-3. Se NÃO (é apenas uma nota informativa ou observação estática sem nada para fazer), define:
-   - "hasActionableTask": false
+   - "seguimento": nota sobre seguimento/email se solicitado
 
 Responde EXCLUSIVAMENTE em formato JSON:
 {
@@ -384,8 +387,9 @@ Responde EXCLUSIVAMENTE em formato JSON:
   "descricao": "Descrição da tarefa",
   "prioridade": "Normal",
   "responsavel": "Hugo Portugal",
-  "diasLimite": 2,
-  "razao": "A nota indica necessidade de enviar orçamento"
+  "diasLimite": 1,
+  "razao": "A nota indica ação a realizar",
+  "seguimento": "Enviar email de confirmação se pendente"
 }`;
 
   try {
@@ -410,8 +414,9 @@ Responde EXCLUSIVAMENTE em formato JSON:
       const data = await res.json();
       const parsed = JSON.parse(data.response || '{}');
       if (parsed.hasActionableTask && parsed.descricao) {
-        const dias = parsed.diasLimite || 2;
+        const dias = typeof parsed.diasLimite === 'number' ? parsed.diasLimite : 2;
         const limitDate = new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const followUp = parsed.seguimento ? `\n\n📧 Acompanhamento: ${parsed.seguimento}` : '';
         
         return {
           hasActionableTask: true,
@@ -420,7 +425,7 @@ Responde EXCLUSIVAMENTE em formato JSON:
             prioridade: ['Crítica', 'Urgente', 'Alta', 'Normal', 'Baixa'].includes(parsed.prioridade) ? parsed.prioridade : 'Normal',
             responsavel: parsed.responsavel || 'Hugo Portugal',
             dataLimite: limitDate,
-            notasAdicionais: `Gerada via IA pelas Notas Internas da FS ${context?.numeroFolha || ''} (${context?.matricula || ''}).\nNota original: "${notasInternas}"`
+            notasAdicionais: `Gerada via IA pelas Notas Internas da FS ${context?.numeroFolha || ''} (${context?.matricula || ''}).\nNota original: "${notasInternas}"${followUp}`
           },
           razao: parsed.razao
         };
@@ -445,110 +450,155 @@ function analyzeInternalNotesHeuristic(
   const lower = text.toLowerCase();
   const fsInfo = context?.numeroFolha ? `[FS ${context.numeroFolha}${context.matricula ? ` - ${context.matricula}` : ''}]` : '';
 
-  // Patterns
+  // Extract quoted text if present
+  const quoteMatch = text.match(/["']([^"']{5,})["']/);
+  const quotedContent = quoteMatch ? quoteMatch[1].trim() : '';
+
+  // Deadline logic
+  let limitDays = 2;
+  if (lower.includes('hoje')) limitDays = 0;
+  else if (lower.includes('amanhã') || lower.includes('amanha')) limitDays = 1;
+  else if (lower.includes('urgente') || lower.includes('imediato')) limitDays = 1;
+  else if (lower.includes('semana')) limitDays = 7;
+  const limitDate = new Date(Date.now() + limitDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  // Responsible logic
+  let responsavel = 'Hugo Portugal';
+  if (lower.includes('gil')) {
+    responsavel = 'Gil';
+  }
+
+  // Follow-up notes
+  let followUpNote = '';
+  if (lower.includes('email') || lower.includes('perguntar se foi feito') || lower.includes('não tenha sido') || lower.includes('nao tenha sido')) {
+    followUpNote = '\n\n📧 Acompanhamento: Solicitado envio de email a verificar conclusão caso a tarefa permaneça pendente.';
+  }
+
+  // 1. Explicit task request or quoted instruction
+  if (
+    lower.includes('cria tarefa') || lower.includes('cries uma tarefa') || 
+    lower.includes('criar tarefa') || lower.includes('criar uma tarefa') ||
+    lower.includes('nova tarefa') || lower.includes('gerar tarefa') ||
+    lower.includes('lembrete') || lower.includes('lembrar')
+  ) {
+    const rawAction = quotedContent || text.replace(/Quero que cries uma tarefa.*?[.:]/i, '').trim();
+    const cleanDesc = rawAction.length > 5 ? rawAction : `Acompanhar assunto da FS ${context?.numeroFolha || ''}`;
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `${cleanDesc} ${fsInfo}`.trim(),
+        prioridade: lower.includes('urgente') ? 'Urgente' : 'Normal',
+        responsavel: responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: `Gerado a partir das Notas Internas:\n"${text}"${followUpNote}`
+      },
+      razao: 'Detetada instrução explícita de criação de tarefa nas Notas Internas.'
+    };
+  }
+
+  // 2. Budget / Quote patterns
   if (lower.includes('orçamento') || lower.includes('orcamento') || lower.includes('proposta') || lower.includes('cotacao') || lower.includes('cotação')) {
     const isUrg = lower.includes('urgente') || lower.includes('rapido') || lower.includes('hoje');
-    const limitDate = new Date(Date.now() + (isUrg ? 1 : 2) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
       hasActionableTask: true,
       tarefa: {
         descricao: `Elaborar e enviar orçamento ${fsInfo}`.trim(),
         prioridade: isUrg ? 'Urgente' : 'Alta',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
       razao: 'Detetada necessidade de orçamentação ou cotação.'
     };
   }
 
+  // 3. Parts Order patterns
   if (lower.includes('encomendar') || lower.includes('pedir peca') || lower.includes('pedir peça') || lower.includes('comprar') || lower.includes('falta peça') || lower.includes('falta peca')) {
     const isUrg = lower.includes('urgente') || lower.includes('imediato');
-    const limitDate = new Date(Date.now() + (isUrg ? 1 : 2) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
       hasActionableTask: true,
       tarefa: {
         descricao: `Encomendar peças/material ${fsInfo}`.trim(),
         prioridade: isUrg ? 'Urgente' : 'Alta',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
       razao: 'Detetada necessidade de encomenda de peças ou material.'
     };
   }
 
+  // 4. Send / Dispatch parts
   if (lower.includes('enviar peça') || lower.includes('enviar peca') || lower.includes('enviar material') || lower.includes('despachar') || lower.includes('levar')) {
-    const limitDate = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
       hasActionableTask: true,
       tarefa: {
         descricao: `Enviar/Expedir peças para cliente/estaleiro ${fsInfo}`.trim(),
         prioridade: 'Urgente',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
       razao: 'Detetada necessidade de envio ou entrega de peças.'
     };
   }
 
-  if (lower.includes('ligar') || lower.includes('contactar') || lower.includes('telefonar') || lower.includes('avisar cliente')) {
-    const limitDate = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  // 5. Contact / Communication (verb and noun)
+  if (lower.includes('ligar') || lower.includes('contactar') || lower.includes('contacto') || lower.includes('telefonar') || lower.includes('avisar cliente')) {
+    const cleanDesc = quotedContent || (lower.includes('contacto') ? `Entrar em contacto com cliente/responsável` : `Contactar cliente/responsável`);
     return {
       hasActionableTask: true,
       tarefa: {
-        descricao: `Contactar cliente/responsável ${fsInfo}`.trim(),
+        descricao: `${cleanDesc} ${fsInfo}`.trim(),
         prioridade: 'Alta',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
-      razao: 'Detetada necessidade de comunicação com o cliente.'
+      razao: 'Detetada necessidade de comunicação ou contacto com o cliente/entidade.'
     };
   }
 
+  // 6. Scheduling / Planning
   if (lower.includes('agendar') || lower.includes('marcar') || lower.includes('ir ao estaleiro') || lower.includes('deslocacao') || lower.includes('deslocação')) {
-    const limitDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
       hasActionableTask: true,
       tarefa: {
         descricao: `Agendar intervenção / deslocação ${fsInfo}`.trim(),
         prioridade: 'Normal',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
       razao: 'Detetada necessidade de agendamento ou intervenção presencial.'
     };
   }
 
+  // 7. Technical Inspection / Repair
   if (lower.includes('verificar') || lower.includes('testar') || lower.includes('reparar') || lower.includes('substituir') || lower.includes('trocar')) {
-    const limitDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
       hasActionableTask: true,
       tarefa: {
         descricao: `Verificação técnica pendente ${fsInfo}`.trim(),
         prioridade: 'Normal',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
       razao: 'Detetada ação técnica pendente.'
     };
   }
 
-  // If text is non-empty and has action words like "precisa", "tem de", "fazer", "pendente"
+  // 8. General action verbs ("precisa", "tem de", "fazer", "pendente")
   if (lower.includes('precisa') || lower.includes('tem de') || lower.includes('tem que') || lower.includes('fazer') || lower.includes('pendente')) {
-    const limitDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
       hasActionableTask: true,
       tarefa: {
         descricao: `${text.slice(0, 70)} ${fsInfo}`.trim(),
         prioridade: 'Normal',
-        responsavel: 'Hugo Portugal',
+        responsavel: responsavel,
         dataLimite: limitDate,
-        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"`
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
       },
       razao: 'Detetado item de ação nas notas internas.'
     };

@@ -959,6 +959,10 @@ export const Oficina: React.FC<OficinaProps> = ({
         nomeEmpresa: selectedCompany?.nome
       });
       setAiNoteSuggestion(res);
+      if (!res.hasActionableTask) {
+        setTaskCreatedFeedback('A IA avaliou as notas internas mas não detetou tarefas pendentes automáticas.');
+        setTimeout(() => setTaskCreatedFeedback(null), 4000);
+      }
     } catch (err) {
       console.error(err);
     } finally {
