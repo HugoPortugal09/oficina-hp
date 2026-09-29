@@ -26,8 +26,8 @@ import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS, INITIAL_AUTOMACOES } from '../services/dbService';
-import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail, sendWeeklyAtividadeSemanalEmail } from '../services/emailService';
-import type { AutomacaoItem, TipoAutomacao, FolhaServico, VisitaCliente, Empresa } from '../types';
+import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail, sendWeeklyAtividadeSemanalEmail, sendTarefasPendentesEmail } from '../services/emailService';
+import type { AutomacaoItem, TipoAutomacao, FolhaServico, VisitaCliente, Empresa, Tarefa } from '../types';
 
 export const Automacoes: React.FC = () => {
   const [automacoes, setAutomacoes] = useState<AutomacaoItem[]>(() => {
@@ -192,6 +192,23 @@ export const Automacoes: React.FC = () => {
           success: result.success,
           msg: result.message
         });
+      } else if (auto.tipo === 'alerta_tarefas_pendentes') {
+        const rawTarefas = db.get<Tarefa>(STORAGE_KEYS.TAREFAS);
+
+        const result = await sendTarefasPendentesEmail({
+          destinatarios: auto.destinatarios,
+          tarefas: rawTarefas
+        });
+
+        const nowStr = `Hoje às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const updated = automacoes.map(a => a.id === auto.id ? { ...a, ultimoDisparo: nowStr } : a);
+        saveList(updated);
+
+        setStatusFeedback({
+          id: auto.id,
+          success: result.success,
+          msg: result.message
+        });
       } else {
         await new Promise(r => setTimeout(r, 800));
         setStatusFeedback({
@@ -283,6 +300,8 @@ export const Automacoes: React.FC = () => {
         return <Calendar className="w-5 h-5 text-sky-400" />;
       case 'email_atividade_semanal':
         return <Activity className="w-5 h-5 text-emerald-400" />;
+      case 'alerta_tarefas_pendentes':
+        return <BellRing className="w-5 h-5 text-amber-400" />;
       case 'alerta_stock':
         return <AlertCircle className="w-5 h-5 text-amber-400" />;
       case 'alerta_revisao':
@@ -579,6 +598,7 @@ export const Automacoes: React.FC = () => {
                   <option value="email_tempos_resposta">⏱️ Tempos de Resposta & Imobilização (3 PDFs A3)</option>
                   <option value="email_planeamento">📅 Planeamento Semanal</option>
                   <option value="email_atividade_semanal">📈 Quadro de Atividade Semanal</option>
+                  <option value="alerta_tarefas_pendentes">🔔 Follow-up de Tarefas Pendentes</option>
                   <option value="alerta_stock">📦 Alerta de Stock Mínimo</option>
                   <option value="alerta_revisao">🚗 Lembrete de Revisão Frota</option>
                   <option value="notificacao_cliente">🔔 Conclusão de Obra</option>

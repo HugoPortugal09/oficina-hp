@@ -3475,3 +3475,284 @@ export async function sendConviteColaboradorEmail(
     return { success: false, message: err?.message || 'Falha de comunicação ao enviar convite' };
   }
 }
+
+export interface TarefasPendentesEmailPayload {
+  destinatarios?: string[];
+  tarefas?: Tarefa[];
+}
+
+/**
+ * Envia o email de Follow-up de Tarefas Pendentes, alertando sobre tarefas por concluir,
+ * prazos próximos ou ultrapassados, e tarefas com pedidos específicos de confirmação.
+ */
+export async function sendTarefasPendentesEmail(
+  payload?: TarefasPendentesEmailPayload
+): Promise<{
+  success: boolean;
+  recipients: string[];
+  message: string;
+}> {
+  try {
+    const rawTarefas = payload?.tarefas || db.get<Tarefa>(STORAGE_KEYS.TAREFAS) || [];
+    const pendingTarefas = rawTarefas.filter(t => t.status !== 'Concluída');
+
+    const todayIso = new Date().toISOString().split('T')[0];
+    const todayFormatted = getTodayFormatted();
+
+    // Stats
+    const totalPending = pendingTarefas.length;
+    const overdueTarefas = pendingTarefas.filter(t => t.dataLimite && t.dataLimite < todayIso);
+    const dueTodayTarefas = pendingTarefas.filter(t => t.dataLimite && t.dataLimite === todayIso);
+    const withFollowup = pendingTarefas.filter(t => 
+      t.notasAdicionais?.includes('📧 Acompanhamento') || 
+      t.notasAdicionais?.toLowerCase().includes('email') || 
+      t.notasAdicionais?.toLowerCase().includes('perguntar se foi feito')
+    );
+
+    // Resolve Recipients
+    const emailsSet = new Set<string>();
+    if (payload?.destinatarios && payload.destinatarios.length > 0) {
+      payload.destinatarios.forEach(e => {
+        if (e && e.includes('@')) emailsSet.add(e.trim().toLowerCase());
+      });
+    }
+
+    try {
+      const autos = db.get<any>(STORAGE_KEYS.AUTOMACOES) || [];
+      const autoItem = autos.find((a: any) => a.tipo === 'alerta_tarefas_pendentes');
+      if (autoItem && Array.isArray(autoItem.destinatarios)) {
+        autoItem.destinatarios.forEach((e: string) => {
+          if (e && e.includes('@')) emailsSet.add(e.trim().toLowerCase());
+        });
+      }
+    } catch {}
+
+    if (emailsSet.size === 0) {
+      emailsSet.add('hugo@grau-maquinaria.com');
+    }
+
+    const recipients = Array.from(emailsSet);
+
+    if (totalPending === 0) {
+      return {
+        success: true,
+        recipients,
+        message: 'Não existem tarefas pendentes no momento. Todas as tarefas estão concluídas!'
+      };
+    }
+
+    const subject = withFollowup.length > 0 
+      ? `[Oficina HP] 🔔 Follow-up de Tarefas • ${totalPending} Pendentes (${withFollowup.length} com alerta de verificação)`
+      : `[Oficina HP] 🔔 Follow-up de Tarefas • ${totalPending} Pendentes (${todayFormatted})`;
+
+    // Build rows HTML
+    const rowsHtml = pendingTarefas.map((t, idx) => {
+      const isOverdue = t.dataLimite && t.dataLimite < todayIso;
+      const isToday = t.dataLimite && t.dataLimite === todayIso;
+      const hasFollowup = t.notasAdicionais?.includes('📧 Acompanhamento') || t.notasAdicionais?.toLowerCase().includes('perguntar se foi feito');
+
+      const dateBadgeBg = isOverdue ? '#fee2e2' : isToday ? '#fef3c7' : '#f1f5f9';
+      const dateBadgeText = isOverdue ? '#991b1b' : isToday ? '#92400e' : '#475569';
+      const statusLabel = isOverdue ? 'Atrasada' : isToday ? 'Para Hoje' : 'Em Aberto';
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+          <td style="padding: 10px; font-weight: 700; color: #0284c7; white-space: nowrap;">
+            ${t.numero}<br>
+            <span style="font-size: 10px; color: #64748b; font-weight: normal;">Criada: ${formatDate(t.dataCriacao)}</span>
+          </td>
+          <td style="padding: 10px; color: #0f172a; font-weight: 600;">
+            ${t.descricao}
+            ${hasFollowup ? `
+              <div style="margin-top: 4px; padding: 4px 8px; background: #eff6ff; border-left: 3px solid #3b82f6; border-radius: 4px; font-size: 11px; color: #1e40af;">
+                ⚡ <strong>Acompanhamento Solicitado:</strong> Confirmar se foi efetuada pelo responsável.
+              </div>
+            ` : ''}
+          </td>
+          <td style="padding: 10px; color: #1e293b; font-weight: 600; white-space: nowrap;">
+            ${t.responsavel || 'Hugo Portugal'}
+          </td>
+          <td style="padding: 10px; text-align: center; white-space: nowrap;">
+            <span style="background: ${dateBadgeBg}; color: ${dateBadgeText}; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">
+              ${t.dataLimite ? formatDate(t.dataLimite) : 'Sem data'}
+            </span>
+            <div style="font-size: 9.5px; color: ${dateBadgeText}; margin-top: 2px; font-weight: 600;">${statusLabel}</div>
+          </td>
+          <td style="padding: 10px; text-align: center; white-space: nowrap;">
+            <span style="background: #fef3c7; color: #92400e; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">
+              ${t.prioridade || 'Normal'}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <title>Follow-up de Tarefas - Oficina HP</title>
+</head>
+<body style="font-family:'Segoe UI', Arial, sans-serif; background-color:#f1f5f9; padding:24px 12px; color:#1e293b; margin:0;">
+  <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:700px; background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #cbd5e1; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+    <!-- Top Bar -->
+    <tr>
+      <td style="background-color:#0b1528; padding:24px 30px; border-bottom:3px solid #f59e0b;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+              <h1 style="color:#ffffff; margin:0; font-size:20px; font-weight:800; letter-spacing:-0.5px;">OFICINA HP</h1>
+              <p style="color:#94a3b8; margin:4px 0 0 0; font-size:12px;">Gestão de Frotas & Equipamentos • GRAUMP</p>
+            </td>
+            <td align="right">
+              <span style="background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3); padding:6px 12px; border-radius:8px; font-size:11px; font-weight:700; text-transform:uppercase;">
+                FOLLOW-UP DE TAREFAS
+              </span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td style="padding:28px 30px;">
+        <h2 style="color:#0f172a; margin-top:0; font-size:17px; font-weight:800;">
+          📋 Ponto de Situação & Verificação de Tarefas Pendentes
+        </h2>
+        <p style="color:#475569; font-size:13.5px; line-height:1.6; margin-bottom:20px;">
+          Este é o alerta automático com o ponto de situação das tarefas operacionais ainda não dadas como concluídas na Oficina HP. Por favor verifique o estado das mesmas e dê a tarefa como concluída no sistema caso a intervenção já tenha sido efetuada.
+        </p>
+
+        <!-- Metrics Cards -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+          <tr>
+            <td width="23%" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#64748b; font-weight:700; text-transform:uppercase; display:block;">Total Pendentes</span>
+              <span style="font-size:20px; color:#0f172a; font-weight:800; display:block; margin-top:4px;">${totalPending}</span>
+            </td>
+            <td width="2%"></td>
+            <td width="23%" style="background:${overdueTarefas.length > 0 ? '#fef2f2' : '#f8fafc'}; border:1px solid ${overdueTarefas.length > 0 ? '#fecaca' : '#e2e8f0'}; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:${overdueTarefas.length > 0 ? '#991b1b' : '#64748b'}; font-weight:700; text-transform:uppercase; display:block;">Em Atraso</span>
+              <span style="font-size:20px; color:${overdueTarefas.length > 0 ? '#dc2626' : '#64748b'}; font-weight:800; display:block; margin-top:4px;">${overdueTarefas.length}</span>
+            </td>
+            <td width="2%"></td>
+            <td width="23%" style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#92400e; font-weight:700; text-transform:uppercase; display:block;">Para Hoje</span>
+              <span style="font-size:20px; color:#d97706; font-weight:800; display:block; margin-top:4px;">${dueTodayTarefas.length}</span>
+            </td>
+            <td width="2%"></td>
+            <td width="23%" style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px 8px; text-align:center;">
+              <span style="font-size:10px; color:#1e40af; font-weight:700; text-transform:uppercase; display:block;">C/ Acompanhamento</span>
+              <span style="font-size:20px; color:#2563eb; font-weight:800; display:block; margin-top:4px;">${withFollowup.length}</span>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Table of Tasks -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:12px; border:1px solid #cbd5e1; margin-bottom:20px; border-radius:8px; overflow:hidden;">
+          <thead>
+            <tr style="background:#0f172a; color:#ffffff; font-size:11px;">
+              <th align="left" style="padding:10px;">Nº Tarefa</th>
+              <th align="left" style="padding:10px;">Ação / Descrição</th>
+              <th align="left" style="padding:10px;">Responsável</th>
+              <th align="center" style="padding:10px;">Prazo Limite</th>
+              <th align="center" style="padding:10px;">Prioridade</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+
+        <div style="background-color: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 14px 16px; margin-top: 20px;">
+          <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="28" valign="middle" style="font-size: 20px; line-height: 1;">💡</td>
+              <td valign="middle">
+                <strong style="color: #92400e; font-size: 13px;">Como concluir uma tarefa?</strong>
+                <div style="font-size: 11.5px; color: #78350f; margin-top: 2px;">
+                  Aceda ao menu <strong>Tarefas</strong> na app Oficina HP e clique no botão de visto verde (<span style="color:#16a34a; font-weight:bold;">Concluir</span>) ao lado da tarefa respetiva para atualizar o estado e fechar o alerta.
+                </div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background-color:#f8fafc; padding:16px 30px; border-top:1px solid #e2e8f0; text-align:center;">
+        <div style="font-size:12px; font-weight:700; color:#475569;">Oficina HP • Grau Maquinaria</div>
+        <div style="font-size:11px; color:#94a3b8; margin-top:3px;">
+          Automação de Follow-up de Tarefas • Processado em ${todayFormatted} às ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    let apiDeliverySuccess = false;
+    let apiError = '';
+    try {
+      const sendResult = await postSendEmailApi({
+        to: recipients,
+        subject,
+        html: htmlContent
+      });
+      if (sendResult.success) {
+        apiDeliverySuccess = true;
+        console.log(`[EmailService] ✅ Email de Follow-up de Tarefas enviado com sucesso (ID: ${sendResult.messageId})`);
+      } else {
+        apiError = sendResult.error || 'Erro no envio';
+        console.warn('[EmailService] ⚠️ Resposta da API:', sendResult.error);
+      }
+    } catch (apiErr: any) {
+      apiError = apiErr?.message || 'Falha de rede';
+      console.warn('[EmailService] ⚠️ Erro ao contactar /api/send-email:', apiErr);
+    }
+
+    try {
+      const emailLogEntry = {
+        id: db.generateId('eml'),
+        tipo: 'alerta_tarefas_pendentes',
+        destinatarios: recipients,
+        assunto: subject,
+        dataEnvio: new Date().toISOString(),
+        anexosCount: 0,
+        sucesso: apiDeliverySuccess,
+        detalhes: {
+          totalPending,
+          overdueTarefas: overdueTarefas.length,
+          dueTodayTarefas: dueTodayTarefas.length,
+          withFollowup: withFollowup.length
+        }
+      };
+      const logs = db.get<any>('oficina_hp_email_logs') || [];
+      db.save('oficina_hp_email_logs', [emailLogEntry, ...logs.slice(0, 50)]);
+    } catch {}
+
+    if (apiDeliverySuccess) {
+      return {
+        success: true,
+        recipients,
+        message: `Email de Follow-up com ${totalPending} tarefas pendentes enviado com sucesso para ${recipients.join(', ')}!`
+      };
+    }
+
+    return {
+      success: false,
+      recipients,
+      message: `Não foi possível enviar o email de follow-up: ${apiError}`
+    };
+  } catch (err: any) {
+    console.error('[EmailService] Erro em sendTarefasPendentesEmail:', err);
+    return {
+      success: false,
+      recipients: [],
+      message: err?.message || 'Erro inesperado ao gerar email de tarefas pendentes.'
+    };
+  }
+}

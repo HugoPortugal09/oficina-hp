@@ -585,6 +585,7 @@ export type TipoAutomacao =
   | 'email_planeamento' 
   | 'email_atividade_semanal'
   | 'email_tempos_resposta'
+  | 'alerta_tarefas_pendentes'
   | 'alerta_stock' 
   | 'alerta_revisao' 
   | 'notificacao_cliente'

@@ -523,6 +523,20 @@ export const INITIAL_AUTOMACOES: AutomacaoItem[] = [
     proximoDisparo: 'Dias de semana às 06:00'
   },
   {
+    id: 'auto_001_d',
+    nome: 'Follow-up de Tarefas Pendentes & Alertas por Email',
+    descricao: 'Verifica as tarefas por concluir na oficina, prazos limites e tarefas com pedidos de acompanhamento, enviando um email com o ponto de situação e pedidos de confirmação.',
+    tipo: 'alerta_tarefas_pendentes',
+    frequencia: 'Todos os dias úteis às 17:30',
+    cronExpr: '30 17 * * 1-5',
+    ativo: true,
+    destinatarios: ['hugo@grau-maquinaria.com'],
+    canaisEnvio: ['email'],
+    anexoTipo: 'nenhum',
+    icone: 'BellRing',
+    proximoDisparo: 'Hoje às 17:30'
+  },
+  {
     id: 'auto_002',
     nome: 'Alerta de Ruptura / Stock Mínimo de Peças',
     descricao: 'Dispara um aviso por email quando qualquer artigo do catálogo atinge ou fica abaixo do stock mínimo de segurança.',
