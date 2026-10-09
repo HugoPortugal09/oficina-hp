@@ -66,6 +66,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
+  const markerMapRef = useRef<Map<string, L.Marker>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'AT' | 'CT' | 'outros'>('all');
@@ -73,32 +74,46 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [mapStyle, setMapStyle] = useState<'dark' | 'streets' | 'light'>(() => (theme === 'light' ? 'light' : 'dark'));
 
-  // Count of services currently inside the Oficina (for reference)
+  // Count of services currently inside the Oficina Base (GRAUMP in Albergaria-a-Velha)
   const oficinaCount = useMemo(() => {
     return folhas.filter(f => {
       if (f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito') return false;
-      return (
-        f.localizacaoTipo === 'oficina' ||
-        f.tipo === 'Oficina' ||
-        f.status.startsWith('OF -') ||
-        f.localizacao?.toLowerCase().includes('oficina')
-      );
+      const locText = `${f.localizacao || ''} ${(f as any).moradaIntervencao || ''} ${(f as any).localIntervencao || ''}`.toLowerCase();
+      const isExplicitGraump =
+        locText.includes('graump') ||
+        locText.includes('vista alegre') ||
+        locText.includes('3850-184') ||
+        locText.includes('albergaria-a-velha') ||
+        locText.includes('albergaria a velha') ||
+        locText.includes('oficina principal');
+      const isBlankLocationOficina =
+        !locText.trim() &&
+        (f.tipo === 'Oficina' || f.status.startsWith('OF -') || f.localizacaoTipo === 'oficina');
+      return isExplicitGraump || isBlankLocationOficina;
     }).length;
   }, [folhas]);
 
-  // 1. Filter all OPEN Folhas across Portugal (EXCLUDING services currently in the Oficina)
+  // 1. Filter all OPEN Folhas across Portugal (EXCLUDING services currently inside Oficina Base GRAUMP)
   const openExternalFolhas = useMemo(() => {
     return folhas.filter(f => {
       // Exclude finished / billed
       if (f.status === 'Concluído' || f.status.startsWith('FEITO') || f.status === 'Feito') return false;
 
-      // Exclude services that are located in the Oficina
-      const isInOficina =
-        f.localizacaoTipo === 'oficina' ||
-        f.tipo === 'Oficina' ||
-        f.status.startsWith('OF -') ||
-        f.localizacao?.toLowerCase().includes('oficina');
+      // Exclude only services truly located at the HP workshop base in Albergaria-a-Velha / GRAUMP
+      // If a service has an external address (Famalicão, Tarouca, Estrela, etc.), it MUST show on the map!
+      const locText = `${f.localizacao || ''} ${(f as any).moradaIntervencao || ''} ${(f as any).localIntervencao || ''}`.toLowerCase();
+      const isExplicitGraump =
+        locText.includes('graump') ||
+        locText.includes('vista alegre') ||
+        locText.includes('3850-184') ||
+        locText.includes('albergaria-a-velha') ||
+        locText.includes('albergaria a velha') ||
+        locText.includes('oficina principal');
+      const isBlankLocationOficina =
+        !locText.trim() &&
+        (f.tipo === 'Oficina' || f.status.startsWith('OF -') || f.localizacaoTipo === 'oficina');
 
+      const isInOficina = isExplicitGraump || isBlankLocationOficina;
       return !isInOficina;
     });
   }, [folhas]);
@@ -113,8 +128,20 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       );
 
       // Best address resolution: Folha Localização > Estaleiro > Empresa Sede > Nome da Empresa
-      let targetAddress = f.localizacao?.trim() || '';
-      if (!targetAddress) {
+      let targetAddress =
+        f.localizacao?.trim() ||
+        (f as any).moradaIntervencao?.trim() ||
+        (f as any).localIntervencao?.trim() ||
+        '';
+
+      const isPlaceholder =
+        !targetAddress ||
+        targetAddress.toLowerCase() === 'sede' ||
+        targetAddress.toLowerCase() === 'cliente' ||
+        targetAddress.toLowerCase() === 'estaleiro' ||
+        targetAddress.toLowerCase() === 'outro';
+
+      if (isPlaceholder) {
         if (emp?.estaleiros && emp.estaleiros.length > 0 && eq?.estaleiroId) {
           const est = emp.estaleiros.find(s => s.id === eq.estaleiroId);
           if (est?.morada) targetAddress = `${est.morada}, ${est.nome}`;
@@ -125,7 +152,24 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
         }
       }
 
-      const coords = resolvePortugalCoordinates(targetAddress, f.id);
+      let coords = resolvePortugalCoordinates(targetAddress);
+      // Fallback: If targetAddress didn't resolve to a specific city/CP, try emp.moradaSede or emp.nome
+      if (coords.cidade === 'Portugal (Geral)') {
+        if (emp?.moradaSede) {
+          const sedeCoords = resolvePortugalCoordinates(emp.moradaSede);
+          if (sedeCoords.cidade !== 'Portugal (Geral)') {
+            coords = sedeCoords;
+            targetAddress = emp.moradaSede;
+          }
+        }
+        if (coords.cidade === 'Portugal (Geral)' && emp?.nome) {
+          const nomeCoords = resolvePortugalCoordinates(emp.nome);
+          if (nomeCoords.cidade !== 'Portugal (Geral)') {
+            coords = nomeCoords;
+          }
+        }
+      }
+
       const distKm = calculateDistanceKm(OFICINA_HP_BASE.lat, OFICINA_HP_BASE.lng, coords.lat, coords.lng);
 
       return {
@@ -238,7 +282,10 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     };
   }, [mapStyle]);
 
-  // 6. Dynamic Zoom-Aware Marker Clustering & Pin Rendering
+  // 6. Geographic Co-location Pin Grouping & Rendering
+  // Groups services that share the exact physical address/location (e.g. 5 services at JF da Estrela)
+  // into a single pin badge showing the count ("5").
+  // Distinct locations (Famalicão, Braga, Tarouca, Armamar, Porto, etc.) stay separate!
   useEffect(() => {
     const map = mapInstanceRef.current;
     const group = markersGroupRef.current;
@@ -246,49 +293,38 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
 
     const renderMarkers = () => {
       group.clearLayers();
+      markerMapRef.current.clear();
 
-      // Screen-pixel distance threshold for grouping overlapping pins (e.g. 36px)
-      // When pins overlap on screen at current zoom, group them into a cluster with the count.
-      // When zoomed in so pins are separated by > 36px, render each as an individual pin WITHOUT the number!
-      const PIXEL_RADIUS = 36;
-
-      interface DynamicCluster {
+      interface LocationGroup {
         id: string;
         centerLat: number;
         centerLng: number;
         items: MapMarkerItem[];
-        screenPoint: L.Point;
       }
 
-      const clusters: DynamicCluster[] = [];
+      const groups: LocationGroup[] = [];
 
       filteredMarkers.forEach(item => {
-        const screenPt = map.latLngToLayerPoint([item.coords.lat, item.coords.lng]);
-
-        // Find if there is an existing cluster within screen pixel radius
-        const existing = clusters.find(c => {
-          return screenPt.distanceTo(c.screenPoint) <= PIXEL_RADIUS;
+        // Group services with identical or nearly identical coordinates (~300m threshold: < 0.003 deg)
+        const match = groups.find(g => {
+          const dLat = Math.abs(g.centerLat - item.coords.lat);
+          const dLng = Math.abs(g.centerLng - item.coords.lng);
+          return dLat < 0.003 && dLng < 0.003;
         });
 
-        if (existing) {
-          existing.items.push(item);
-          // Centroid lat/lng
-          const n = existing.items.length;
-          existing.centerLat = (existing.centerLat * (n - 1) + item.coords.lat) / n;
-          existing.centerLng = (existing.centerLng * (n - 1) + item.coords.lng) / n;
-          existing.screenPoint = map.latLngToLayerPoint([existing.centerLat, existing.centerLng]);
+        if (match) {
+          match.items.push(item);
         } else {
-          clusters.push({
-            id: `cluster_${item.folha.id}`,
+          groups.push({
+            id: `loc_${item.folha.id}`,
             centerLat: item.coords.lat,
             centerLng: item.coords.lng,
-            items: [item],
-            screenPoint: screenPt
+            items: [item]
           });
         }
       });
 
-      clusters.forEach(cluster => {
+      groups.forEach(cluster => {
         const count = cluster.items.length;
         const isMulti = count > 1;
         const hasAT = cluster.items.some(m => m.isAT);
@@ -301,11 +337,11 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
           ? 'from-purple-600 to-indigo-600'
           : 'from-sky-500 to-blue-600';
 
-        // When overlapping (isMulti): Show the NUMBER of services on the pin
-        // When single (isMulti === false): DO NOT show the number, show the icon!
+        // When multiple services at the exact same location: Show number badge
+        // When single service: Show category icon (AT: ⚡, CT: 📜, Outros: 🛡️)
         const pinIconHtml = isMulti
           ? `
-          <div class="relative group cursor-pointer flex items-center justify-center" id="cluster-${cluster.id}" title="${count} serviços sobrepostos. Clique para ver ou faça zoom para separar.">
+          <div class="relative group cursor-pointer flex items-center justify-center" id="cluster-${cluster.id}" title="${count} serviços neste local.">
             <div class="absolute -top-1 -left-1 w-11 h-11 rounded-2xl animate-ping opacity-25" style="background-color: ${pinColor};"></div>
             <div class="relative w-9 h-9 rounded-2xl bg-gradient-to-br ${pinBgGradient} border-2 border-white shadow-2xl flex items-center justify-center text-white font-black text-sm transform hover:scale-125 transition-transform">
               <span class="tracking-tight font-black">${count}</span>
@@ -332,6 +368,11 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
         });
 
         const marker = L.marker([cluster.centerLat, cluster.centerLng], { icon: customPin });
+
+        // Store reference for quick focus
+        cluster.items.forEach(it => {
+          markerMapRef.current.set(it.folha.id, marker);
+        });
 
         // Popup Content
         const popupContent = document.createElement('div');
@@ -423,23 +464,14 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       });
     };
 
-    // Initial render
+    // Render markers on map
     renderMarkers();
-
-    // Dynamically re-cluster markers when the user zooms or pans the map
-    map.on('zoomend', renderMarkers);
-    map.on('moveend', renderMarkers);
 
     // Auto-fit bounds on first load or filter change
     if (filteredMarkers.length > 0) {
       const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
       map.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40], maxZoom: 12 });
     }
-
-    return () => {
-      map.off('zoomend', renderMarkers);
-      map.off('moveend', renderMarkers);
-    };
   }, [filteredMarkers, onSelectFolha]);
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -453,6 +485,10 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       map.flyTo([item.coords.lat, item.coords.lng], 13, {
         duration: 1.2
       });
+      const m = markerMapRef.current.get(item.folha.id);
+      if (m) {
+        m.openPopup();
+      }
     }
   };
 

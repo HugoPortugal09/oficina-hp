@@ -1583,7 +1583,7 @@ export const Oficina: React.FC<OficinaProps> = ({
         );
 
         let targetAddress = f.localizacao?.trim() || (f as any).moradaIntervencao?.trim() || (f as any).localIntervencao?.trim() || '';
-        if (!targetAddress) {
+        if (!targetAddress || targetAddress.toLowerCase() === 'sede' || targetAddress.toLowerCase() === 'cliente') {
           if (f.tipo === 'Oficina') {
             targetAddress = 'Oficina Principal (Albergaria-a-Velha)';
           } else if (emp?.estaleiros && emp.estaleiros.length > 0 && eq?.estaleiroId) {
@@ -1598,7 +1598,23 @@ export const Oficina: React.FC<OficinaProps> = ({
           }
         }
 
-        let coords = resolvePortugalCoordinates(targetAddress, f.id);
+        let coords = resolvePortugalCoordinates(targetAddress);
+        if (coords.cidade === 'Portugal (Geral)') {
+          if (emp?.moradaSede) {
+            const sedeCoords = resolvePortugalCoordinates(emp.moradaSede);
+            if (sedeCoords.cidade !== 'Portugal (Geral)') {
+              coords = sedeCoords;
+              targetAddress = emp.moradaSede;
+            }
+          }
+          if (coords.cidade === 'Portugal (Geral)' && emp?.nome) {
+            const nomeCoords = resolvePortugalCoordinates(emp.nome);
+            if (nomeCoords.cidade !== 'Portugal (Geral)') {
+              coords = nomeCoords;
+            }
+          }
+        }
+
         let distKmNum = f.distanciaKms || calculateDistanceKm(OFICINA_HP_BASE.lat, OFICINA_HP_BASE.lng, coords.lat, coords.lng);
         if (f.tipo === 'Oficina' || targetAddress.toLowerCase().includes('oficina principal')) {
           distKmNum = 0;

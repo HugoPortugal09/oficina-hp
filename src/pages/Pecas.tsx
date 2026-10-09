@@ -17,7 +17,8 @@ import {
   Activity,
   History,
   LayoutGrid,
-  Table
+  Table,
+  Download
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -112,6 +113,62 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser })
       localizacaoArmazem: 'Armazém Principal'
     });
     setIsModalOpen(true);
+  };
+
+  const handleExportCSV = () => {
+    const headers = [
+      'Código / Referência',
+      'Designação',
+      'Código de Barras (Barcode)',
+      'Marca',
+      'Modelo',
+      'Localização Armazém',
+      'Stock Atual',
+      'Stock Mínimo',
+      'Preço Custo (€)',
+      'Preço Venda (€)',
+      'Taxa IVA (%)',
+      'Fornecedor',
+      'Categoria',
+      'Notas'
+    ];
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val).trim();
+      if (str.includes(';') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    const rows = [headers.map(escapeCsv).join(';')];
+    pecas.forEach(p => {
+      const ref = p.referencia || '';
+      rows.push([
+        ref,
+        p.designacao || '',
+        p.codigoBarras || ref,
+        p.marca || '',
+        p.modelo || '',
+        p.localizacaoArmazem || '',
+        p.stockAtual ?? 0,
+        p.stockMinimo ?? 0,
+        p.precoCusto ?? (p.preco !== undefined ? p.preco : ''),
+        p.precoVenda ?? '',
+        p.taxaIva ?? 23,
+        p.fornecedor || '',
+        p.categoria || '',
+        p.notas || ''
+      ].map(escapeCsv).join(';'));
+    });
+    const blob = new Blob(['\uFEFF' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `catalogo_pecas_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleSave = () => {
@@ -244,6 +301,15 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser })
               <span className="hidden sm:inline">Tabela</span>
             </button>
           </div>
+
+          <button
+            onClick={handleExportCSV}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 transition-colors flex items-center gap-2 shadow-sm"
+            title="Exportar Catálogo em CSV / Excel para Etiquetas de Código de Barras"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Exportar CSV</span>
+          </button>
 
           {permissions.canEditPecas && (
             <button
