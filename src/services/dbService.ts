@@ -1191,10 +1191,39 @@ export const db = {
   },
 
   generateSequenceNumber(key: string, prefix: string): string {
-    const items = this.get<any>(key);
+    const items = this.get<any>(key) || [];
     const currentYear = new Date().getFullYear().toString().slice(-2);
-    const count = items.length + 1;
-    return `${prefix}${currentYear}${count.toString().padStart(3, '0')}`;
+
+    // Para 2026: manter a numeração sequencial atual sem interrupções
+    if (currentYear === '26') {
+      let maxSeq = 0;
+      const reg26 = new RegExp(`^${prefix}(?:26|2026-?)(\\d+)$`);
+      items.forEach(it => {
+        const num = it && it.numero ? String(it.numero).trim() : '';
+        const m = num.match(reg26);
+        if (m) {
+          const val = parseInt(m[1], 10);
+          if (!isNaN(val) && val > maxSeq) maxSeq = val;
+        }
+      });
+      const next = Math.max(maxSeq, items.length) + 1;
+      return `${prefix}26${next.toString().padStart(3, '0')}`;
+    }
+
+    // Para anos futuros (2027, 2028, etc.): reset para 001 e contagem estritamente anual (ex: FS27001, FS27002...)
+    let maxYearSeq = 0;
+    const regYear = new RegExp(`^${prefix}(?:${currentYear}|20${currentYear}-?)(\\d+)$`);
+    items.forEach(it => {
+      const num = it && it.numero ? String(it.numero).trim() : '';
+      const m = num.match(regYear);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (!isNaN(val) && val > maxYearSeq) maxYearSeq = val;
+      }
+    });
+
+    const next = maxYearSeq + 1;
+    return `${prefix}${currentYear}${next.toString().padStart(3, '0')}`;
   }
 };
 
