@@ -129,47 +129,6 @@ const INITIAL_CLIENTES: Cliente[] = [
 
 const INITIAL_EQUIPAMENTOS: Equipamento[] = [
   {
-    id: 'eq_001',
-    matricula: 'CH-28-LN',
-    marca: 'Goupil',
-    modelo: 'G4',
-    nSerie: 'G4-2021-0081',
-    ano: 2021,
-    tipo: 'Elétrico Urbano',
-    kmsAtuais: 32400,
-    horasAtuais: 1420,
-    empresaId: 'E009',
-    notas: 'Viatura 100% elétrica em operação municipal.'
-  },
-  {
-    id: 'eq_002',
-    matricula: '93-TX-72',
-    marca: 'Goupil',
-    modelo: 'G4',
-    nSerie: 'G4-2022-0194',
-    ano: 2022,
-    tipo: 'Elétrico Urbano',
-    kmsAtuais: 18500,
-    horasAtuais: 940,
-    empresaId: 'E001',
-    estaleiroId: 'est_maia',
-    notas: 'Equipamento afeto à recolha seletiva.'
-  },
-  {
-    id: 'eq_003',
-    matricula: '16-UA-69',
-    marca: 'Goupil',
-    modelo: 'G4',
-    nSerie: 'G4-2020-0044',
-    ano: 2020,
-    tipo: 'Elétrico Urbano',
-    kmsAtuais: 44300,
-    horasAtuais: 2100,
-    empresaId: 'E005',
-    estaleiroId: 'est_coimbra_oficinas',
-    notas: 'Revisão geral do sistema de tração elétrica efetuada.'
-  },
-  {
     id: 'eq_004',
     matricula: '44-HP-77',
     marca: 'Toyota',
@@ -1055,6 +1014,26 @@ export const db = {
       }
     } catch (purgeErr) {
       console.warn('Error purging blacklisted companies:', purgeErr);
+    }
+
+    // Explicit purge of obsolete/duplicate equipment records as requested
+    try {
+      const PURGE_EQ_IDS = new Set([
+        '90633d8a-9aad-4cf1-8356-a4cd0dd8a62b', // CH-28-LN (registo G6 Barcelos sem ano)
+        'eq_001',                               // CH-28-LN (registo de teste Porto 2021)
+        'eq_003',                               // 16-UA-69 (registo de teste Coimbra)
+        'eq_002'                                // 93-TX-72 (registo de teste Prezero)
+      ]);
+
+      const eqs = this.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS);
+      if (eqs && eqs.length > 0) {
+        const cleanedEqs = eqs.filter(eq => !PURGE_EQ_IDS.has(eq.id));
+        if (cleanedEqs.length !== eqs.length) {
+          this.save(STORAGE_KEYS.EQUIPAMENTOS, cleanedEqs);
+        }
+      }
+    } catch (purgeEqErr) {
+      console.warn('Error purging duplicate equipment records:', purgeEqErr);
     }
 
     // Synchronize and heal any existing Folhas in localStorage so tipo matches status

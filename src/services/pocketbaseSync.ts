@@ -36,6 +36,14 @@ function mergeCollectionData(localData: any, cloudData: any): any {
     return cloudData;
   }
 
+  // IDs to ignore/never resurrect during synchronization
+  const BLACKLISTED_IDS = new Set([
+    '90633d8a-9aad-4cf1-8356-a4cd0dd8a62b',
+    'eq_001',
+    'eq_003',
+    'eq_002'
+  ]);
+
   // If arrays of objects, merge by unique key
   const mergedMap = new Map<string, any>();
 
@@ -51,11 +59,13 @@ function mergeCollectionData(localData: any, cloudData: any): any {
 
   // Add cloud items first
   cloudData.forEach((item, idx) => {
+    if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
     mergedMap.set(getKey(item, idx), item);
   });
 
   // Merge or add local items (compare updatedAt timestamps if available)
   localData.forEach((item, idx) => {
+    if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
     const key = getKey(item, idx);
     if (mergedMap.has(key)) {
       const cloudItem = mergedMap.get(key);
