@@ -140,46 +140,64 @@ export default function App() {
 
   const handleCreateNewServiceDirect = (equip?: any) => {
     if (equip) {
+      const today = getTodayFormatted();
+      const newNum = db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
       const newFs: FolhaServico = {
-      id: db.generateId('fs'),
-      numero: db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS'),
-      tipo: 'Oficina',
-      data: new Date().toISOString().split('T')[0],
-      status: 'OF - Com requisição - Aguardar agenda',
-      empresaId: equip.empresaId || '',
-      equipamentoId: equip.id,
-      matricula: equip.matricula,
-      marca: equip.marca,
-      modelo: equip.modelo,
-      kmsAtuais: equip.kmsAtuais || 0,
-      horasAtuais: equip.horasAtuais || 0,
-      localizacao: 'Oficina Principal HP',
-      localizacaoTipo: 'oficina',
-      distanciaKms: 0,
-      anomalias: 'Abertura de serviço via Passaporte Técnico.',
-      servicos: [],
-      servicosAdicionais: [],
-      pecas: [],
-      pecasAdicionais: [],
-      mensagens: [
-        {
-          id: db.generateId('msg'),
-          user: currentUser?.nome || 'Oficina HP',
-          text: `Nova intervenção iniciada para o equipamento ${equip.matricula} (${equip.marca} ${equip.modelo}).`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ],
-      fotos: [],
-      fotosCliente: [],
-      notasCliente: '',
-      previsaoRevisaoKms: (equip.kmsAtuais || 0) + 15000,
-      previsaoRevisaoHoras: (equip.horasAtuais || 0) + 500,
-      equipamentoFuncionando: 'Sim'
-    };
+        id: db.generateId('fs'),
+        numero: newNum,
+        tipo: 'Oficina',
+        data: today,
+        dataAbertura: today,
+        dataEntradaOficina: today,
+        dataRequisicao: '',
+        dataConclusao: '',
+        guiaAT: '',
+        status: 'A ser intervencionado',
+        requisicao: 'Não',
+        faturacao: 'Pendente',
+        empresaId: equip.empresaId || '',
+        equipamentoId: equip.id,
+        matricula: equip.matricula,
+        marca: equip.marca || 'Viatura',
+        modelo: equip.modelo || 'Frota',
+        kmsAtuais: equip.kmsAtuais || 0,
+        horasAtuais: equip.horasAtuais || 0,
+        localizacao: 'GRAUMP (Parque Empresarial Vista Alegre, Pavilhão 5, 3850-184 Albergaria-a-Velha)',
+        localizacaoTipo: 'oficina',
+        distanciaKms: 0,
+        anomalias: 'Abertura de serviço para viatura/equipamento.',
+        servicos: [],
+        servicosAdicionais: [],
+        pecas: [],
+        pecasAdicionais: [],
+        mensagens: [
+          {
+            id: db.generateId('msg'),
+            user: currentUser?.nome || 'Oficina HP',
+            text: `Nova intervenção iniciada para o equipamento ${equip.matricula} (${equip.marca || ''} ${equip.modelo || ''}).`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ],
+        historicoEstados: [
+          {
+            status: 'A ser intervencionado',
+            dataEntrada: new Date().toISOString()
+          }
+        ],
+        fotos: [],
+        fotosCliente: [],
+        notasCliente: '',
+        previsaoRevisaoKms: (equip.kmsAtuais || 0) + 15000,
+        previsaoRevisaoHoras: (equip.horasAtuais || 0) + 500,
+        equipamentoFuncionando: 'Sim',
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-    db.insert(STORAGE_KEYS.FOLHAS_SERVICO, newFs);
-    loadAllData();
-    handleSelectFolhaDirect(newFs);
+      db.insert(STORAGE_KEYS.FOLHAS_SERVICO, newFs);
+      loadAllData();
+      handleSelectFolhaDirect(newFs);
       return;
     }
 

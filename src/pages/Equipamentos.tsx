@@ -21,7 +21,9 @@ import {
   PackageCheck,
   LayoutGrid,
   Table,
-  ExternalLink
+  ExternalLink,
+  FileText,
+  AlertTriangle
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -179,6 +181,32 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
     if (!editingEquip.id && !editingEquip.matricula) return null;
     return getEquipamentoLatestData(editingEquip, safeFolhas);
   }, [editingEquip.id, editingEquip.matricula, safeFolhas]);
+
+  // Folhas em aberto para o equipamento atualmente aberto na ficha
+  const openFolhasThisEquip = useMemo(() => {
+    if (!editingEquip.id && !editingEquip.matricula) return [];
+    const mat = (editingEquip.matricula || '').trim().toUpperCase();
+    return safeFolhas.filter(f =>
+      ((editingEquip.id && f.equipamentoId === editingEquip.id) || (mat && f.matricula && f.matricula.trim().toUpperCase() === mat)) &&
+      f.status !== 'Concluído' && f.status !== 'Feito'
+    );
+  }, [safeFolhas, editingEquip.id, editingEquip.matricula]);
+
+  const handleCreateFSFromFicha = () => {
+    if (!editingEquip.id && !editingEquip.matricula) return;
+    setIsModalOpen(false);
+    if (onCreateNewServiceDirect) {
+      onCreateNewServiceDirect({
+        id: editingEquip.id,
+        matricula: editingEquip.matricula,
+        marca: editingEquip.marca,
+        modelo: editingEquip.modelo,
+        empresaId: editingEquip.empresaId,
+        kmsAtuais: editingEquip.kmsAtuais,
+        horasAtuais: editingEquip.horasAtuais
+      });
+    }
+  };
 
   const handleSelectEmpresaItem = (emp: Empresa) => {
     setEditingEquip(prev => ({
@@ -431,15 +459,32 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                       <span className="text-xs text-slate-400">{eq.tipo || 'Geral'} {eq.ano ? `• ${eq.ano}` : ''}</span>
                     </div>
 
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        handleEditEquip(eq);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (onCreateNewServiceDirect) {
+                            onCreateNewServiceDirect(eq);
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-hp-300 hover:bg-hp-600/20 rounded-lg transition-colors cursor-pointer"
+                        title="Abrir Folha de Serviço para este equipamento"
+                      >
+                        <FileText className="w-4 h-4 text-hp-400" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleEditEquip(eq);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Editar ficha da viatura"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Specs list */}
@@ -606,12 +651,28 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                       </button>
                     </td>
                     <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => handleEditEquip(eq)}
-                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onCreateNewServiceDirect) {
+                              onCreateNewServiceDirect(eq);
+                            }
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-hp-300 hover:bg-hp-600/20 rounded-lg transition-colors cursor-pointer"
+                          title="Abrir Folha de Serviço para este equipamento"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-hp-400" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditEquip(eq)}
+                          className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                          title="Editar ficha da viatura"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -626,11 +687,52 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={editingEquip.id?.startsWith('eq_new') ? 'Nova Viatura / Máquina' : `Editar: ${editingEquip.matricula}`}
+          title={editingEquip.id?.startsWith('eq_new') ? 'Nova Viatura / Máquina' : `Ficha de Equipamento: ${editingEquip.matricula}`}
           subtitle="Ficha técnica, empresa proprietária, datas de entrega/formação e fotografias"
           maxWidth="4xl"
         >
           <div className="space-y-5">
+            {/* Top Action Bar: Abrir Folha de Serviço para este equipamento */}
+            {editingEquip.id && !editingEquip.id.startsWith('eq_new') && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-950/80 rounded-2xl border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-extrabold px-2.5 py-1 bg-slate-900 border border-slate-700 text-white rounded-lg">
+                    {editingEquip.matricula}
+                  </span>
+                  <span className="text-xs text-slate-300 font-semibold">
+                    {editingEquip.marca} {editingEquip.modelo}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  {openFolhasThisEquip.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        onSelectFolha(openFolhasThisEquip[0]);
+                      }}
+                      className="py-1.5 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      title="Abrir a folha de serviço que já está em aberto para esta viatura"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Ver FS em Aberto ({openFolhasThisEquip[0].numero})</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleCreateFSFromFicha}
+                    className="py-1.5 px-3.5 bg-hp-600 hover:bg-hp-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-hp-600/30 transition-all cursor-pointer"
+                    title="Criar e abrir uma nova Folha de Serviço para esta viatura com todos os dados preenchidos"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Abrir Folha de Serviço</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Row 1: Plate & Searchable Empresa */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -949,7 +1051,19 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                 </button>
               )}
 
-              <div className="flex items-center gap-3 ml-auto">
+              <div className="flex flex-wrap items-center gap-2.5 ml-auto">
+                {editingEquip.id && !editingEquip.id.startsWith('eq_new') && (
+                  <button
+                    type="button"
+                    onClick={handleCreateFSFromFicha}
+                    className="py-2 px-3.5 bg-hp-500/20 hover:bg-hp-500/30 text-hp-300 border border-hp-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    title="Abrir uma nova Folha de Serviço com os dados desta viatura"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-hp-400" />
+                    <span>Abrir Folha de Serviço</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
