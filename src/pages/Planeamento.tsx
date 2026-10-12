@@ -116,6 +116,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [openFolhasSearchTerm, setOpenFolhasSearchTerm] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isGeneratingA4Pdf, setIsGeneratingA4Pdf] = useState(false);
   
@@ -306,6 +307,35 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   const openFolhas = useMemo(() => {
     return folhas.filter(f => f.status !== 'Concluído' && !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
   }, [folhas]);
+
+  // Filtered Open Folhas based on search query
+  const filteredOpenFolhas = useMemo(() => {
+    if (!openFolhasSearchTerm.trim()) return openFolhas;
+    const words = openFolhasSearchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+    return openFolhas.filter(f => {
+      const emp = empresas.find(e => e.id === f.empresaId);
+      const searchableText = [
+        f.numero || '',
+        f.matricula || '',
+        f.marca || '',
+        f.modelo || '',
+        emp?.nome || '',
+        (f as any).nomeCliente || '',
+        (f as any).contacto || '',
+        f.tipo || '',
+        f.anomalias || '',
+        f.notasInternas || '',
+        f.localizacao || '',
+        (f as any).moradaIntervencao || '',
+        (f as any).localIntervencao || '',
+        f.tecnicoPlaneado || '',
+        f.tecnicoAtribuido || ''
+      ].join(' ').toLowerCase();
+
+      return words.every(w => searchableText.includes(w));
+    });
+  }, [openFolhas, openFolhasSearchTerm, empresas]);
 
   // Open Visita Modal (New or Edit)
   const handleOpenVisitaModal = (visita?: VisitaCliente) => {
@@ -779,23 +809,56 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-hp-400" />
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Folhas em Aberto ({openFolhas.length})
+                  Folhas em Aberto {openFolhasSearchTerm.trim() ? `(${filteredOpenFolhas.length}/${openFolhas.length})` : `(${openFolhas.length})`}
                 </h3>
               </div>
               <span className="text-[10px] text-slate-400 font-mono">Por agendar</span>
             </div>
 
-            <p className="text-[11px] text-slate-400 mb-3">
+            <p className="text-[11px] text-slate-400 mb-2.5">
               Arraste para um dia do calendário ou clique em <span className="text-hp-300 font-bold">Agendar</span>.
             </p>
 
-            <div className="space-y-2 max-h-[620px] overflow-y-auto custom-scrollbar pr-1">
+            {/* Campo de Pesquisa nas Folhas em Aberto */}
+            <div className="relative mb-3">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Pesquisar folha, cliente, matrícula..."
+                value={openFolhasSearchTerm}
+                onChange={e => setOpenFolhasSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 bg-slate-950/80 border border-slate-700/80 focus:border-hp-500 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-hp-500/50 transition-all"
+              />
+              {openFolhasSearchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setOpenFolhasSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition-colors"
+                  title="Limpar pesquisa"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2 max-h-[580px] overflow-y-auto custom-scrollbar pr-1">
               {openFolhas.length === 0 ? (
                 <div className="py-6 text-center text-xs text-slate-500 italic">
                   Não existem folhas de serviço em aberto.
                 </div>
+              ) : filteredOpenFolhas.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400 italic space-y-2">
+                  <p>Nenhuma folha encontrada para &quot;{openFolhasSearchTerm}&quot;.</p>
+                  <button
+                    type="button"
+                    onClick={() => setOpenFolhasSearchTerm('')}
+                    className="text-[11px] text-hp-400 hover:text-hp-300 underline font-medium"
+                  >
+                    Limpar pesquisa
+                  </button>
+                </div>
               ) : (
-                openFolhas.map(f => {
+                filteredOpenFolhas.map(f => {
                   const emp = empresas.find(e => e.id === f.empresaId);
                   const isScheduled = !!f.dataPlaneada;
                   const isDraggingThis = draggedItem?.type === 'folha' && draggedItem?.id === f.id;
