@@ -13,6 +13,7 @@ import {
   Phone,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   X,
   FileText,
   CalendarCheck,
@@ -124,6 +125,14 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   const [draggedItem, setDraggedItem] = useState<{ type: 'visita' | 'folha'; id: string } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
 
+interface BatchScheduleAlert {
+  primaryFolha: FolhaServico;
+  targetDayIso: string;
+  targetTecnico: string;
+  clientName: string;
+  otherFolhas: FolhaServico[];
+}
+
   // Modals state
   const [isVisitaModalOpen, setIsVisitaModalOpen] = useState(false);
   const [editingVisita, setEditingVisita] = useState<VisitaCliente | null>(null);
@@ -135,6 +144,22 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     hora: '09:00',
     tecnico: 'Hugo Portugal'
   });
+  const [scheduleAlsoOtherFolhas, setScheduleAlsoOtherFolhas] = useState(false);
+  const [selectedOtherFolhaIds, setSelectedOtherFolhaIds] = useState<string[]>([]);
+
+  // Alerta de outros serviços do mesmo cliente ao arrastar
+  const [batchScheduleAlert, setBatchScheduleAlert] = useState<BatchScheduleAlert | null>(null);
+
+  // Outros serviços em aberto do mesmo cliente da folha selecionada no modal
+  const otherOpenFolhasForSelectedClient = useMemo(() => {
+    if (!selectedFolhaToSchedule || !selectedFolhaToSchedule.empresaId) return [];
+    return folhas.filter(f =>
+      f.id !== selectedFolhaToSchedule.id &&
+      f.empresaId === selectedFolhaToSchedule.empresaId &&
+      f.status !== 'Concluído' &&
+      f.status !== 'Feito'
+    );
+  }, [folhas, selectedFolhaToSchedule]);
 
   // Drag & Drop Handlers
   const handleDragStart = (e: React.DragEvent, type: 'visita' | 'folha', id: string) => {
@@ -213,15 +238,38 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           newStatus = 'Feito';
         }
 
+        const assignedTecnico = f.tecnicoPlaneado || (selectedTecnico !== 'TODOS' ? selectedTecnico : 'Hugo Portugal');
+
         onUpdateFolha({
           ...f,
           dataPlaneada: targetDayIso,
           horaPlaneada: f.horaPlaneada || '09:00',
-          tecnicoPlaneado: f.tecnicoPlaneado || (selectedTecnico !== 'TODOS' ? selectedTecnico : 'Hugo Portugal'),
+          tecnicoPlaneado: assignedTecnico,
           status: newStatus,
           atualizadoEm: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
+
+        // Verificar se existem outras folhas do mesmo cliente em aberto por agendar para esta data
+        if (f.empresaId) {
+          const otherClientFolhas = folhas.filter(other =>
+            other.id !== f.id &&
+            other.empresaId === f.empresaId &&
+            other.status !== 'Concluído' &&
+            other.status !== 'Feito' &&
+            other.dataPlaneada !== targetDayIso
+          );
+          if (otherClientFolhas.length > 0) {
+            const empName = empresas.find(e => e.id === f.empresaId)?.nome || 'Cliente';
+            setBatchScheduleAlert({
+              primaryFolha: f,
+              targetDayIso,
+              targetTecnico: assignedTecnico,
+              clientName: empName,
+              otherFolhas: otherClientFolhas
+            });
+          }
+        }
 
         setFeedbackMessage(`Folha ${f.numero} colocada em ${formatDate(targetDayIso)} com estado atualizado para "Agendado".`);
         setTimeout(() => setFeedbackMessage(null), 4000);
@@ -479,6 +527,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       hora: folha.horaPlaneada || '09:00',
       tecnico: folha.tecnicoPlaneado || 'Hugo Portugal'
     });
+    setScheduleAlsoOtherFolhas(false);
+    setSelectedOtherFolhaIds([]);
     setIsScheduleFolhaModalOpen(true);
   };
 
@@ -504,11 +554,39 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
     };
 
     onUpdateFolha(updated);
+
+    // Se selecionou também agendar outras folhas em aberto do mesmo cliente
+    if (selectedOtherFolhaIds.length > 0) {
+      selectedOtherFolhaIds.forEach(otherId => {
+        const otherFolha = folhas.find(fol => fol.id === otherId);
+        if (otherFolha) {
+          let otherStatus: StatusFolhaServico = 'Agendado';
+          if (otherFolha.tipo === 'Entrega e Formação' && otherFolha.dataFormacao && otherFolha.dataFormacao.trim() !== '' && otherFolha.dataFormacao !== '-') {
+            otherStatus = 'Feito';
+          }
+          onUpdateFolha({
+            ...otherFolha,
+            dataPlaneada: scheduleData.data,
+            horaPlaneada: scheduleData.hora,
+            tecnicoPlaneado: scheduleData.tecnico,
+            status: otherStatus,
+            atualizadoEm: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+      });
+    }
+
     setIsScheduleFolhaModalOpen(false);
     setSelectedFolhaToSchedule(null);
 
-    setFeedbackMessage(`Folha ${selectedFolhaToSchedule.numero} agendada para ${formatDate(scheduleData.data)} com estado atualizado para "Agendado".`);
-    setTimeout(() => setFeedbackMessage(null), 4000);
+    const clientEmp = empresas.find(emp => emp.id === selectedFolhaToSchedule.empresaId);
+    if (selectedOtherFolhaIds.length > 0) {
+      setFeedbackMessage(`Folha ${selectedFolhaToSchedule.numero} e mais ${selectedOtherFolhaIds.length} folha(s) do cliente ${clientEmp?.nome || ''} agendadas para ${formatDate(scheduleData.data)} com sucesso!`);
+    } else {
+      setFeedbackMessage(`Folha ${selectedFolhaToSchedule.numero} agendada para ${formatDate(scheduleData.data)} com estado atualizado para "Agendado".`);
+    }
+    setTimeout(() => setFeedbackMessage(null), 5000);
   };
 
   // Remove / Desagendar Folha
@@ -1515,6 +1593,75 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
                 </select>
               </div>
 
+              {/* Alerta Inteligente: Outros serviços em aberto deste cliente */}
+              {otherOpenFolhasForSelectedClient.length > 0 && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Mesmo Cliente: {otherOpenFolhasForSelectedClient.length} outro(s) serviço(s) em aberto</span>
+                    </div>
+                    <label className="flex items-center gap-1.5 text-[11px] text-amber-200 cursor-pointer font-bold">
+                      <input
+                        type="checkbox"
+                        checked={scheduleAlsoOtherFolhas}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setScheduleAlsoOtherFolhas(checked);
+                          if (checked) {
+                            setSelectedOtherFolhaIds(otherOpenFolhasForSelectedClient.map(f => f.id));
+                          } else {
+                            setSelectedOtherFolhaIds([]);
+                          }
+                        }}
+                        className="rounded border-amber-500/50 text-hp-500 focus:ring-hp-400"
+                      />
+                      <span>Agendar todos</span>
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-amber-200/80">
+                    Aproveite a deslocação para realizar outros serviços pendentes neste cliente:
+                  </p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {otherOpenFolhasForSelectedClient.map(of => (
+                      <label
+                        key={of.id}
+                        className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                          selectedOtherFolhaIds.includes(of.id)
+                            ? 'bg-amber-500/20 border-amber-500/50 text-white font-semibold'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedOtherFolhaIds.includes(of.id)}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              if (checked) {
+                                setSelectedOtherFolhaIds(prev => [...prev, of.id]);
+                                setScheduleAlsoOtherFolhas(true);
+                              } else {
+                                const next = selectedOtherFolhaIds.filter(id => id !== of.id);
+                                setSelectedOtherFolhaIds(next);
+                                if (next.length === 0) setScheduleAlsoOtherFolhas(false);
+                              }
+                            }}
+                            className="rounded border-slate-700 text-hp-500 focus:ring-hp-400"
+                          />
+                          <span className="font-mono font-bold text-hp-400">{of.numero}</span>
+                          <span>• {of.matricula}</span>
+                          <span className="text-[11px] text-slate-400">({of.tipo})</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {of.dataPlaneada ? formatDate(of.dataPlaneada) : 'Por agendar'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="pt-3 flex items-center justify-between gap-2 border-t border-slate-800">
                 {selectedFolhaToSchedule.dataPlaneada ? (
                   <button
@@ -1540,11 +1687,102 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
                     type="submit"
                     className="px-4 py-2 rounded-xl bg-hp-600 hover:bg-hp-500 text-white text-xs font-bold shadow-lg shadow-hp-600/30"
                   >
-                    Guardar Agendamento
+                    {selectedOtherFolhaIds.length > 0 ? `Guardar (${selectedOtherFolhaIds.length + 1} folhas)` : 'Guardar Agendamento'}
                   </button>
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Alerta: Outros Serviços do Mesmo Cliente ao Arrastar (Drag & Drop) */}
+      {batchScheduleAlert && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="p-4 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Aviso: Outros Serviços em Aberto no Mesmo Cliente!
+                  </h3>
+                  <p className="text-xs text-amber-300">
+                    O cliente <strong className="text-white">{batchScheduleAlert.clientName}</strong> tem mais {batchScheduleAlert.otherFolhas.length} folha(s) em aberto.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBatchScheduleAlert(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-slate-300">
+                A folha <strong className="text-white font-mono">{batchScheduleAlert.primaryFolha.numero}</strong> foi colocada em <strong>{formatDate(batchScheduleAlert.targetDayIso)}</strong>.
+                Deseja aproveitar a deslocação do técnico (<strong>{batchScheduleAlert.targetTecnico}</strong>) e agendar também as seguintes folhas do cliente para o mesmo dia?
+              </p>
+
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {batchScheduleAlert.otherFolhas.map(of => (
+                  <div key={of.id} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-white flex items-center gap-2">
+                        <span className="font-mono text-hp-400">{of.numero}</span>
+                        <span>• {of.matricula}</span>
+                        <span className="text-slate-400 font-normal">({of.marca} {of.modelo})</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Tipo: <span className="text-slate-300">{of.tipo}</span> | Estado: <span className="text-amber-300">{of.status}</span>
+                        {of.dataPlaneada ? ` (Atualmente marcado para ${formatDate(of.dataPlaneada)})` : ' (Sem agendamento marcado)'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBatchScheduleAlert(null)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                >
+                  Manter Apenas a Folha Marcada
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    batchScheduleAlert.otherFolhas.forEach(of => {
+                      let otherStatus: StatusFolhaServico = 'Agendado';
+                      if (of.tipo === 'Entrega e Formação' && of.dataFormacao && of.dataFormacao.trim() !== '' && of.dataFormacao !== '-') {
+                        otherStatus = 'Feito';
+                      }
+                      onUpdateFolha({
+                        ...of,
+                        dataPlaneada: batchScheduleAlert.targetDayIso,
+                        horaPlaneada: of.horaPlaneada || '10:00',
+                        tecnicoPlaneado: batchScheduleAlert.targetTecnico,
+                        status: otherStatus,
+                        atualizadoEm: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                      });
+                    });
+                    setFeedbackMessage(`Todas as ${batchScheduleAlert.otherFolhas.length + 1} folhas do cliente ${batchScheduleAlert.clientName} agendadas para ${formatDate(batchScheduleAlert.targetDayIso)}!`);
+                    setTimeout(() => setFeedbackMessage(null), 5000);
+                    setBatchScheduleAlert(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Agendar Todas para {formatDate(batchScheduleAlert.targetDayIso)}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -380,6 +380,19 @@ export const Oficina: React.FC<OficinaProps> = ({
            (eq.modelo || '').toLowerCase().includes(q);
   });
 
+  // Detetar se a viatura atual já tem outra folha de serviço em aberto (não concluída e não feita)
+  const existingOpenFolhasForVehicle = useMemo(() => {
+    const currentMat = cleanMatricula(editingFolha.matricula || plateQuery || '');
+    if (!currentMat || currentMat.length < 3) return [];
+
+    return folhas.filter(f => {
+      if (f.id === editingFolha.id) return false;
+      const isClosed = f.status === 'Concluído' || f.status === 'Feito';
+      if (isClosed) return false;
+      return cleanMatricula(f.matricula || '') === currentMat;
+    });
+  }, [folhas, editingFolha.matricula, editingFolha.id, plateQuery]);
+
   // Selected company object
   const selectedCompany = empresas.find(e => e.id === editingFolha.empresaId);
 
@@ -1027,6 +1040,18 @@ export const Oficina: React.FC<OficinaProps> = ({
     if (!rawPlate) {
       alert('Por favor, introduza a matrícula ou identificação da viatura/equipamento.');
       return;
+    }
+
+    // Proteção inteligente: Se for nova folha e a viatura já tiver folha(s) em aberto, alerta para confirmação
+    const isNewFolha = !folhas.some(f => f.id === editingFolha.id);
+    if (isNewFolha && existingOpenFolhasForVehicle.length > 0) {
+      const existingNums = existingOpenFolhasForVehicle.map(f => `${f.numero} (${f.tipo} - ${f.status})`).join(', ');
+      const confirmSave = window.confirm(
+        `⚠️ ATENÇÃO: A viatura ${rawPlate} já tem ${existingOpenFolhasForVehicle.length} folha(s) de serviço em aberto:\n\n${existingNums}\n\nTem a certeza que pretende criar uma NOVA folha de serviço para a mesma viatura em vez de editar a existente?`
+      );
+      if (!confirmSave) {
+        return;
+      }
     }
 
     // Normalização da matrícula (sem traços nem espaços para pesquisa flexível)
@@ -2375,6 +2400,47 @@ export const Oficina: React.FC<OficinaProps> = ({
               </div>
             </div>
 
+            {/* Alerta Inteligente: Folha(s) de Serviço já em aberto para esta viatura */}
+            {existingOpenFolhasForVehicle.length > 0 && (
+              <div className="p-3.5 bg-amber-500/15 border-2 border-amber-500/60 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg shadow-amber-950/30 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wide">
+                        Atenção: Já existe Folha de Serviço em aberto para esta viatura!
+                      </h4>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-200 font-mono font-bold">
+                        {existingOpenFolhasForVehicle.length} {existingOpenFolhasForVehicle.length === 1 ? 'folha ativa' : 'folhas ativas'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-200/90 mt-0.5">
+                      A viatura <strong className="font-mono text-white underline tracking-wider">{editingFolha.matricula || plateQuery}</strong> já tem intervenção registada não concluída:
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {existingOpenFolhasForVehicle.map(f => (
+                        <div key={f.id} className="flex items-center gap-2 text-xs bg-slate-900/90 border border-amber-500/40 px-2.5 py-1 rounded-xl shadow-sm">
+                          <span className="font-mono font-bold text-white">{f.numero}</span>
+                          <span className="text-slate-400">({f.tipo})</span>
+                          <Badge variant={getStatusBadgeVariant(f.status)}>{f.status}</Badge>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenFolhaModal(f)}
+                            className="ml-1 text-xs text-hp-400 hover:text-hp-300 font-bold underline hover:no-underline cursor-pointer flex items-center gap-0.5"
+                            title="Abrir diretamente esta folha já existente"
+                          >
+                            Abrir esta FS →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Top Row: Meta Info, Status, Requisição & Faturação */}
             <div className={`grid grid-cols-1 sm:grid-cols-2 ${currentUser?.role === 'administrador' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3 p-4 bg-slate-950/60 rounded-2xl border border-slate-800`}>
               <div>
@@ -2515,9 +2581,17 @@ export const Oficina: React.FC<OficinaProps> = ({
 
                 {/* Searchable Matrícula Input */}
                 <div className="relative" ref={plateContainerRef}>
-                  <label className="text-xs text-slate-400 block mb-1">
-                    Matrícula <span className="text-[10px] text-hp-400">(Viatura / Equipamento)</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-slate-400 block">
+                      Matrícula <span className="text-[10px] text-hp-400">(Viatura / Equipamento)</span>
+                    </label>
+                    {existingOpenFolhasForVehicle.length > 0 && (
+                      <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        {existingOpenFolhasForVehicle.length} {existingOpenFolhasForVehicle.length === 1 ? 'FS em aberto' : 'FS em aberto'}
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type="text"

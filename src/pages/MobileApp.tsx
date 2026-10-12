@@ -628,6 +628,22 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
     folhaData.matricula = finalMatricula;
 
+    // Alerta de segurança: Se for nova folha e a viatura já tiver folha(s) em aberto
+    const isNewFolha = !folhaData.id || !folhas.some(f => f.id === folhaData.id);
+    if (isNewFolha) {
+      const currentMat = cleanMatricula(finalMatricula);
+      const existingOpen = folhas.filter(f => f.id !== folhaData.id && f.status !== 'Concluído' && f.status !== 'Feito' && cleanMatricula(f.matricula || '') === currentMat);
+      if (existingOpen.length > 0) {
+        const nums = existingOpen.map(f => `${f.numero} (${f.status})`).join(', ');
+        const confirmSave = window.confirm(
+          `⚠️ ATENÇÃO: A viatura ${finalMatricula} já tem ${existingOpen.length} folha(s) de serviço em aberto:\n\n${nums}\n\nTem a certeza que pretende criar uma NOVA folha de serviço para a mesma viatura?`
+        );
+        if (!confirmSave) {
+          return;
+        }
+      }
+    }
+
     setIsSaving(true);
     const newNum = folhaData.numero || db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
     const now = getTodayFormatted();
@@ -1494,6 +1510,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       eq.matricula.toLowerCase().includes(plateQuery.toLowerCase()) ||
       eq.marca.toLowerCase().includes(plateQuery.toLowerCase())
   );
+
+  // Detetar se a viatura atual tem outra folha de serviço em aberto
+  const existingOpenFolhasForVehicle = useMemo(() => {
+    const currentMat = cleanMatricula(manualFolha.matricula || plateQuery || '');
+    if (!currentMat || currentMat.length < 3) return [];
+
+    return folhas.filter(f => {
+      if (f.id === manualFolha.id) return false;
+      const isClosed = f.status === 'Concluído' || f.status === 'Feito';
+      if (isClosed) return false;
+      return cleanMatricula(f.matricula || '') === currentMat;
+    });
+  }, [folhas, manualFolha.matricula, manualFolha.id, plateQuery]);
 
   return (
     <div className={`min-h-screen pb-24 flex flex-col font-sans transition-colors ${
@@ -3903,11 +3932,45 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 )}
               </div>
 
+              {/* Alerta de Viatura com Folha em Aberto */}
+              {existingOpenFolhasForVehicle.length > 0 && (
+                <div className="p-3 bg-amber-500/15 border border-amber-500/50 rounded-2xl flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs font-bold text-amber-200">
+                      Atenção: Viatura com {existingOpenFolhasForVehicle.length} folha(s) em aberto!
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {existingOpenFolhasForVehicle.map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => handleOpenMobileFolha(f)}
+                        className="px-2.5 py-1 rounded-xl bg-slate-900 border border-amber-500/40 text-xs font-mono font-bold text-hp-300 flex items-center gap-1.5 hover:bg-slate-800"
+                      >
+                        <span>{f.numero}</span>
+                        <span className="text-[10px] text-slate-400">({f.status})</span>
+                        <span className="text-[10px] text-hp-400 underline">Abrir →</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 1. Matrícula (Com Seletor / Pesquisa Tátil) */}
               <div className="space-y-1.5 relative">
-                <label className="text-xs font-black uppercase text-slate-300 block">
-                  Matrícula da Viatura / Equipamento *
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase text-slate-300 block">
+                    Matrícula da Viatura / Equipamento *
+                  </label>
+                  {existingOpenFolhasForVehicle.length > 0 && (
+                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                      <AlertTriangle className="w-3 h-3" />
+                      {existingOpenFolhasForVehicle.length} em aberto
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <input
                     type="text"
