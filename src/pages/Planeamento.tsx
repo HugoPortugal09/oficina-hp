@@ -219,7 +219,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           horaPlaneada: f.horaPlaneada || '09:00',
           tecnicoPlaneado: f.tecnicoPlaneado || (selectedTecnico !== 'TODOS' ? selectedTecnico : 'Hugo Portugal'),
           status: newStatus,
-          atualizadoEm: new Date().toISOString()
+          atualizadoEm: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         });
 
         setFeedbackMessage(`Folha ${f.numero} colocada em ${formatDate(targetDayIso)} com estado atualizado para "Agendado".`);
@@ -498,7 +499,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       horaPlaneada: scheduleData.hora,
       tecnicoPlaneado: scheduleData.tecnico,
       status: newStatus,
-      atualizadoEm: new Date().toISOString()
+      atualizadoEm: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
     onUpdateFolha(updated);
@@ -523,7 +525,8 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       dataPlaneada: undefined,
       horaPlaneada: undefined,
       status: revertStatus,
-      atualizadoEm: new Date().toISOString()
+      atualizadoEm: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
     onUpdateFolha(updated);

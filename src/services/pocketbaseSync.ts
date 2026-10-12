@@ -22,6 +22,16 @@ const SYNC_COLLECTION = 'app_data';
 const pushTimeouts: Record<string, NodeJS.Timeout> = {};
 
 /**
+function getItemTimestamp(item: any): number {
+  if (!item || typeof item !== 'object') return 0;
+  const t1 = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+  const t2 = item.atualizadoEm ? new Date(item.atualizadoEm).getTime() : 0;
+  const t3 = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+  const t4 = item.criadoEm ? new Date(item.criadoEm).getTime() : 0;
+  return Math.max(isNaN(t1) ? 0 : t1, isNaN(t2) ? 0 : t2, isNaN(t3) ? 0 : t3, isNaN(t4) ? 0 : t4);
+}
+
+/**
  * Merges local and cloud collections safely without losing items.
  */
 function mergeCollectionData(localData: any, cloudData: any): any {
@@ -57,30 +67,30 @@ function mergeCollectionData(localData: any, cloudData: any): any {
     return `idx:${idx}`;
   };
 
-  // Add cloud items first
-  cloudData.forEach((item, idx) => {
+  // Add cloud items first (Cloud is the primary centralized truth)
+  cloudData.forEach((item: any, idx: number) => {
     if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
     mergedMap.set(getKey(item, idx), item);
   });
 
-  // Merge or add local items (compare updatedAt timestamps if available)
-  localData.forEach((item, idx) => {
+  // Merge or add local items (compare accurate timestamps)
+  localData.forEach((item: any, idx: number) => {
     if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
     const key = getKey(item, idx);
     if (mergedMap.has(key)) {
       const cloudItem = mergedMap.get(key);
-      const localTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
-      const cloudTime = cloudItem.updatedAt ? new Date(cloudItem.updatedAt).getTime() : 0;
+      const localTime = getItemTimestamp(item);
+      const cloudTime = getItemTimestamp(cloudItem);
 
-      if (cloudTime > localTime) {
-        // Cloud is newer: keep cloud fields, but preserve local non-overlapping fields
-        mergedMap.set(key, { ...item, ...cloudItem });
+      if (localTime > cloudTime) {
+        // Local was explicitly updated more recently on this machine: keep local item
+        mergedMap.set(key, item);
       } else {
-        // Local is newer or timestamps equal/missing: local fields take precedence
-        mergedMap.set(key, { ...cloudItem, ...item });
+        // Cloud is newer, or timestamps are equal/missing: Cloud is the canonical source of truth
+        mergedMap.set(key, cloudItem);
       }
     } else {
-      // Local-only item: preserve it!
+      // Local-only item (e.g. newly created offline)
       mergedMap.set(key, item);
     }
   });

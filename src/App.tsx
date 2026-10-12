@@ -368,14 +368,20 @@ export default function App() {
   };
 
   const handleUpdateFolhaDirect = (folha: FolhaServico) => {
+    const now = new Date().toISOString();
+    const folhaWithTimestamp: FolhaServico = {
+      ...folha,
+      updatedAt: now,
+      atualizadoEm: now
+    };
     const existing = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
     const index = existing.findIndex(f => f.id === folha.id);
     let updated: FolhaServico[];
     if (index >= 0) {
       updated = [...existing];
-      updated[index] = folha;
+      updated[index] = folhaWithTimestamp;
     } else {
-      updated = [folha, ...existing];
+      updated = [folhaWithTimestamp, ...existing];
     }
     db.save(STORAGE_KEYS.FOLHAS_SERVICO, updated);
     setFolhas(updated);
@@ -398,9 +404,15 @@ export default function App() {
       loadAllData();
     };
 
-    // 4. Sync on Window Focus (when switching back to browser tab)
-    const handleWindowFocus = () => {
+    // 4. Sync on Window Focus, Visibility Change and Reconnect (when switching tabs or waking PC)
+    const handleSync = () => {
       syncPullFromCloud().then(() => loadAllData()).catch(() => {});
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleSync();
+      }
     };
 
     // 5. Periodic Background Sync (every 8 seconds)
@@ -412,14 +424,18 @@ export default function App() {
     const stopAutomationRunner = startAutomationRunner();
 
     window.addEventListener('oficina_hp_db_changed', handleDbChange);
-    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('focus', handleSync);
+    window.addEventListener('online', handleSync);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       unsubscribeRealtime();
       clearInterval(syncInterval);
       stopAutomationRunner();
       window.removeEventListener('oficina_hp_db_changed', handleDbChange);
-      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('online', handleSync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
