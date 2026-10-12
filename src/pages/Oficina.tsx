@@ -66,6 +66,7 @@ import type {
   Equipamento,
   Cliente,
   PecaCatalogo,
+  KitManutencao,
   Contrato,
   Proposta,
   PropostaLinha,
@@ -87,6 +88,7 @@ interface OficinaProps {
   equipamentos: Equipamento[];
   clientes: Cliente[];
   catalogoPecas: PecaCatalogo[];
+  kits?: KitManutencao[];
   contratos?: Contrato[];
   onOpenScanner: () => void;
   selectedFolhaToOpen?: FolhaServico | null;
@@ -180,17 +182,23 @@ function formatDuration(startTime: string, endTime?: string): string {
   return `${Math.max(1, diffMins)} min`;
 }
 
-// Searchable Combobox for Parts in Catalog (Price-free for Workshop Technical Sheet)
+// Searchable Combobox for Parts in Catalog and Maintenance Kits (Price-free for Workshop Technical Sheet)
 const SearchablePartSelect: React.FC<{
   value?: string;
   referencia?: string;
   isLivre?: boolean;
   catalogo: PecaCatalogo[];
+  kits?: KitManutencao[];
   onSelect: (peca: PecaCatalogo) => void;
-}> = ({ value, referencia, isLivre, catalogo, onSelect }) => {
+  onSelectKit?: (kit: KitManutencao) => void;
+}> = ({ value, referencia, isLivre, catalogo, kits = [], onSelect, onSelectKit }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const availableKits: KitManutencao[] = (kits && kits.length > 0)
+    ? kits
+    : db.get<KitManutencao>(STORAGE_KEYS.KITS_MANUTENCAO);
 
   const selectedPart = catalogo.find(p =>
     (value && p.id === value) ||
@@ -207,13 +215,26 @@ const SearchablePartSelect: React.FC<{
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filtered = catalogo.filter(p =>
-    p.referencia.toLowerCase().includes(query.toLowerCase()) ||
-    p.designacao.toLowerCase().includes(query.toLowerCase())
+  const qLower = query.toLowerCase().trim();
+
+  const filteredKits = qLower
+    ? availableKits.filter(k =>
+        k.codigo.toLowerCase().includes(qLower) ||
+        k.nome.toLowerCase().includes(qLower) ||
+        (k.marcaModelo && k.marcaModelo.toLowerCase().includes(qLower)) ||
+        (k.descricao && k.descricao.toLowerCase().includes(qLower)) ||
+        (k.horasIntervalo && `${k.horasIntervalo}`.includes(qLower)) ||
+        k.pecas.some(p => p.referencia.toLowerCase().includes(qLower) || p.designacao.toLowerCase().includes(qLower))
+      )
+    : availableKits;
+
+  const filteredParts = catalogo.filter(p =>
+    p.referencia.toLowerCase().includes(qLower) ||
+    p.designacao.toLowerCase().includes(qLower)
   );
 
   return (
-    <div className="relative w-52 sm:w-64" ref={containerRef}>
+    <div className="relative w-56 sm:w-72" ref={containerRef}>
       <div
         onClick={() => setIsOpen(!isOpen)}
         className="w-full py-1.5 px-2.5 bg-slate-900 border border-slate-700 hover:border-hp-500 rounded-lg text-xs text-white flex items-center justify-between cursor-pointer"
@@ -223,46 +244,98 @@ const SearchablePartSelect: React.FC<{
             ? `${selectedPart.referencia} - ${selectedPart.designacao}`
             : isLivre
             ? '-- Peça Livre / Avulso --'
-            : '-- Do Catálogo --'}
+            : '-- Do Catálogo ou Kit --'}
         </span>
         <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
       </div>
 
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-52 flex flex-col backdrop-blur-xl">
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-slate-950 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-64 flex flex-col backdrop-blur-xl">
           <div className="p-1.5 border-b border-slate-800">
             <input
               type="text"
               autoFocus
-              placeholder="Pesquisar código ou designação..."
+              placeholder="Pesquisar peça ou código de kit (ex: KIT-500H, filtro, óleo)..."
               value={query}
               onChange={e => setQuery(e.target.value)}
-              className="w-full py-1 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-hp-500"
+              className="w-full py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
-          <div className="overflow-y-auto flex-1 p-1 space-y-0.5">
-            {filtered.length === 0 ? (
-              <div className="p-2 text-center text-xs text-slate-500">Nenhuma peça encontrada</div>
-            ) : (
-              filtered.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    onSelect(p);
-                    setIsOpen(false);
-                    setQuery('');
-                  }}
-                  className="w-full text-left p-1.5 rounded-lg hover:bg-hp-600/20 text-xs text-slate-200 flex items-center justify-between group transition-colors"
-                >
-                  <div className="truncate pr-2">
-                    <span className="font-mono font-bold text-hp-400 mr-1.5">{p.referencia}</span>
-                    <span className="text-slate-300">{p.designacao}</span>
-                  </div>
-                </button>
-              ))
+          <div className="overflow-y-auto flex-1 p-1 space-y-1">
+            {/* KITS DE MANUTENÇÃO EM DESTAQUE */}
+            {filteredKits.length > 0 && (
+              <div className="mb-1 pb-1 border-b border-slate-800/80">
+                <div className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <span>⚡ KITS DE REVISÃO ({filteredKits.length})</span>
+                </div>
+                {filteredKits.map(k => {
+                  const totalHoras = (k.servicos || []).reduce((acc, s) => acc + (Number(s.horas) || 0), 0);
+                  return (
+                    <button
+                      key={k.id}
+                      type="button"
+                      onClick={() => {
+                        if (onSelectKit) onSelectKit(k);
+                        setIsOpen(false);
+                        setQuery('');
+                      }}
+                      className="w-full text-left p-2 rounded-lg hover:bg-amber-500/20 text-xs text-slate-200 transition-colors border border-amber-500/30 bg-amber-500/5 my-0.5 group"
+                      title="Clique para desdobrar automaticamente todas as peças e serviços com tempos deste kit!"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-black text-amber-300 text-xs tracking-wider">
+                          [KIT] {k.codigo}
+                        </span>
+                        <span className="text-[10px] font-mono text-cyan-300 font-bold bg-slate-900/80 px-1.5 py-0.5 rounded border border-slate-800">
+                          {totalHoras.toFixed(2)}h mão-de-obra
+                        </span>
+                      </div>
+                      <div className="text-white font-bold text-xs mt-0.5 truncate">{k.nome}</div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                        <span>{k.pecas?.length || 0} peças</span>
+                        <span>•</span>
+                        <span>{k.servicos?.length || 0} tarefas técnicas</span>
+                        {k.horasIntervalo ? (
+                          <>
+                            <span>•</span>
+                            <span className="text-amber-400/90">{k.horasIntervalo}h</span>
+                          </>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
+
+            {/* PEÇAS DO CATÁLOGO */}
+            <div>
+              <div className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Peças Individuais ({filteredParts.length})
+              </div>
+              {filteredParts.length === 0 && filteredKits.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-500">Nenhum artigo ou kit encontrado</div>
+              ) : (
+                filteredParts.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      onSelect(p);
+                      setIsOpen(false);
+                      setQuery('');
+                    }}
+                    className="w-full text-left p-1.5 rounded-lg hover:bg-hp-600/20 text-xs text-slate-200 flex items-center justify-between group transition-colors"
+                  >
+                    <div className="truncate pr-2">
+                      <span className="font-mono font-bold text-hp-400 mr-1.5">{p.referencia}</span>
+                      <span className="text-slate-300">{p.designacao}</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -276,6 +349,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   equipamentos,
   clientes,
   catalogoPecas,
+  kits = [],
   contratos = [],
   onOpenScanner,
   selectedFolhaToOpen,
@@ -285,6 +359,7 @@ export const Oficina: React.FC<OficinaProps> = ({
 }) => {
   const permissions = getPermissionsForRole(currentUser?.role || 'administrador');
   const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+  const [kitAppliedFeedback, setKitAppliedFeedback] = useState<string | null>(null);
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
@@ -1451,6 +1526,73 @@ export const Oficina: React.FC<OficinaProps> = ({
         isLivre: false
       } : p)
     }));
+  };
+
+  const handleSelectKit = (kit: KitManutencao, itemLineId: string, isAdicional: boolean = false) => {
+    const targetKey = isAdicional ? 'pecasAdicionais' : 'pecas';
+    const initials = currentUser?.avatar || 'HP';
+
+    // 1. Desdobrar Peças do Kit
+    const novasPecas: PecaItem[] = (kit.pecas || []).map(kp => {
+      const matchedCat = catalogoPecas.find(cp =>
+        (kp.pecaId && cp.id === kp.pecaId) ||
+        (kp.referencia && cp.referencia.trim().toLowerCase() === kp.referencia.trim().toLowerCase())
+      );
+      return {
+        id: db.generateId('pec'),
+        pecaId: kp.pecaId || matchedCat?.id,
+        referencia: kp.referencia || matchedCat?.referencia || '',
+        designacao: kp.designacao || matchedCat?.designacao || '',
+        qtd: Number(kp.qtd) || 1,
+        precoUnitario: matchedCat?.precoVenda,
+        concluido: false,
+        isLivre: kp.isLivre ?? (matchedCat ? false : true),
+        iniciaisConclusao: initials
+      };
+    });
+
+    // 2. Desdobrar Serviços / Tarefas com tempos definidos em horas
+    const novosServicos: ServicoItem[] = (kit.servicos || []).map(ks => ({
+      id: db.generateId('srv'),
+      descricao: ks.descricao,
+      horas: Number(ks.horas) || 1.0,
+      valorHora: 38.5,
+      concluido: false,
+      tecnico: initials,
+      iniciaisConclusao: initials
+    }));
+
+    setEditingFolha(prev => {
+      const existingList = prev[targetKey] || [];
+      const itemIndex = existingList.findIndex(p => p.id === itemLineId);
+      let updatedPecasList: PecaItem[];
+
+      if (itemIndex >= 0) {
+        updatedPecasList = [
+          ...existingList.slice(0, itemIndex),
+          ...novasPecas,
+          ...existingList.slice(itemIndex + 1)
+        ];
+      } else {
+        updatedPecasList = [...existingList, ...novasPecas];
+      }
+
+      const existingServices = prev.servicos || [];
+      const updatedServicesList = [...existingServices, ...novosServicos];
+
+      return {
+        ...prev,
+        [targetKey]: updatedPecasList,
+        servicos: updatedServicesList
+      };
+    });
+
+    setKitAppliedFeedback(
+      `⚡ Kit ${kit.codigo} (${kit.nome}) aplicado: ${novasPecas.length} peças e ${novosServicos.length} tarefas com tempos adicionadas à Folha!`
+    );
+    setTimeout(() => {
+      setKitAppliedFeedback(null);
+    }, 6000);
   };
 
   const handleUpdatePart = (id: string, field: keyof PecaItem, value: any, isAdicional: boolean = false) => {
@@ -3473,11 +3615,32 @@ export const Oficina: React.FC<OficinaProps> = ({
 
             {/* 3. Parts: PEÇAS & MATERIAIS APLICADOS (Price-Free) */}
             <div className="space-y-3 pt-3 border-t border-slate-800">
+              {kitAppliedFeedback && (
+                <div className="p-3 bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border border-amber-500/40 rounded-xl text-xs text-amber-200 font-semibold flex items-center justify-between animate-in fade-in slide-in-from-top-1 shadow-lg shadow-amber-500/10">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                    <span>{kitAppliedFeedback}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setKitAppliedFeedback(null)}
+                    className="text-amber-400 hover:text-white p-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                  <Wrench className="w-4 h-4 text-emerald-400" />
-                  {editingFolha.tipo === 'Validação e Preparação' ? 'Checklist de Peças & Acessórios' : 'Peças & Materiais Aplicados'} ({editingFolha.pecas?.length || 0})
-                </h4>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-emerald-400" />
+                    {editingFolha.tipo === 'Validação e Preparação' ? 'Checklist de Peças & Acessórios' : 'Peças & Materiais Aplicados'} ({editingFolha.pecas?.length || 0})
+                  </h4>
+                  <p className="text-[10px] text-slate-400">
+                    Selecione uma peça ou escolha um <span className="text-amber-400 font-bold">[KIT]</span> para desdobrar peças e serviços com tempos automaticamente.
+                  </p>
+                </div>
 
                 <div className="flex items-center gap-2">
                   {editingFolha.tipo === 'Validação e Preparação' && (
@@ -3554,7 +3717,9 @@ export const Oficina: React.FC<OficinaProps> = ({
                         referencia={pec.referencia}
                         isLivre={pec.isLivre}
                         catalogo={catalogoPecas}
+                        kits={kits}
                         onSelect={part => handleSelectCatalogPart(part, pec.id, false)}
+                        onSelectKit={kit => handleSelectKit(kit, pec.id, false)}
                       />
                     </div>
 
@@ -3654,7 +3819,9 @@ export const Oficina: React.FC<OficinaProps> = ({
                             referencia={pec.referencia}
                             isLivre={pec.isLivre}
                             catalogo={catalogoPecas}
+                            kits={kits}
                             onSelect={part => handleSelectCatalogPart(part, pec.id, true)}
+                            onSelectKit={kit => handleSelectKit(kit, pec.id, true)}
                           />
                         </div>
 

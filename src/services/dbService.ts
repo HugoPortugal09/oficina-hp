@@ -13,7 +13,8 @@ import type {
   ConfiguracaoOficina,
   StatusFolhaServico,
   UserProfile,
-  AutomacaoItem
+  AutomacaoItem,
+  KitManutencao
 } from '../types';
 import { USERS } from '../types';
 import { syncPushToCloud } from './pocketbaseSync';
@@ -37,6 +38,7 @@ const STORAGE_KEYS = {
   CONVITES: 'oficina_hp_convites',
   AUTOMACOES: 'oficina_hp_automacoes',
   CONFIGURACAO: 'oficina_hp_configuracao',
+  KITS_MANUTENCAO: 'oficina_hp_kits_manutencao',
 };
 
 const DEFAULT_CONFIG: ConfiguracaoOficina = {
@@ -213,6 +215,79 @@ const INITIAL_PECAS: PecaCatalogo[] = [
     stockAtual: 12,
     stockMinimo: 3,
     localizacaoArmazem: 'Prateleira A-05'
+  }
+];
+
+export const INITIAL_KITS_MANUTENCAO: KitManutencao[] = [
+  {
+    id: 'kit_500h_geral',
+    codigo: 'KIT-500H',
+    nome: 'Kit Revisão 500 Horas',
+    descricao: 'Revisão periódica de 500 horas com substituição de filtros de motor, combustível e lubrificação.',
+    marcaModelo: 'Geral',
+    horasIntervalo: 500,
+    kmsIntervalo: 15000,
+    pecas: [
+      { id: 'kp_1', referencia: 'FL-OIL-01', designacao: 'Filtro de Óleo do Motor', qtd: 1 },
+      { id: 'kp_2', referencia: 'FL-COMB-01', designacao: 'Filtro de Combustível Principal', qtd: 1 },
+      { id: 'kp_3', referencia: 'FL-DEC-01', designacao: 'Pré-filtro Combustível / Decantador', qtd: 1 },
+      { id: 'kp_4', referencia: 'FL-AR-01', designacao: 'Filtro de Ar Motor (Primário)', qtd: 1 },
+      { id: 'kp_5', referencia: 'LUB-15W40', designacao: 'Óleo Motor 15W-40 HD (Litros)', qtd: 20 },
+      { id: 'kp_6', referencia: 'ANILHA-CARTER', designacao: 'Anilha de Cobre do Bujão Carter', qtd: 1 }
+    ],
+    servicos: [
+      { id: 'ks_1', descricao: 'Esvaziar óleo motor, substituir anilha de carter e filtro de óleo', horas: 1.0 },
+      { id: 'ks_2', descricao: 'Substituir filtros de combustível e purgar sistema de injeção', horas: 0.75 },
+      { id: 'ks_3', descricao: 'Substituir filtro de ar e inspecionar condutas de admissão', horas: 0.5 },
+      { id: 'ks_4', descricao: 'Verificação de níveis (líquido refrigeração, hidráulico e travões)', horas: 0.5 },
+      { id: 'ks_5', descricao: 'Engraxar e lubrificar todos os pontos de massa e articulações', horas: 0.75 },
+      { id: 'ks_6', descricao: 'Inspeção geral de folgas, correias, iluminação e teste de funcionamento', horas: 0.5 }
+    ]
+  },
+  {
+    id: 'kit_250h_geral',
+    codigo: 'KIT-250H',
+    nome: 'Kit Manutenção Intermédia 250 Horas',
+    descricao: 'Serviço rápido de mudança de óleo, filtro de óleo e verificação de pontos críticos.',
+    marcaModelo: 'Geral',
+    horasIntervalo: 250,
+    kmsIntervalo: 10000,
+    pecas: [
+      { id: 'kp_250_1', referencia: 'FL-OIL-01', designacao: 'Filtro de Óleo do Motor', qtd: 1 },
+      { id: 'kp_250_2', referencia: 'LUB-15W40', designacao: 'Óleo Motor 15W-40 HD (Litros)', qtd: 20 },
+      { id: 'kp_250_3', referencia: 'ANILHA-CARTER', designacao: 'Anilha de Cobre do Bujão Carter', qtd: 1 }
+    ],
+    servicos: [
+      { id: 'ks_250_1', descricao: 'Substituição de óleo de motor e filtro de óleo', horas: 1.0 },
+      { id: 'ks_250_2', descricao: 'Verificação e reposição de níveis gerais e engraxamento', horas: 0.5 }
+    ]
+  },
+  {
+    id: 'kit_1000h_geral',
+    codigo: 'KIT-1000H',
+    nome: 'Kit Revisão Completa 1.000 Horas',
+    descricao: 'Revisão profunda com todos os filtros (incluindo hidráulico e ar secundário), fluidos e afinações.',
+    marcaModelo: 'Geral',
+    horasIntervalo: 1000,
+    kmsIntervalo: 30000,
+    pecas: [
+      { id: 'kp_1000_1', referencia: 'FL-OIL-01', designacao: 'Filtro de Óleo do Motor', qtd: 1 },
+      { id: 'kp_1000_2', referencia: 'FL-COMB-01', designacao: 'Filtro de Combustível Principal', qtd: 1 },
+      { id: 'kp_1000_3', referencia: 'FL-DEC-01', designacao: 'Pré-filtro Combustível / Decantador', qtd: 1 },
+      { id: 'kp_1000_4', referencia: 'FL-AR-01', designacao: 'Filtro de Ar Motor (Primário)', qtd: 1 },
+      { id: 'kp_1000_5', referencia: 'FL-AR-02', designacao: 'Filtro de Ar Motor (Secundário/Segurança)', qtd: 1 },
+      { id: 'kp_1000_6', referencia: 'FL-HID-01', designacao: 'Filtro de Retorno Hidráulico', qtd: 1 },
+      { id: 'kp_1000_7', referencia: 'LUB-15W40', designacao: 'Óleo Motor 15W-40 HD (Litros)', qtd: 20 },
+      { id: 'kp_1000_8', referencia: 'ANILHA-CARTER', designacao: 'Anilha de Cobre do Bujão Carter', qtd: 1 }
+    ],
+    servicos: [
+      { id: 'ks_1000_1', descricao: 'Mudança de óleo motor, anilha e filtro de óleo', horas: 1.0 },
+      { id: 'ks_1000_2', descricao: 'Substituição de filtros de combustível principal e decantador', horas: 0.75 },
+      { id: 'ks_1000_3', descricao: 'Substituição de filtros de ar primário e secundário', horas: 0.5 },
+      { id: 'ks_1000_4', descricao: 'Substituição do filtro hidráulico e purga', horas: 1.0 },
+      { id: 'ks_1000_5', descricao: 'Engraxamento completo e aperto geral de fixações estruturais', horas: 1.0 },
+      { id: 'ks_1000_6', descricao: 'Teste operacional e calibração de comandos', horas: 0.75 }
+    ]
   }
 ];
 
@@ -748,6 +823,9 @@ export const db = {
     if (!localStorage.getItem(STORAGE_KEYS.UTILIZADORES)) {
       this.save(STORAGE_KEYS.UTILIZADORES, USERS);
     }
+    if (!localStorage.getItem(STORAGE_KEYS.KITS_MANUTENCAO)) {
+      this.save(STORAGE_KEYS.KITS_MANUTENCAO, INITIAL_KITS_MANUTENCAO);
+    }
     if (!localStorage.getItem(STORAGE_KEYS.AUTOMACOES)) {
       this.save(STORAGE_KEYS.AUTOMACOES, INITIAL_AUTOMACOES);
     } else {
@@ -1154,6 +1232,7 @@ export const db = {
       contratos: this.get(STORAGE_KEYS.CONTRATOS),
       tarefas: this.get(STORAGE_KEYS.TAREFAS),
       visitas: this.get(STORAGE_KEYS.VISITAS),
+      kitsManutencao: this.get(STORAGE_KEYS.KITS_MANUTENCAO),
       utilizadores: this.get(STORAGE_KEYS.UTILIZADORES),
       convites: this.get(STORAGE_KEYS.CONVITES),
       configuracao: this.getConfig()
@@ -1175,6 +1254,7 @@ export const db = {
       if (data.contratos) this.save(STORAGE_KEYS.CONTRATOS, data.contratos);
       if (data.tarefas) this.save(STORAGE_KEYS.TAREFAS, data.tarefas);
       if (data.visitas) this.save(STORAGE_KEYS.VISITAS, data.visitas);
+      if (data.kitsManutencao) this.save(STORAGE_KEYS.KITS_MANUTENCAO, data.kitsManutencao);
       if (data.utilizadores) this.save(STORAGE_KEYS.UTILIZADORES, data.utilizadores);
       if (data.convites) this.save(STORAGE_KEYS.CONVITES, data.convites);
       if (data.configuracao) this.saveConfig(data.configuracao);

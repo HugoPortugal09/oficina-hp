@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Search,
@@ -18,22 +18,27 @@ import {
   History,
   LayoutGrid,
   Table,
-  Download
+  Download,
+  Wrench,
+  Tag,
+  Sparkles,
+  Info
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS } from '../services/dbService';
-import type { PecaCatalogo, FolhaServico, UserProfile } from '../types';
+import type { PecaCatalogo, FolhaServico, UserProfile, KitManutencao, KitPecaItem, KitServicoItem } from '../types';
 import { getPermissionsForRole } from '../types';
 
 interface PecasProps {
   pecas: PecaCatalogo[];
   folhas?: FolhaServico[];
+  kits?: KitManutencao[];
   currentUser?: UserProfile;
 }
 
-export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser }) => {
+export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits, currentUser }) => {
   const permissions = getPermissionsForRole(currentUser?.role || 'administrador');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
@@ -53,6 +58,21 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser })
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPeca, setEditingPeca] = useState<Partial<PecaCatalogo>>({});
+
+  // Sub-tabs: Catálogo vs Kits de Manutenção
+  const [mainTab, setMainTab] = useState<'catalogo' | 'kits'>('catalogo');
+  const [kitsList, setKitsList] = useState<KitManutencao[]>(() => {
+    return propKits && propKits.length > 0 ? propKits : db.get<KitManutencao>(STORAGE_KEYS.KITS_MANUTENCAO);
+  });
+  const [kitSearchTerm, setKitSearchTerm] = useState('');
+  const [isKitModalOpen, setIsKitModalOpen] = useState(false);
+  const [editingKit, setEditingKit] = useState<Partial<KitManutencao> | null>(null);
+
+  useEffect(() => {
+    if (propKits && propKits.length > 0) {
+      setKitsList(propKits);
+    }
+  }, [propKits]);
 
   // Calculate Parts usage over 30, 90, and 360 days
   const now = new Date().getTime();
@@ -203,6 +223,163 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser })
     }
   };
 
+  // Funções de Gestão de Kits de Manutenção
+  const handleReloadKits = () => {
+    setKitsList(db.get<KitManutencao>(STORAGE_KEYS.KITS_MANUTENCAO));
+  };
+
+  const handleCreateNewKit = () => {
+    setEditingKit({
+      id: db.generateId('kit'),
+      codigo: '',
+      nome: '',
+      descricao: '',
+      marcaModelo: '',
+      horasIntervalo: 500,
+      kmsIntervalo: 15000,
+      pecas: [
+        { id: db.generateId('kp'), referencia: '', designacao: '', qtd: 1, isLivre: true }
+      ],
+      servicos: [
+        { id: db.generateId('ks'), descricao: '', horas: 1.0 }
+      ]
+    });
+    setIsKitModalOpen(true);
+  };
+
+  const handleEditKit = (kit: KitManutencao) => {
+    setEditingKit(JSON.parse(JSON.stringify(kit)));
+    setIsKitModalOpen(true);
+  };
+
+  const handleSaveKit = () => {
+    if (!editingKit || !editingKit.codigo?.trim() || !editingKit.nome?.trim()) {
+      alert('Por favor introduza o Código e o Nome do Kit de Manutenção.');
+      return;
+    }
+
+    const kitToSave: KitManutencao = {
+      id: editingKit.id || db.generateId('kit'),
+      codigo: editingKit.codigo.trim().toUpperCase(),
+      nome: editingKit.nome.trim(),
+      descricao: editingKit.descricao?.trim() || '',
+      marcaModelo: editingKit.marcaModelo?.trim() || '',
+      horasIntervalo: Number(editingKit.horasIntervalo) || 0,
+      kmsIntervalo: Number(editingKit.kmsIntervalo) || 0,
+      pecas: (editingKit.pecas || []).filter(p => (p.referencia && p.referencia.trim()) || (p.designacao && p.designacao.trim())),
+      servicos: (editingKit.servicos || []).filter(s => s.descricao && s.descricao.trim()),
+      atualizadoEm: new Date().toISOString()
+    };
+
+    const currentKits = db.get<KitManutencao>(STORAGE_KEYS.KITS_MANUTENCAO);
+    const existingIndex = currentKits.findIndex(k => k.id === kitToSave.id);
+
+    if (existingIndex >= 0) {
+      db.update(STORAGE_KEYS.KITS_MANUTENCAO, kitToSave.id, kitToSave);
+    } else {
+      kitToSave.criadoEm = new Date().toISOString();
+      db.insert(STORAGE_KEYS.KITS_MANUTENCAO, kitToSave);
+    }
+
+    handleReloadKits();
+    setIsKitModalOpen(false);
+    setEditingKit(null);
+  };
+
+  const handleDeleteKit = (id: string) => {
+    if (confirm('Tem a certeza que deseja eliminar este Kit de Manutenção?')) {
+      db.delete(STORAGE_KEYS.KITS_MANUTENCAO, id);
+      handleReloadKits();
+      setIsKitModalOpen(false);
+      setEditingKit(null);
+    }
+  };
+
+  const handleAddKitPeca = () => {
+    if (!editingKit) return;
+    setEditingKit(prev => prev ? ({
+      ...prev,
+      pecas: [
+        ...(prev.pecas || []),
+        { id: db.generateId('kp'), referencia: '', designacao: '', qtd: 1, isLivre: true }
+      ]
+    }) : null);
+  };
+
+  const handleSelectCatalogToKitPeca = (itemIndex: number, partId: string) => {
+    if (!editingKit) return;
+    const catPart = pecas.find(p => p.id === partId);
+    if (!catPart) return;
+
+    setEditingKit(prev => {
+      if (!prev || !prev.pecas) return prev;
+      const updatedPecas = [...prev.pecas];
+      updatedPecas[itemIndex] = {
+        ...updatedPecas[itemIndex],
+        pecaId: catPart.id,
+        referencia: catPart.referencia,
+        designacao: catPart.designacao,
+        isLivre: false
+      };
+      return { ...prev, pecas: updatedPecas };
+    });
+  };
+
+  const handleUpdateKitPeca = (itemIndex: number, field: keyof KitPecaItem, val: any) => {
+    if (!editingKit) return;
+    setEditingKit(prev => {
+      if (!prev || !prev.pecas) return prev;
+      const updatedPecas = [...prev.pecas];
+      updatedPecas[itemIndex] = {
+        ...updatedPecas[itemIndex],
+        [field]: val
+      };
+      return { ...prev, pecas: updatedPecas };
+    });
+  };
+
+  const handleRemoveKitPeca = (itemIndex: number) => {
+    if (!editingKit) return;
+    setEditingKit(prev => {
+      if (!prev || !prev.pecas) return prev;
+      const updatedPecas = prev.pecas.filter((_, idx) => idx !== itemIndex);
+      return { ...prev, pecas: updatedPecas };
+    });
+  };
+
+  const handleAddKitServico = () => {
+    if (!editingKit) return;
+    setEditingKit(prev => prev ? ({
+      ...prev,
+      servicos: [
+        ...(prev.servicos || []),
+        { id: db.generateId('ks'), descricao: '', horas: 1.0 }
+      ]
+    }) : null);
+  };
+
+  const handleUpdateKitServico = (itemIndex: number, field: keyof KitServicoItem, val: any) => {
+    if (!editingKit) return;
+    setEditingKit(prev => {
+      if (!prev || !prev.servicos) return prev;
+      const updatedServicos = [...prev.servicos];
+      updatedServicos[itemIndex] = {
+        ...updatedServicos[itemIndex],
+        [field]: val
+      };
+      return { ...prev, servicos: updatedServicos };
+    });
+  };
+
+  const handleRemoveKitServico = (itemIndex: number) => {
+    if (!editingKit) return;
+    setEditingKit(prev => {
+      if (!prev || !prev.servicos) return prev;
+      const updatedServicos = prev.servicos.filter((_, idx) => idx !== itemIndex);
+      return { ...prev, servicos: updatedServicos };
+    });
+  };
+
   const filteredPecas = pecas.filter(p => {
     const q = searchTerm.toLowerCase();
     return (
@@ -214,10 +391,69 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser })
     );
   });
 
+  const filteredKits = kitsList.filter(k => {
+    const q = kitSearchTerm.toLowerCase();
+    return (
+      k.codigo.toLowerCase().includes(q) ||
+      k.nome.toLowerCase().includes(q) ||
+      (k.marcaModelo && k.marcaModelo.toLowerCase().includes(q)) ||
+      (k.descricao && k.descricao.toLowerCase().includes(q)) ||
+      k.pecas.some(p => p.referencia.toLowerCase().includes(q) || p.designacao.toLowerCase().includes(q)) ||
+      k.servicos.some(s => s.descricao.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="space-y-3.5">
-      {/* 30, 90, 360 Days Stats Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Top Tabs: Catálogo de Peças vs Kits de Manutenção */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pb-2 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMainTab('catalogo')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+              mainTab === 'catalogo'
+                ? 'bg-hp-600/20 text-hp-400 border-hp-500/40 shadow-sm'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Catálogo de Peças</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-900 text-slate-400 border border-slate-800">
+              {pecas.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setMainTab('kits')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+              mainTab === 'kits'
+                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-sm'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <Boxes className="w-4 h-4 text-amber-400" />
+            <span>Kits de Manutenção / Revisão</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              {kitsList.length}
+            </span>
+          </button>
+        </div>
+
+        {mainTab === 'kits' && permissions.canEditPecas && (
+          <button
+            onClick={handleCreateNewKit}
+            className="glass-btn px-4 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-amber-600/20 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 border border-amber-400/30"
+          >
+            <Plus className="w-4 h-4" />
+            Criar Kit de Manutenção
+          </button>
+        )}
+      </div>
+
+      {mainTab === 'catalogo' && (
+        <>
+          {/* 30, 90, 360 Days Stats Dashboard */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <GlassCard className="p-3 flex items-center justify-between border-hp-500/30">
           <div>
             <span className="text-xs font-semibold text-slate-400 block flex items-center gap-1.5">
@@ -524,8 +760,547 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], currentUser })
           </table>
         </div>
       )}
+      </>
+      )}
 
-      {/* Edit / Create Modal */}
+      {/* Main Tab: KITS DE MANUTENÇÃO */}
+      {mainTab === 'kits' && (
+        <div className="space-y-4">
+          {/* Kits Statistics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <GlassCard className="p-3 flex items-center justify-between border-amber-500/30">
+              <div>
+                <span className="text-xs font-semibold text-slate-400 block flex items-center gap-1.5">
+                  <Boxes className="w-3.5 h-3.5 text-amber-400" />
+                  Kits de Manutenção Ativos
+                </span>
+                <h3 className="text-2xl font-extrabold font-mono text-amber-300 mt-1">
+                  {kitsList.length} <span className="text-xs text-slate-400 font-normal">configurados</span>
+                </h3>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <Boxes className="w-5 h-5" />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-3 flex items-center justify-between border-emerald-500/30">
+              <div>
+                <span className="text-xs font-semibold text-slate-400 block flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5 text-emerald-400" />
+                  Peças Vinculadas em Kits
+                </span>
+                <h3 className="text-2xl font-extrabold font-mono text-emerald-300 mt-1">
+                  {kitsList.reduce((acc, k) => acc + (k.pecas?.length || 0), 0)}{' '}
+                  <span className="text-xs text-slate-400 font-normal">peças</span>
+                </h3>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Check className="w-5 h-5" />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-3 flex items-center justify-between border-cyan-500/30">
+              <div>
+                <span className="text-xs font-semibold text-slate-400 block flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  Tarefas Técnicas Padronizadas
+                </span>
+                <h3 className="text-2xl font-extrabold font-mono text-cyan-300 mt-1">
+                  {kitsList.reduce((acc, k) => acc + (k.servicos?.length || 0), 0)}{' '}
+                  <span className="text-xs text-slate-400 font-normal">passos</span>
+                </h3>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <Wrench className="w-5 h-5" />
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Kits Filter & Actions Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Pesquisar kit por código, nome, máquina, peça ou tarefa..."
+                value={kitSearchTerm}
+                onChange={e => setKitSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-900/80 border border-slate-700/80 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Ao escolher o código do Kit numa Folha de Serviço, as peças e serviços desdobram-se automaticamente.</span>
+            </div>
+          </div>
+
+          {/* Kits Cards Grid */}
+          {filteredKits.length === 0 ? (
+            <GlassCard className="p-8 text-center border-dashed border-slate-800">
+              <Boxes className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-slate-300">Nenhum Kit de Manutenção encontrado</h4>
+              <p className="text-xs text-slate-500 mt-1">
+                {kitSearchTerm ? 'Tente outro termo de pesquisa.' : 'Crie o primeiro kit com peças e tempos de intervenção definidos.'}
+              </p>
+              {permissions.canEditPecas && !kitSearchTerm && (
+                <button
+                  onClick={handleCreateNewKit}
+                  className="mt-4 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl inline-flex items-center gap-2 shadow-lg"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar Primeiro Kit
+                </button>
+              )}
+            </GlassCard>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredKits.map(kit => {
+                const totalHoras = (kit.servicos || []).reduce((acc, s) => acc + (Number(s.horas) || 0), 0);
+                return (
+                  <GlassCard
+                    key={kit.id}
+                    className="flex flex-col justify-between space-y-4 hover:border-amber-500/40 transition-all border-slate-800/80 bg-slate-950/70"
+                  >
+                    <div className="space-y-3">
+                      {/* Card Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-xs text-amber-400 px-2 py-0.5 bg-amber-500/10 rounded-lg border border-amber-500/30 tracking-wider">
+                              [KIT] {kit.codigo}
+                            </span>
+                            {kit.horasIntervalo ? (
+                              <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+                                <Clock className="w-3 h-3 text-amber-400" />
+                                {kit.horasIntervalo}h
+                              </span>
+                            ) : null}
+                            {kit.kmsIntervalo ? (
+                              <span className="text-[11px] font-bold text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+                                {kit.kmsIntervalo.toLocaleString()} km
+                              </span>
+                            ) : null}
+                          </div>
+                          <h4 className="text-base font-extrabold text-white mt-2 leading-snug">{kit.nome}</h4>
+                          {kit.marcaModelo && (
+                            <p className="text-xs text-slate-400 mt-0.5 font-medium flex items-center gap-1">
+                              <Tag className="w-3 h-3 text-slate-500" />
+                              {kit.marcaModelo}
+                            </p>
+                          )}
+                        </div>
+
+                        {permissions.canEditPecas && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleEditKit(kit)}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                              title="Editar Kit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteKit(kit.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                              title="Eliminar Kit"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {kit.descricao && (
+                        <p className="text-xs text-slate-400 bg-slate-900/50 p-2 rounded-xl border border-slate-800/60">
+                          {kit.descricao}
+                        </p>
+                      )}
+
+                      {/* Peças Incluídas */}
+                      <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800/80 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                          <span className="flex items-center gap-1.5 text-emerald-400">
+                            <Package className="w-3.5 h-3.5" />
+                            Peças & Consumíveis ({kit.pecas?.length || 0})
+                          </span>
+                        </div>
+                        {(!kit.pecas || kit.pecas.length === 0) ? (
+                          <p className="text-[11px] text-slate-500 italic">Nenhuma peça configurada.</p>
+                        ) : (
+                          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                            {kit.pecas.map((p, idx) => (
+                              <div
+                                key={p.id || idx}
+                                className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-slate-950/60 border border-slate-800/40"
+                              >
+                                <div className="truncate pr-2">
+                                  {p.referencia && (
+                                    <span className="font-mono font-bold text-hp-400 mr-1.5">
+                                      {p.referencia}
+                                    </span>
+                                  )}
+                                  <span className="text-slate-200">{p.designacao}</span>
+                                </div>
+                                <span className="font-mono font-bold text-emerald-400 shrink-0 text-[11px] px-1.5 py-0.5 bg-emerald-950/60 border border-emerald-500/30 rounded">
+                                  {p.qtd}x
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tarefas & Tempos Previstos */}
+                      <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800/80 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                          <span className="flex items-center gap-1.5 text-cyan-400">
+                            <Wrench className="w-3.5 h-3.5" />
+                            Tarefas a Realizar ({kit.servicos?.length || 0})
+                          </span>
+                          <span className="font-mono text-cyan-300 font-extrabold text-[11px] px-2 py-0.5 bg-cyan-950/60 border border-cyan-500/30 rounded-lg">
+                            Tempo Total: {totalHoras.toFixed(2)}h
+                          </span>
+                        </div>
+                        {(!kit.servicos || kit.servicos.length === 0) ? (
+                          <p className="text-[11px] text-slate-500 italic">Nenhum serviço configurado.</p>
+                        ) : (
+                          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                            {kit.servicos.map((s, idx) => (
+                              <div
+                                key={s.id || idx}
+                                className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-slate-950/60 border border-slate-800/40"
+                              >
+                                <span className="text-slate-300 truncate pr-2">
+                                  {idx + 1}. {s.descricao}
+                                </span>
+                                <span className="font-mono font-bold text-cyan-400 shrink-0 text-[11px]">
+                                  {Number(s.horas || 0).toFixed(2)}h
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Card Footer */}
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Pronto a aplicar na Folha de Serviço</span>
+                      <span className="font-mono text-amber-400/90 font-bold">{kit.codigo}</span>
+                    </div>
+                  </GlassCard>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal de Criação / Edição de Kit de Manutenção */}
+      {isKitModalOpen && editingKit && (
+        <Modal
+          isOpen={isKitModalOpen}
+          onClose={() => {
+            setIsKitModalOpen(false);
+            setEditingKit(null);
+          }}
+          title={editingKit.id ? `Editar Kit: ${editingKit.codigo || 'Novo'}` : 'Novo Kit de Manutenção'}
+          subtitle="Configure as peças necessárias e o checklist de tarefas com tempos previstos em horas"
+          maxWidth="3xl"
+        >
+          <div className="space-y-4">
+            {/* Header info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Código do Kit * <span className="text-amber-400 font-mono">(Ex: KIT-500H)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingKit.codigo || ''}
+                  onChange={e => setEditingKit(prev => prev ? ({ ...prev, codigo: e.target.value.toUpperCase() }) : null)}
+                  placeholder="KIT-500H"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold uppercase focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Nome do Kit * <span className="text-slate-500">(Ex: Kit Revisão 500 Horas)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingKit.nome || ''}
+                  onChange={e => setEditingKit(prev => prev ? ({ ...prev, nome: e.target.value }) : null)}
+                  placeholder="Kit Revisão 500 Horas"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Marca / Modelo Aplicável
+                </label>
+                <input
+                  type="text"
+                  value={editingKit.marcaModelo || ''}
+                  onChange={e => setEditingKit(prev => prev ? ({ ...prev, marcaModelo: e.target.value }) : null)}
+                  placeholder="Geral / Empilhadores Diesel"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Intervalo em Horas (h)
+                </label>
+                <input
+                  type="number"
+                  value={editingKit.horasIntervalo || ''}
+                  onChange={e => setEditingKit(prev => prev ? ({ ...prev, horasIntervalo: Number(e.target.value) }) : null)}
+                  placeholder="500"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Intervalo em Quilómetros (km)
+                </label>
+                <input
+                  type="number"
+                  value={editingKit.kmsIntervalo || ''}
+                  onChange={e => setEditingKit(prev => prev ? ({ ...prev, kmsIntervalo: Number(e.target.value) }) : null)}
+                  placeholder="15000"
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1">
+                  Descrição / Notas
+                </label>
+                <input
+                  type="text"
+                  value={editingKit.descricao || ''}
+                  onChange={e => setEditingKit(prev => prev ? ({ ...prev, descricao: e.target.value }) : null)}
+                  placeholder="Revisão preventiva padrão..."
+                  className="w-full py-2 px-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                />
+              </div>
+            </div>
+
+            {/* SECÇÃO DE PEÇAS DO KIT */}
+            <div className="space-y-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-emerald-400" />
+                    Peças & Filtros do Kit ({editingKit.pecas?.length || 0})
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Selecione artigos do catálogo existente ou escreva diretamente a referência e designação
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddKitPeca}
+                  className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-emerald-500/30 transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Adicionar Peça
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {(!editingKit.pecas || editingKit.pecas.length === 0) ? (
+                  <p className="text-xs text-slate-500 italic p-3 text-center bg-slate-900/40 rounded-xl border border-slate-800">
+                    Nenhuma peça adicionada a este kit. Clique em "+ Adicionar Peça".
+                  </p>
+                ) : (
+                  editingKit.pecas.map((pec, idx) => (
+                    <div
+                      key={pec.id || idx}
+                      className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 bg-slate-900/80 border border-slate-800 rounded-xl"
+                    >
+                      {/* Seletor rápido de catálogo */}
+                      <select
+                        value={pec.pecaId || ''}
+                        onChange={e => handleSelectCatalogToKitPeca(idx, e.target.value)}
+                        className="w-full sm:w-48 py-1.5 px-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white"
+                      >
+                        <option value="">-- Escolher do Catálogo --</option>
+                        {pecas.map(cp => (
+                          <option key={cp.id} value={cp.id}>
+                            {cp.referencia} - {cp.designacao}
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="text"
+                        placeholder="Referência..."
+                        value={pec.referencia || ''}
+                        onChange={e => handleUpdateKitPeca(idx, 'referencia', e.target.value)}
+                        className="w-full sm:w-32 py-1.5 px-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-hp-400 font-mono font-bold"
+                      />
+
+                      <input
+                        type="text"
+                        placeholder="Designação da peça / filtro..."
+                        value={pec.designacao || ''}
+                        onChange={e => handleUpdateKitPeca(idx, 'designacao', e.target.value)}
+                        className="flex-1 py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white"
+                      />
+
+                      <div className="flex items-center gap-2 justify-between sm:justify-end">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-slate-400 font-semibold">Qtd:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={pec.qtd || 1}
+                            onChange={e => handleUpdateKitPeca(idx, 'qtd', Number(e.target.value) || 1)}
+                            className="w-16 py-1.5 px-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-emerald-400 font-mono font-bold text-center"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveKitPeca(idx)}
+                          className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* SECÇÃO DE SERVIÇOS & TAREFAS DO KIT */}
+            <div className="space-y-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                    <Wrench className="w-4 h-4 text-cyan-400" />
+                    Checklist de Tarefas & Serviços ({editingKit.servicos?.length || 0})
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Defina o que o operador deve fazer e o tempo padrão estipulado em horas (ex: 1.0 = 1 hora, 0.5 = 30 min)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddKitServico}
+                  className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-cyan-500/30 transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Adicionar Tarefa
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {(!editingKit.servicos || editingKit.servicos.length === 0) ? (
+                  <p className="text-xs text-slate-500 italic p-3 text-center bg-slate-900/40 rounded-xl border border-slate-800">
+                    Nenhuma tarefa técnica adicionada a este kit. Clique em "+ Adicionar Tarefa".
+                  </p>
+                ) : (
+                  editingKit.servicos.map((srv, idx) => (
+                    <div
+                      key={srv.id || idx}
+                      className="flex items-center gap-2 p-2 bg-slate-900/80 border border-slate-800 rounded-xl"
+                    >
+                      <span className="text-xs font-mono font-bold text-slate-500 w-6 text-center shrink-0">
+                        {idx + 1}.
+                      </span>
+
+                      <input
+                        type="text"
+                        placeholder="Descrição da tarefa (ex: Substituir óleo do motor e filtro)..."
+                        value={srv.descricao || ''}
+                        onChange={e => handleUpdateKitServico(idx, 'descricao', e.target.value)}
+                        className="flex-1 py-1.5 px-2.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white"
+                      />
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[11px] text-slate-400 font-semibold">Horas:</span>
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0.1"
+                          placeholder="1.0"
+                          value={srv.horas !== undefined ? srv.horas : 1.0}
+                          onChange={e => handleUpdateKitServico(idx, 'horas', Number(e.target.value))}
+                          className="w-20 py-1.5 px-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-cyan-400 font-mono font-bold text-center"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveKitServico(idx)}
+                        className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Total Horas do Kit */}
+              <div className="p-2.5 bg-cyan-950/40 border border-cyan-500/30 rounded-xl flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  Mão-de-Obra Total Prevista:
+                </span>
+                <span className="font-mono font-extrabold text-cyan-300 text-sm">
+                  {(editingKit.servicos || []).reduce((acc, s) => acc + (Number(s.horas) || 0), 0).toFixed(2)} horas
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              {editingKit.id && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteKit(editingKit.id!)}
+                  className="py-2 px-3 text-rose-400 hover:bg-rose-500/10 rounded-xl text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar Kit
+                </button>
+              )}
+
+              <div className="flex items-center gap-3 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsKitModalOpen(false);
+                    setEditingKit(null);
+                  }}
+                  className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveKit}
+                  className="glass-btn py-2 px-5 rounded-xl text-xs font-bold text-white shadow-lg shadow-amber-600/30 flex items-center gap-1.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 border border-amber-400/30"
+                >
+                  <Check className="w-4 h-4" />
+                  Guardar Kit de Manutenção
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit / Create Part Modal */}
       {isModalOpen && (
         <Modal
           isOpen={isModalOpen}

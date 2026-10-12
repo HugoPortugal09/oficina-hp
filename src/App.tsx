@@ -69,6 +69,7 @@ import type {
   Cliente,
   Equipamento,
   PecaCatalogo,
+  KitManutencao,
   PedidoPeca,
   GuiaEnvio,
   Contrato,
@@ -329,6 +330,7 @@ export default function App() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([]);
   const [pecas, setPecas] = useState<PecaCatalogo[]>([]);
+  const [kits, setKits] = useState<KitManutencao[]>([]);
   const [pedidos, setPedidos] = useState<PedidoPeca[]>([]);
   const [guias, setGuias] = useState<GuiaEnvio[]>([]);
   const [contratos, setContratos] = useState<Contrato[]>([]);
@@ -357,6 +359,7 @@ export default function App() {
     setClientes(db.get<Cliente>(STORAGE_KEYS.CLIENTES));
     setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     setPecas(db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO));
+    setKits(db.get<KitManutencao>(STORAGE_KEYS.KITS_MANUTENCAO));
     setPedidos(db.get<PedidoPeca>(STORAGE_KEYS.PEDIDOS_PECAS));
     setGuias(db.get<GuiaEnvio>(STORAGE_KEYS.GUIAS_ENVIO));
     setContratos(db.get<Contrato>(STORAGE_KEYS.CONTRATOS));
@@ -691,6 +694,7 @@ export default function App() {
               equipamentos={equipamentos}
               clientes={clientes}
               catalogoPecas={pecas}
+              kits={kits}
               contratos={contratos}
               onOpenScanner={() => setIsScannerOpen(true)}
               selectedFolhaToOpen={selectedFolha}
@@ -761,6 +765,7 @@ export default function App() {
             <Pecas
               pecas={pecas}
               folhas={folhas}
+              kits={kits}
               currentUser={currentUser}
             />
           )}

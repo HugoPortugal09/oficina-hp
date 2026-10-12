@@ -50,7 +50,9 @@ import {
   Send,
   Wifi,
   WifiOff,
-  Link2
+  Link2,
+  Boxes,
+  Tag
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -77,6 +79,7 @@ import type {
   Equipamento,
   Cliente,
   PecaCatalogo,
+  KitManutencao,
   PedidoPeca,
   Tarefa,
   StatusFolhaServico,
@@ -151,7 +154,7 @@ interface MobileAppProps {
 
 type MobileTab = 'folhas' | 'ia-wizard' | 'nova-manual' | 'consultas' | 'pecas' | 'tarefas';
 type ConsultaSubTab = 'equipamentos' | 'empresas' | 'clientes';
-type PecasSubTab = 'catalogo-pecas' | 'pedidos-pecas';
+type PecasSubTab = 'catalogo-pecas' | 'pedidos-pecas' | 'kits-manutencao';
 
 export const MobileApp: React.FC<MobileAppProps> = ({
   theme,
@@ -171,12 +174,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [catalogoPecas, setCatalogoPecas] = useState<PecaCatalogo[]>([]);
+  const [kitsManutencao, setKitsManutencao] = useState<KitManutencao[]>([]);
   const [pedidosPecas, setPedidosPecas] = useState<PedidoPeca[]>([]);
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
 
   // Selected Folha for Full Mobile Detail / Edit
   const [selectedFolha, setSelectedFolha] = useState<FolhaServico | null>(null);
   const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+  const [mobileKitNotice, setMobileKitNotice] = useState<string | null>(null);
 
   const handleOpenMobileFolha = (f: FolhaServico) => {
     setSelectedFolha(f);
@@ -481,6 +486,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setEquipamentos(db.get<Equipamento>(STORAGE_KEYS.EQUIPAMENTOS));
     setClientes(db.get<Cliente>(STORAGE_KEYS.CLIENTES));
     setCatalogoPecas(db.get<PecaCatalogo>(STORAGE_KEYS.PECAS_CATALOGO));
+    setKitsManutencao(db.get<KitManutencao>(STORAGE_KEYS.KITS_MANUTENCAO));
     setPedidosPecas(db.get<PedidoPeca>(STORAGE_KEYS.PEDIDOS_PECAS));
     setTarefas(db.get<Tarefa>(STORAGE_KEYS.TAREFAS));
   };
@@ -1293,8 +1299,92 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, { [key]: updatedList });
   };
 
+  const handleApplyKitMobile = (kit: KitManutencao, itemLineId: string, isAdicional: boolean) => {
+    if (!selectedFolha) return;
+    const targetKey = isAdicional ? 'pecasAdicionais' : 'pecas';
+    const initials = currentUser?.avatar || 'HP';
+
+    // 1. Desdobrar Peças do Kit
+    const novasPecas: PecaItem[] = (kit.pecas || []).map(kp => {
+      const matchedCat = catalogoPecas.find(cp =>
+        (kp.pecaId && cp.id === kp.pecaId) ||
+        (kp.referencia && cp.referencia.trim().toLowerCase() === kp.referencia.trim().toLowerCase())
+      );
+      return {
+        id: db.generateId('pec'),
+        pecaId: kp.pecaId || matchedCat?.id,
+        referencia: kp.referencia || matchedCat?.referencia || '',
+        designacao: kp.designacao || matchedCat?.designacao || '',
+        qtd: Number(kp.qtd) || 1,
+        precoUnitario: matchedCat?.precoVenda,
+        concluido: false,
+        isLivre: kp.isLivre ?? (matchedCat ? false : true),
+        iniciaisConclusao: initials
+      };
+    });
+
+    // 2. Desdobrar Tarefas com tempos definidos
+    const novosServicos: ServicoItem[] = (kit.servicos || []).map(ks => ({
+      id: db.generateId('srv'),
+      descricao: ks.descricao,
+      horas: Number(ks.horas) || 1.0,
+      valorHora: 38.5,
+      concluido: false,
+      tecnico: initials,
+      iniciaisConclusao: initials
+    }));
+
+    const existingList = selectedFolha[targetKey] || [];
+    const itemIndex = existingList.findIndex(p => p.id === itemLineId);
+    let updatedPecasList: PecaItem[];
+
+    if (itemIndex >= 0) {
+      updatedPecasList = [
+        ...existingList.slice(0, itemIndex),
+        ...novasPecas,
+        ...existingList.slice(itemIndex + 1)
+      ];
+    } else {
+      updatedPecasList = [...existingList, ...novasPecas];
+    }
+
+    const existingServices = selectedFolha.servicos || [];
+    const updatedServicesList = [...existingServices, ...novosServicos];
+
+    const updatedFolha = {
+      ...selectedFolha,
+      [targetKey]: updatedPecasList,
+      servicos: updatedServicesList
+    };
+
+    setSelectedFolha(updatedFolha);
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, selectedFolha.id, {
+      [targetKey]: updatedPecasList,
+      servicos: updatedServicesList
+    });
+
+    setMobileKitNotice(`⚡ Kit ${kit.codigo} (${kit.nome}) aplicado: ${novasPecas.length} peças e ${novosServicos.length} tarefas com tempos adicionadas à folha!`);
+    setTimeout(() => setMobileKitNotice(null), 5000);
+  };
+
   const handleUpdatePartInSelected = (pecaId: string, field: keyof PecaItem, value: any, isAdicional: boolean) => {
     if (!selectedFolha) return;
+
+    // Detetar automaticamente se o mecânico selecionou ou digitou o código de um Kit (ex: KIT-500H)
+    if (field === 'referencia' || field === 'designacao') {
+      const cleanVal = String(value || '').trim().toUpperCase();
+      const matchedKit = kitsManutencao.find(k =>
+        k.codigo.toUpperCase() === cleanVal ||
+        (cleanVal.length >= 4 && k.codigo.replace('-', '').toUpperCase() === cleanVal.replace('-', '')) ||
+        (k.nome && cleanVal.length >= 6 && k.nome.toUpperCase() === cleanVal)
+      );
+
+      if (matchedKit) {
+        handleApplyKitMobile(matchedKit, pecaId, isAdicional);
+        return;
+      }
+    }
+
     const key = isAdicional ? 'pecasAdicionais' : 'pecas';
     const list = selectedFolha[key] || [];
     const fallbackDate = selectedFolha.data ? formatDate(selectedFolha.data) : new Date().toLocaleDateString('pt-PT');
@@ -2757,11 +2847,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
               {/* 3. PEÇAS & MATERIAIS APLICADOS */}
               <div className="space-y-3 pt-3 border-t border-slate-800">
+                {mobileKitNotice && (
+                  <div className="p-3 bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border border-amber-500/40 rounded-2xl text-xs text-amber-200 font-semibold flex items-center justify-between shadow-lg shadow-amber-500/10 animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                      <span>{mobileKitNotice}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMobileKitNotice(null)}
+                      className="text-amber-400 hover:text-white p-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                    <Package className="w-4 h-4 text-emerald-400" />
-                    Peças & Materiais ({selectedFolha.pecas?.length || 0})
-                  </h4>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                      <Package className="w-4 h-4 text-emerald-400" />
+                      Peças & Materiais ({selectedFolha.pecas?.length || 0})
+                    </h4>
+                    <p className="text-[10px] text-slate-400">
+                      Introduza uma referência ou escreva o código do <span className="text-amber-400 font-bold">[KIT]</span> para desdobrar automaticamente.
+                    </p>
+                  </div>
                   <div className="flex items-center gap-1.5">
                     {selectedFolha.tipo === 'Validação e Preparação' && (
                       <button
@@ -2828,13 +2939,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                           <div className="grid grid-cols-3 gap-1.5 flex-1">
                             <input
                               type="text"
-                              placeholder="Ref..."
+                              list="mobile-part-refs"
+                              placeholder="Ref ou KIT..."
                               value={p.referencia || ''}
                               onChange={e => handleUpdatePartInSelected(p.id, 'referencia', e.target.value, false)}
                               className="py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] text-hp-400 font-mono font-bold"
                             />
                             <input
                               type="text"
+                              list="mobile-part-refs"
                               placeholder="Designação da peça..."
                               value={p.designacao}
                               onChange={e => handleUpdatePartInSelected(p.id, 'designacao', e.target.value, false)}
@@ -2949,13 +3062,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                             <div className="grid grid-cols-3 gap-1.5 flex-1">
                               <input
                                 type="text"
-                                placeholder="Ref..."
+                                list="mobile-part-refs"
+                                placeholder="Ref ou KIT..."
                                 value={p.referencia || ''}
                                 onChange={e => handleUpdatePartInSelected(p.id, 'referencia', e.target.value, true)}
                                 className="py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-xl text-[11px] text-amber-400 font-mono font-bold"
                               />
                               <input
                                 type="text"
+                                list="mobile-part-refs"
                                 placeholder="Designação da peça adicional..."
                                 value={p.designacao}
                                 onChange={e => handleUpdatePartInSelected(p.id, 'designacao', e.target.value, true)}
@@ -3020,6 +3135,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Datalist com Kits e Peças para Autocompleção Fluida sem botões adicionais */}
+              <datalist id="mobile-part-refs">
+                {kitsManutencao.map(k => (
+                  <option key={k.id} value={k.codigo}>
+                    [KIT] {k.nome} ({k.pecas?.length || 0} peças, {k.servicos?.length || 0} tarefas)
+                  </option>
+                ))}
+                {catalogoPecas.slice(0, 100).map(cp => (
+                  <option key={cp.id} value={cp.referencia}>
+                    {cp.designacao}
+                  </option>
+                ))}
+              </datalist>
 
               {/* 5. NOTAS PARA O CLIENTE */}
               {selectedFolha.tipo !== 'Validação e Preparação' && (
@@ -5796,11 +5925,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         {/* ========================================================================= */}
         {activeTab === 'pecas' && (
           <div className="space-y-4 animate-in fade-in">
-            {/* Peças Navigation Tabs (2 Grid Columns - No Scroll Required) */}
-            <div className="grid grid-cols-2 gap-1.5">
+            {/* Peças Navigation Tabs */}
+            <div className="grid grid-cols-3 gap-1.5">
               {[
-                { id: 'catalogo-pecas', label: 'Catálogo de Peças', icon: <Package className="w-3.5 h-3.5 shrink-0" /> },
-                { id: 'pedidos-pecas', label: 'Pedidos de Peças', icon: <ShoppingCart className="w-3.5 h-3.5 shrink-0" /> }
+                { id: 'catalogo-pecas', label: 'Catálogo', icon: <Package className="w-3.5 h-3.5 shrink-0" /> },
+                { id: 'kits-manutencao', label: 'Kits Revisão', icon: <Boxes className="w-3.5 h-3.5 shrink-0" /> },
+                { id: 'pedidos-pecas', label: 'Pedidos', icon: <ShoppingCart className="w-3.5 h-3.5 shrink-0" /> }
               ].map(sub => (
                 <button
                   key={sub.id}
@@ -5831,6 +5961,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   placeholder={`Pesquisar em ${
                     pecasSubTab === 'catalogo-pecas'
                       ? 'referência, peça, marca...'
+                      : pecasSubTab === 'kits-manutencao'
+                      ? 'código do kit, nome, peças, horas...'
                       : 'pedido, referência, matrícula...'
                   }`}
                   value={pecasQuery}
@@ -6177,6 +6309,124 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                             "{ped.notas}"
                           </p>
                         )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* KITS DE MANUTENÇÃO (Kits de Revisão Preventiva) */}
+            {pecasSubTab === 'kits-manutencao' && (
+              <div className="space-y-3">
+                <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs text-amber-200">
+                  <span className="flex items-center gap-2 font-semibold">
+                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                    Kits prontos a aplicar nas Folhas de Serviço
+                  </span>
+                  <span className="font-mono font-bold text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded-lg">
+                    {kitsManutencao.length} Kits
+                  </span>
+                </div>
+
+                {kitsManutencao
+                  .filter(kit => {
+                    const q = pecasQuery.toLowerCase();
+                    return (
+                      kit.codigo.toLowerCase().includes(q) ||
+                      kit.nome.toLowerCase().includes(q) ||
+                      (kit.marcaModelo && kit.marcaModelo.toLowerCase().includes(q)) ||
+                      (kit.descricao && kit.descricao.toLowerCase().includes(q)) ||
+                      kit.pecas.some(p => p.referencia.toLowerCase().includes(q) || p.designacao.toLowerCase().includes(q)) ||
+                      kit.servicos.some(s => s.descricao.toLowerCase().includes(q))
+                    );
+                  })
+                  .map(kit => {
+                    const totalHoras = (kit.servicos || []).reduce((acc, s) => acc + (Number(s.horas) || 0), 0);
+                    return (
+                      <div
+                        key={kit.id}
+                        className={`p-4 rounded-3xl border space-y-3 shadow-sm ${
+                          theme === 'light' ? 'bg-white border-slate-200' : 'bg-slate-900/90 border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-xs font-black text-amber-400 px-2 py-0.5 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                                [KIT] {kit.codigo}
+                              </span>
+                              {kit.horasIntervalo ? (
+                                <span className="text-[11px] font-bold text-slate-300 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">
+                                  ⏱ {kit.horasIntervalo}h
+                                </span>
+                              ) : null}
+                            </div>
+                            <h3 className="text-sm font-black text-white mt-1.5 leading-snug">{kit.nome}</h3>
+                            {kit.marcaModelo && (
+                              <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-0.5">
+                                <Tag className="w-3 h-3 text-slate-500" />
+                                {kit.marcaModelo}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-mono font-extrabold text-cyan-300 bg-cyan-950/80 px-2 py-1 rounded-xl border border-cyan-500/30 block">
+                              {totalHoras.toFixed(2)}h total
+                            </span>
+                          </div>
+                        </div>
+
+                        {kit.descricao && (
+                          <p className="text-xs text-slate-400 italic bg-slate-950/50 p-2 rounded-xl border border-slate-800/60">
+                            {kit.descricao}
+                          </p>
+                        )}
+
+                        {/* Peças Incluídas */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-2xl border border-slate-800/90 space-y-1.5">
+                          <span className="text-[10px] font-bold uppercase text-emerald-400 flex items-center gap-1">
+                            <Package className="w-3 h-3" />
+                            Peças & Filtros ({kit.pecas?.length || 0})
+                          </span>
+                          <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                            {kit.pecas?.map((p, idx) => (
+                              <div
+                                key={p.id || idx}
+                                className="flex items-center justify-between text-xs py-0.5 text-slate-300"
+                              >
+                                <span className="truncate pr-2">
+                                  {p.referencia && <b className="font-mono text-hp-400 mr-1">{p.referencia}</b>}
+                                  {p.designacao}
+                                </span>
+                                <span className="font-mono font-bold text-emerald-400 text-[11px] shrink-0">
+                                  {p.qtd}x
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Tarefas & Tempos */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-2xl border border-slate-800/90 space-y-1.5">
+                          <span className="text-[10px] font-bold uppercase text-cyan-400 flex items-center gap-1">
+                            <Wrench className="w-3 h-3" />
+                            Tarefas Técnicas ({kit.servicos?.length || 0})
+                          </span>
+                          <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                            {kit.servicos?.map((s, idx) => (
+                              <div
+                                key={s.id || idx}
+                                className="flex items-center justify-between text-xs py-0.5 text-slate-300"
+                              >
+                                <span className="truncate pr-2">{idx + 1}. {s.descricao}</span>
+                                <span className="font-mono font-bold text-cyan-400 text-[11px] shrink-0">
+                                  {Number(s.horas || 0).toFixed(2)}h
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}

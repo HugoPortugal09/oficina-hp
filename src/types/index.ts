@@ -285,6 +285,35 @@ export interface PecaCatalogo {
   precoCusto?: number;
 }
 
+export interface KitServicoItem {
+  id: string;
+  descricao: string;
+  horas: number; // Ex: 1.5 para 1h30
+}
+
+export interface KitPecaItem {
+  id: string;
+  pecaId?: string;
+  referencia: string;
+  designacao: string;
+  qtd: number;
+  isLivre?: boolean;
+}
+
+export interface KitManutencao {
+  id: string;
+  codigo: string; // Ex: "KIT-500H"
+  nome: string; // Ex: "Kit Revisão 500 Horas"
+  descricao?: string;
+  marcaModelo?: string; // Ex: "Geral" ou marca/modelo específico
+  horasIntervalo?: number; // Ex: 500
+  kmsIntervalo?: number; // Ex: 30000
+  servicos: KitServicoItem[];
+  pecas: KitPecaItem[];
+  criadoEm?: string;
+  atualizadoEm?: string;
+}
+
 export interface PedidoPeca {
   id: string;
   numero: string;
