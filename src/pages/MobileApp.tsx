@@ -644,6 +644,22 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       }
     }
 
+    // Lembrete inteligente de Guia AT:
+    // Apenas pergunta quando grava a FS se tiver selecionado alguma peça como colocada (concluído) e ainda não tiver inserido Nº da Guia AT
+    let resolvedGuiaAT = folhaData.guiaAT?.trim() || '';
+    const hasPlacedParts = (folhaData.pecas?.some(p => p.concluido) || folhaData.pecasAdicionais?.some(p => p.concluido));
+    const isExcludedFromGuia = folhaData.tipo === 'Validação e Preparação' || folhaData.tipo === 'Entrega e Formação';
+
+    if (hasPlacedParts && !resolvedGuiaAT && !isExcludedFromGuia) {
+      const guiaPrompt = window.prompt(
+        'Foram selecionadas peças como colocadas e não foi inserido o Nº da Guia AT.\n\nDeseja introduzir o Nº da Guia AT para este serviço? (Opcional, deixe em branco para avançar):'
+      );
+      if (guiaPrompt && guiaPrompt.trim()) {
+        resolvedGuiaAT = guiaPrompt.trim();
+        folhaData.guiaAT = resolvedGuiaAT;
+      }
+    }
+
     setIsSaving(true);
     const newNum = folhaData.numero || db.generateSequenceNumber(STORAGE_KEYS.FOLHAS_SERVICO, 'FS');
     const now = getTodayFormatted();
@@ -655,6 +671,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     const folhaToSave: FolhaServico = {
       id: folhaData.id || db.generateId('fs'),
       numero: newNum,
+      guiaAT: resolvedGuiaAT || folhaData.guiaAT || '',
       tipo: folhaData.tipo || 'Oficina',
       data: folhaData.data ? formatDate(folhaData.data) : now,
       dataEntradaOficina: folhaData.dataEntradaOficina ? formatDate(folhaData.dataEntradaOficina) : now,

@@ -1092,8 +1092,25 @@ export const Oficina: React.FC<OficinaProps> = ({
       last.duracaoTexto = formatDuration(last.dataEntrada, now);
     }
 
+    // Lembrete inteligente de Guia AT:
+    // Apenas pergunta quando grava a FS se tiver selecionado alguma peça como colocada (concluído) e ainda não tiver inserido Nº da Guia AT
+    let resolvedGuiaAT = editingFolha.guiaAT?.trim() || '';
+    const hasPlacedParts = (editingFolha.pecas?.some(p => p.concluido) || editingFolha.pecasAdicionais?.some(p => p.concluido));
+    const isExcludedFromGuia = editingFolha.tipo === 'Validação e Preparação' || editingFolha.tipo === 'Entrega e Formação';
+
+    if (hasPlacedParts && !resolvedGuiaAT && !isExcludedFromGuia) {
+      const guiaPrompt = window.prompt(
+        'Foram selecionadas peças como colocadas e não foi inserido o Nº da Guia AT.\n\nDeseja introduzir o Nº da Guia AT para este serviço? (Opcional, deixe em branco para avançar):'
+      );
+      if (guiaPrompt && guiaPrompt.trim()) {
+        resolvedGuiaAT = guiaPrompt.trim();
+        setEditingFolha(prev => ({ ...prev, guiaAT: resolvedGuiaAT }));
+      }
+    }
+
     const folhaToSave: FolhaServico = {
       ...editingFolha,
+      guiaAT: resolvedGuiaAT || editingFolha.guiaAT || '',
       data: editingFolha.data ? formatDate(editingFolha.data) : getTodayFormatted(),
       dataEntradaOficina: editingFolha.dataEntradaOficina ? formatDate(editingFolha.dataEntradaOficina) : editingFolha.dataEntradaOficina,
       dataRequisicao: editingFolha.dataRequisicao ? formatDate(editingFolha.dataRequisicao) : editingFolha.dataRequisicao,
@@ -1399,14 +1416,6 @@ export const Oficina: React.FC<OficinaProps> = ({
 
   // Parts lines (Price-free for Workshop Technical Sheet)
   const handleAddPart = (isAdicional: boolean = false) => {
-    const isExcluded = editingFolha.tipo === 'Oficina' || editingFolha.tipo === 'Entrega e Formação';
-    if (!isExcluded && !editingFolha.guiaAT) {
-      const guiaPrompt = window.prompt('Deseja introduzir o Nº da Guia AT para este serviço com aplicação de peças? (Opcional, deixe em branco para avançar):');
-      if (guiaPrompt && guiaPrompt.trim()) {
-        setEditingFolha(prev => ({ ...prev, guiaAT: guiaPrompt.trim() }));
-      }
-    }
-
     const newPart: PecaItem = {
       id: db.generateId('pec'),
       referencia: '',
