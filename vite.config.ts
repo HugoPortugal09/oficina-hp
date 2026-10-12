@@ -1,10 +1,25 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const buildTimestamp = Date.now().toString();
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    __APP_BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+  },
   plugins: [
     react(),
+    {
+      name: 'generate-version-json',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'version.json',
+          source: JSON.stringify({ version: buildTimestamp, builtAt: new Date().toISOString() })
+        });
+      }
+    },
     {
       name: 'email-api-middleware',
       configureServer(server) {

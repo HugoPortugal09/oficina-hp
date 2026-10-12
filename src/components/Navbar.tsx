@@ -18,12 +18,14 @@ import {
   Wrench,
   Check,
   ChevronDown,
-  LogOut
+  LogOut,
+  RotateCcw
 } from 'lucide-react';
 import type { NavigationTab, UserProfile } from '../types';
 import { USERS } from '../types';
 import { checkPocketBaseConnection } from '../services/pocketbase';
 import { syncPullFromCloud } from '../services/pocketbaseSync';
+import { checkForAppUpdate, subscribeToUpdates, reloadAppWithCacheClear } from '../services/updateService';
 
 interface NavbarProps {
   activeTab: NavigationTab;
@@ -87,6 +89,22 @@ export const Navbar: React.FC<NavbarProps> = ({
     } finally {
       setTimeout(() => setIsManualSyncing(false), 600);
     }
+  };
+
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeToUpdates(setUpdateAvailable);
+    checkForAppUpdate();
+    return unsub;
+  }, []);
+
+  const handleReloadApp = () => {
+    setIsReloading(true);
+    setTimeout(() => {
+      reloadAppWithCacheClear();
+    }, 150);
   };
 
   useEffect(() => {
@@ -184,7 +202,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           type="button"
           onClick={handleManualSync}
           disabled={isManualSyncing}
-          title={isManualSyncing ? 'A sincronizar com a base de dados central...' : `${pbStatus.message} (Clique para sincronizar agora)`}
+          title={isManualSyncing ? 'A sincronizar com a base de dados central...' : `${pbStatus.message} (Clique para sincronizar base de dados agora)`}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono border backdrop-blur-md transition-all active:scale-95 hover:opacity-90 cursor-pointer ${
             pbStatus.connected
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:border-emerald-400'
@@ -201,6 +219,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           />
         </button>
+
+        {/* Quick App Reload / Update Button (Ideal para PWA instalada e desktop) */}
+        <button
+          type="button"
+          onClick={handleReloadApp}
+          disabled={isReloading}
+          title={updateAvailable ? '✨ Nova versão disponível no EasyPanel! Clique para atualizar' : 'Recarregar aplicação e descarregar atualizações mais recentes'}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono border backdrop-blur-md transition-all active:scale-95 hover:opacity-90 cursor-pointer ${
+            updateAvailable
+              ? 'bg-hp-600 text-white border-hp-400 ring-2 ring-hp-400/50 animate-pulse'
+              : 'bg-slate-900/80 border-slate-700/60 text-slate-300 hover:text-white hover:border-hp-500'
+          }`}
+        >
+          <RotateCcw className={`w-3.5 h-3.5 ${isReloading ? 'animate-spin text-hp-400' : updateAvailable ? 'text-amber-300 animate-spin' : 'text-slate-400'}`} />
+          <span className="hidden xl:inline">
+            {updateAvailable ? 'Atualizar App' : 'Recarregar'}
+          </span>
+          {updateAvailable && (
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          )}
+        </button>
+
 
         {/* User Profile Selector Dropdown */}
         <div className="relative" ref={userMenuRef}>

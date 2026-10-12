@@ -1,7 +1,9 @@
 import React, { useState, useEffect, Suspense } from 'react';
+import { Sparkles, RotateCcw } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { RegistoConviteModal } from './components/RegistoConviteModal';
+import { checkForAppUpdate, subscribeToUpdates, reloadAppWithCacheClear } from './services/updateService';
 
 // Helper tipado para importação lazy de componentes com named exports
 const lazyNamed = <T extends Record<string, any>, K extends keyof T>(
@@ -387,6 +389,18 @@ export default function App() {
     setFolhas(updated);
   };
 
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeToUpdates(setUpdateAvailable);
+    checkForAppUpdate();
+    const interval = setInterval(checkForAppUpdate, 45000);
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, []);
+
   useEffect(() => {
     db.initSeed();
     loadAllData();
@@ -606,6 +620,24 @@ export default function App() {
           users={utilizadores}
           onLogout={handleLogout}
         />
+
+        {/* Banner de Atualização Disponível (Especialmente útil para PWAs instaladas no Desktop) */}
+        {updateAvailable && (
+          <div className="sticky top-[53px] z-20 bg-gradient-to-r from-hp-600 via-blue-600 to-indigo-600 text-white px-4 py-2.5 shadow-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 border-b border-hp-400/40">
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
+              <span>Nova versão da Oficina HP disponível no EasyPanel! Atualize para carregar as alterações mais recentes.</span>
+            </div>
+            <button
+              type="button"
+              onClick={reloadAppWithCacheClear}
+              className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-hp-950 font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-hp-600" />
+              <span>Atualizar Agora</span>
+            </button>
+          </div>
+        )}
 
         {/* Dynamic Page Container */}
         <main className="flex-1 px-4 sm:px-6 py-4 max-w-7xl w-full mx-auto">
