@@ -527,7 +527,9 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
 
   const currentWeekFolhas = useMemo(() => {
     return folhas.filter(f => {
-      const plannedDate = formatDateToInput(f.dataPlaneada || f.data);
+      // Uma folha só entra no planeamento semanal se tiver uma dataPlaneada explícita
+      if (!f.dataPlaneada || f.dataPlaneada.trim() === '' || f.dataPlaneada === '-') return false;
+      const plannedDate = formatDateToInput(f.dataPlaneada);
       const inWeek = plannedDate >= weekStartStr && plannedDate <= weekEndStr;
       if (!inWeek) return false;
       if (selectedTecnico !== 'TODOS' && f.tecnicoPlaneado && f.tecnicoPlaneado !== selectedTecnico) return false;
@@ -553,12 +555,12 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       // Regra do utilizador: Segunda a Sexta (índices 0 a 4) são sempre incluídos.
       // Sábado (5) e Domingo (6) só são incluídos se existirem marcações (folhas ou visitas).
       const hasSabado = (
-        currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[5].isoStr) ||
+        currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada!) === weekDays[5].isoStr) ||
         currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[5].isoStr)
       );
 
       const hasDomingo = (
-        currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[6].isoStr) ||
+        currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada!) === weekDays[6].isoStr) ||
         currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[6].isoStr)
       );
 
@@ -570,7 +572,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
       });
 
       const dayCols: PlaneamentoSemanalDayCol[] = activeDays.map(d => {
-        const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada || f.data) === d.isoStr);
+        const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada!) === d.isoStr);
         const dayVisitas = currentWeekVisitas.filter(v => formatDateToInput(v.data) === d.isoStr);
 
         const items: PlaneamentoSemanalDayItem[] = [
@@ -923,7 +925,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
           {/* 7 Days Columns */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-2.5 items-start">
             {weekDays.map(day => {
-              const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada || f.data) === day.isoStr);
+              const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada!) === day.isoStr);
               const dayVisitas = currentWeekVisitas.filter(v => formatDateToInput(v.data) === day.isoStr);
               const totalItems = dayFolhas.length + dayVisitas.length;
               const isOver = dragOverDay === day.isoStr;

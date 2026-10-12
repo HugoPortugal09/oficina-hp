@@ -2547,7 +2547,8 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
     // Filter current week items
     const weekIsoStrings = new Set(weekDays.map(d => d.isoStr));
     const currentWeekFolhas = rawFolhas.filter(f => {
-      const targetDate = formatDateToInput(f.dataPlaneada || f.data);
+      if (!f.dataPlaneada || f.dataPlaneada.trim() === '' || f.dataPlaneada === '-') return false;
+      const targetDate = formatDateToInput(f.dataPlaneada);
       return weekIsoStrings.has(targetDate);
     });
     const currentWeekVisitas = rawVisitas.filter(v => {
@@ -2557,11 +2558,11 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
 
     // Check weekend appointments
     const hasSabado = (
-      currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[5].isoStr) ||
+      currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada!) === weekDays[5].isoStr) ||
       currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[5].isoStr)
     );
     const hasDomingo = (
-      currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada || f.data) === weekDays[6].isoStr) ||
+      currentWeekFolhas.some(f => formatDateToInput(f.dataPlaneada!) === weekDays[6].isoStr) ||
       currentWeekVisitas.some(v => formatDateToInput(v.data) === weekDays[6].isoStr)
     );
 
@@ -2574,7 +2575,7 @@ export async function sendWeeklyPlaneamentoEmail(payload?: WeeklyPlaneamentoEmai
 
     // Build Day Columns with Items
     const dayCols: PlaneamentoSemanalDayCol[] = activeDays.map(d => {
-      const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada || f.data) === d.isoStr);
+      const dayFolhas = currentWeekFolhas.filter(f => formatDateToInput(f.dataPlaneada!) === d.isoStr);
       const dayVisitas = currentWeekVisitas.filter(v => formatDateToInput(v.data) === d.isoStr);
 
       const items: PlaneamentoSemanalDayItem[] = [
