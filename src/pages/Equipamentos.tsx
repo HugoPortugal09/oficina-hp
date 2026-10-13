@@ -468,10 +468,11 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                             onCreateNewServiceDirect(eq);
                           }
                         }}
-                        className="p-1.5 text-slate-400 hover:text-hp-300 hover:bg-hp-600/20 rounded-lg transition-colors cursor-pointer"
-                        title="Abrir Folha de Serviço para este equipamento"
+                        className="py-1 px-2.5 bg-hp-500/20 hover:bg-hp-500/30 text-hp-300 border border-hp-500/40 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                        title="Criar Folha de Serviço para este equipamento"
                       >
-                        <FileText className="w-4 h-4 text-hp-400" />
+                        <FileText className="w-3.5 h-3.5 text-hp-400" />
+                        <span>Abrir FS</span>
                       </button>
                       <button
                         type="button"
@@ -659,10 +660,11 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                               onCreateNewServiceDirect(eq);
                             }
                           }}
-                          className="p-1.5 text-slate-400 hover:text-hp-300 hover:bg-hp-600/20 rounded-lg transition-colors cursor-pointer"
+                          className="py-1 px-2 bg-hp-500/20 hover:bg-hp-500/30 text-hp-300 border border-hp-500/40 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
                           title="Abrir Folha de Serviço para este equipamento"
                         >
                           <FileText className="w-3.5 h-3.5 text-hp-400" />
+                          <span>Criar FS</span>
                         </button>
                         <button
                           type="button"
@@ -693,13 +695,13 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
         >
           <div className="space-y-5">
             {/* Top Action Bar: Abrir Folha de Serviço para este equipamento */}
-            {editingEquip.id && !editingEquip.id.startsWith('eq_new') && (
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-950/80 rounded-2xl border border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-extrabold px-2.5 py-1 bg-slate-900 border border-slate-700 text-white rounded-lg">
-                    {editingEquip.matricula}
+            {Boolean(editingEquip.matricula || editingEquip.id) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-hp-950/80 via-slate-900 to-slate-950 rounded-2xl border border-hp-500/40 shadow-lg shadow-hp-600/10">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs font-mono font-black px-2.5 py-1 bg-slate-950 border border-hp-500/50 text-hp-300 rounded-lg tracking-wider">
+                    {editingEquip.matricula || 'Sem Matrícula'}
                   </span>
-                  <span className="text-xs text-slate-300 font-semibold">
+                  <span className="text-xs text-white font-bold">
                     {editingEquip.marca} {editingEquip.modelo}
                   </span>
                 </div>
@@ -712,10 +714,10 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                         setIsModalOpen(false);
                         onSelectFolha(openFolhasThisEquip[0]);
                       }}
-                      className="py-1.5 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      className="py-2 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                       title="Abrir a folha de serviço que já está em aberto para esta viatura"
                     >
-                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                       <span>Ver FS em Aberto ({openFolhasThisEquip[0].numero})</span>
                     </button>
                   )}
@@ -723,11 +725,11 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
                   <button
                     type="button"
                     onClick={handleCreateFSFromFicha}
-                    className="py-1.5 px-3.5 bg-hp-600 hover:bg-hp-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-hp-600/30 transition-all cursor-pointer"
+                    className="py-2 px-4 bg-hp-600 hover:bg-hp-500 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-lg shadow-hp-600/40 transition-all cursor-pointer active:scale-95"
                     title="Criar e abrir uma nova Folha de Serviço para esta viatura com todos os dados preenchidos"
                   >
-                    <FileText className="w-4 h-4" />
-                    <span>Abrir Folha de Serviço</span>
+                    <FileText className="w-4 h-4 text-white" />
+                    <span>Criar Folha de Serviço</span>
                   </button>
                 </div>
               </div>
@@ -1052,15 +1054,15 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
               )}
 
               <div className="flex flex-wrap items-center gap-2.5 ml-auto">
-                {editingEquip.id && !editingEquip.id.startsWith('eq_new') && (
+                {Boolean(editingEquip.matricula || editingEquip.id) && (
                   <button
                     type="button"
                     onClick={handleCreateFSFromFicha}
-                    className="py-2 px-3.5 bg-hp-500/20 hover:bg-hp-500/30 text-hp-300 border border-hp-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                    title="Abrir uma nova Folha de Serviço com os dados desta viatura"
+                    className="py-2 px-3.5 bg-hp-600 hover:bg-hp-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-hp-600/30 transition-all cursor-pointer"
+                    title="Criar e abrir uma Folha de Serviço para este equipamento"
                   >
-                    <FileText className="w-3.5 h-3.5 text-hp-400" />
-                    <span>Abrir Folha de Serviço</span>
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Criar Folha de Serviço</span>
                   </button>
                 )}
 
