@@ -423,6 +423,7 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [isGeneratingA3Pdf, setIsGeneratingA3Pdf] = useState(false);
   const [sendingEmailFolhaId, setSendingEmailFolhaId] = useState<string | null>(null);
+  const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
 
   const filePhotoInputRef = useRef<HTMLInputElement>(null);
   const efCameraInputRef = useRef<HTMLInputElement>(null);
@@ -1030,6 +1031,57 @@ export const Oficina: React.FC<OficinaProps> = ({
       faturacao: (isConcluido && (!prev.faturacao || prev.faturacao === 'Pendente')) ? 'Faturar' : prev.faturacao,
       historicoEstados: history
     }));
+  };
+
+  // Quick Status Change directly from Table or Grid without opening Folha
+  const handleQuickStatusChange = (
+    fs: FolhaServico,
+    newStatus: StatusFolhaServico,
+    e?: React.MouseEvent
+  ) => {
+    if (e) e.stopPropagation();
+    setActiveStatusDropdownId(null);
+
+    if (fs.status === newStatus) return;
+
+    const now = new Date().toISOString();
+    const history: EstadoHistoricoItem[] = [...(fs.historicoEstados || [])];
+
+    if (history.length > 0) {
+      const lastIndex = history.length - 1;
+      const lastItem = history[lastIndex];
+      if (lastItem.status !== newStatus) {
+        lastItem.dataSaida = now;
+        lastItem.duracaoTexto = formatDuration(lastItem.dataEntrada, now);
+        history.push({
+          status: newStatus,
+          dataEntrada: now
+        });
+      }
+    } else {
+      history.push({
+        status: newStatus,
+        dataEntrada: now
+      });
+    }
+
+    const isConcluido = newStatus === 'Concluído' || newStatus === 'Feito';
+    const updatedFields: Partial<FolhaServico> = {
+      status: newStatus,
+      historicoEstados: history,
+      ...(isConcluido ? {
+        equipamentoFinalizado: 'Sim',
+        dataConclusao: fs.dataConclusao ? formatDate(fs.dataConclusao) : getTodayFormatted(),
+        faturacao: (!fs.faturacao || fs.faturacao === 'Pendente') ? 'Faturar' : fs.faturacao
+      } : {})
+    };
+
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, fs.id, updatedFields);
+
+    setFolhas(prev => prev.map(f => f.id === fs.id ? { ...f, ...updatedFields } : f));
+
+    setSaveFeedback(`Estado da FS ${fs.numero} atualizado para "${getStatusLabel(newStatus)}"`);
+    setTimeout(() => setSaveFeedback(null), 3500);
   };
 
   // AI Analysis of Internal Notes
@@ -2223,9 +2275,77 @@ export const Oficina: React.FC<OficinaProps> = ({
                     </div>
 
                     <div className="text-right flex flex-col items-end gap-1">
-                      <Badge variant={getStatusBadgeVariant(fs.status)}>
-                        {getStatusLabel(fs.status)}
-                      </Badge>
+                      <div className="relative inline-block text-left" onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveStatusDropdownId(prev => prev === fs.id ? null : fs.id);
+                          }}
+                          className="group/status inline-flex items-center gap-1 focus:outline-none rounded-full cursor-pointer transition-transform active:scale-95"
+                          title="Clique para alterar o estado desta folha de serviço sem abrir a folha"
+                        >
+                          <Badge
+                            variant={getStatusBadgeVariant(fs.status)}
+                            className="group-hover/status:ring-2 group-hover/status:ring-hp-400/50 group-hover/status:brightness-110 transition-all cursor-pointer shadow-sm py-0.5 px-2.5 flex items-center gap-1.5"
+                          >
+                            <span>{getStatusLabel(fs.status)}</span>
+                            <ChevronDown className={`w-3 h-3 opacity-60 group-hover/status:opacity-100 transition-transform ${activeStatusDropdownId === fs.id ? 'rotate-180 text-hp-400' : ''}`} />
+                          </Badge>
+                        </button>
+
+                        {activeStatusDropdownId === fs.id && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveStatusDropdownId(null);
+                              }}
+                            />
+                            <div
+                              className="absolute z-50 right-0 top-full mt-1.5 min-w-[210px] bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-150"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="px-2.5 py-1 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center justify-between">
+                                <span>Mudar Estado</span>
+                                <span className="font-mono text-hp-400 font-extrabold">{fs.numero}</span>
+                              </div>
+                              <div className="py-1 max-h-56 overflow-y-auto space-y-0.5 custom-scrollbar">
+                                {getAvailableStatusesForFolha(fs.tipo, currentUser?.role === 'administrador', fs.status).map(statusOption => {
+                                  const isSelected = fs.status === statusOption;
+                                  const variant = getStatusBadgeVariant(statusOption);
+                                  return (
+                                    <button
+                                      key={statusOption}
+                                      type="button"
+                                      onClick={(e) => handleQuickStatusChange(fs, statusOption, e)}
+                                      className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-hp-600/20 text-white font-bold border border-hp-500/40 shadow-sm'
+                                          : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 truncate">
+                                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                          variant === 'success' ? 'bg-emerald-400' :
+                                          variant === 'orange' ? 'bg-orange-400' :
+                                          variant === 'info' ? 'bg-sky-400' :
+                                          variant === 'danger' ? 'bg-rose-400' : 'bg-amber-400'
+                                        }`} />
+                                        <span className="truncate">{getStatusLabel(statusOption)}</span>
+                                      </div>
+                                      {isSelected && (
+                                        <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1 flex-wrap justify-end">
                         <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
                           fs.requisicao === 'Sim'
@@ -2350,8 +2470,9 @@ export const Oficina: React.FC<OficinaProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredFolhas.map(fs => {
+                {filteredFolhas.map((fs, index) => {
                   const empresa = empresas.find(e => e.id === fs.empresaId);
+                  const isNearBottom = index >= filteredFolhas.length - 2 && filteredFolhas.length > 2;
                   return (
                     <tr
                       key={fs.id}
@@ -2368,10 +2489,80 @@ export const Oficina: React.FC<OficinaProps> = ({
                           {fs.tipo}
                         </span>
                       </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <Badge variant={getStatusBadgeVariant(fs.status)}>
-                          {getStatusLabel(fs.status)}
-                        </Badge>
+                      <td className="py-3 px-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveStatusDropdownId(prev => prev === fs.id ? null : fs.id);
+                            }}
+                            className="group/status inline-flex items-center gap-1 focus:outline-none rounded-full cursor-pointer transition-transform active:scale-95"
+                            title="Clique para alterar o estado desta folha de serviço sem abrir a folha"
+                          >
+                            <Badge
+                              variant={getStatusBadgeVariant(fs.status)}
+                              className="group-hover/status:ring-2 group-hover/status:ring-hp-400/50 group-hover/status:brightness-110 transition-all cursor-pointer shadow-sm py-0.5 px-2.5 flex items-center gap-1.5"
+                            >
+                              <span>{getStatusLabel(fs.status)}</span>
+                              <ChevronDown className={`w-3 h-3 opacity-60 group-hover/status:opacity-100 transition-transform ${activeStatusDropdownId === fs.id ? 'rotate-180 text-hp-400' : ''}`} />
+                            </Badge>
+                          </button>
+
+                          {activeStatusDropdownId === fs.id && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveStatusDropdownId(null);
+                                }}
+                              />
+                              <div
+                                className={`absolute z-50 min-w-[210px] bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-150 ${
+                                  isNearBottom ? 'bottom-full mb-1.5 left-0' : 'top-full mt-1.5 left-0'
+                                }`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="px-2.5 py-1 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center justify-between">
+                                  <span>Mudar Estado</span>
+                                  <span className="font-mono text-hp-400 font-extrabold">{fs.numero}</span>
+                                </div>
+                                <div className="py-1 max-h-56 overflow-y-auto space-y-0.5 custom-scrollbar">
+                                  {getAvailableStatusesForFolha(fs.tipo, currentUser?.role === 'administrador', fs.status).map(statusOption => {
+                                    const isSelected = fs.status === statusOption;
+                                    const variant = getStatusBadgeVariant(statusOption);
+                                    return (
+                                      <button
+                                        key={statusOption}
+                                        type="button"
+                                        onClick={(e) => handleQuickStatusChange(fs, statusOption, e)}
+                                        className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                          isSelected
+                                            ? 'bg-hp-600/20 text-white font-bold border border-hp-500/40 shadow-sm'
+                                            : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 truncate">
+                                          <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                            variant === 'success' ? 'bg-emerald-400' :
+                                            variant === 'orange' ? 'bg-orange-400' :
+                                            variant === 'info' ? 'bg-sky-400' :
+                                            variant === 'danger' ? 'bg-rose-400' : 'bg-amber-400'
+                                          }`} />
+                                          <span className="truncate">{getStatusLabel(statusOption)}</span>
+                                        </div>
+                                        {isSelected && (
+                                          <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border font-mono ${
