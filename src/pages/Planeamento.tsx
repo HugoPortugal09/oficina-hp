@@ -84,6 +84,13 @@ function formatDateISO(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeText(text: string): string {
+  return (text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 const MOTIVOS_VISITA = [
   'Diagnóstico no Terreno',
   'Levantamento de Obra / Frota',
@@ -117,7 +124,6 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [openFolhasSearchTerm, setOpenFolhasSearchTerm] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isGeneratingA4Pdf, setIsGeneratingA4Pdf] = useState(false);
   
@@ -357,19 +363,24 @@ interface BatchScheduleAlert {
     return folhas.filter(f => f.status !== 'Concluído' && !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
   }, [folhas]);
 
-  // Filtered Open Folhas based on search query
+  // Filtered Open Folhas based on the main planning search query (searchTerm)
   const filteredOpenFolhas = useMemo(() => {
-    if (!openFolhasSearchTerm.trim()) return openFolhas;
-    const words = openFolhasSearchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const rawQuery = searchTerm.trim();
+    if (!rawQuery) return openFolhas;
+
+    const normWords = normalizeText(rawQuery).split(/\s+/).filter(Boolean);
 
     return openFolhas.filter(f => {
       const emp = empresas.find(e => e.id === f.empresaId);
-      const searchableText = [
+      const cleanPlate = (f.matricula || '').replace(/[^a-zA-Z0-9]/g, '');
+      const searchable = normalizeText([
         f.numero || '',
         f.matricula || '',
+        cleanPlate,
         f.marca || '',
         f.modelo || '',
         emp?.nome || '',
+        emp?.nif || '',
         (f as any).nomeCliente || '',
         (f as any).contacto || '',
         f.tipo || '',
@@ -380,11 +391,11 @@ interface BatchScheduleAlert {
         (f as any).localIntervencao || '',
         f.tecnicoPlaneado || '',
         f.tecnicoAtribuido || ''
-      ].join(' ').toLowerCase();
+      ].join(' '));
 
-      return words.every(w => searchableText.includes(w));
+      return normWords.every(w => searchable.includes(w));
     });
-  }, [openFolhas, openFolhasSearchTerm, empresas]);
+  }, [openFolhas, searchTerm, empresas]);
 
   // Open Visita Modal (New or Edit)
   const handleOpenVisitaModal = (visita?: VisitaCliente) => {
@@ -626,11 +637,18 @@ interface BatchScheduleAlert {
       if (!inWeek) return false;
       if (selectedTecnico !== 'TODOS' && v.tecnico !== selectedTecnico) return false;
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchesEmp = v.nomeEmpresa.toLowerCase().includes(q);
-        const matchesMotivo = v.motivo.toLowerCase().includes(q);
-        const matchesTec = v.tecnico.toLowerCase().includes(q);
-        if (!matchesEmp && !matchesMotivo && !matchesTec) return false;
+        const words = normalizeText(searchTerm.trim()).split(/\s+/).filter(Boolean);
+        const searchable = normalizeText([
+          v.numero || '',
+          v.nomeEmpresa || '',
+          v.nomeContacto || '',
+          v.telefone || '',
+          v.morada || '',
+          v.motivo || '',
+          v.tecnico || '',
+          v.notas || ''
+        ].join(' '));
+        if (!words.every(w => searchable.includes(w))) return false;
       }
       return true;
     });
@@ -645,12 +663,24 @@ interface BatchScheduleAlert {
       if (!inWeek) return false;
       if (selectedTecnico !== 'TODOS' && f.tecnicoPlaneado && f.tecnicoPlaneado !== selectedTecnico) return false;
       if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const matchesNum = f.numero.toLowerCase().includes(q);
-        const matchesPlate = f.matricula.toLowerCase().includes(q);
+        const words = normalizeText(searchTerm.trim()).split(/\s+/).filter(Boolean);
         const emp = empresas.find(e => e.id === f.empresaId);
-        const matchesEmp = emp?.nome.toLowerCase().includes(q) || false;
-        if (!matchesNum && !matchesPlate && !matchesEmp) return false;
+        const cleanPlate = (f.matricula || '').replace(/[^a-zA-Z0-9]/g, '');
+        const searchable = normalizeText([
+          f.numero || '',
+          f.matricula || '',
+          cleanPlate,
+          f.marca || '',
+          f.modelo || '',
+          emp?.nome || '',
+          (f as any).nomeCliente || '',
+          f.tipo || '',
+          f.anomalias || '',
+          f.notasInternas || '',
+          f.tecnicoPlaneado || '',
+          f.tecnicoAtribuido || ''
+        ].join(' '));
+        if (!words.every(w => searchable.includes(w))) return false;
       }
       return true;
     });
@@ -890,7 +920,7 @@ interface BatchScheduleAlert {
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-hp-400" />
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Folhas em Aberto {openFolhasSearchTerm.trim() ? `(${filteredOpenFolhas.length}/${openFolhas.length})` : `(${openFolhas.length})`}
+                  Folhas em Aberto {searchTerm.trim() ? `(${filteredOpenFolhas.length}/${openFolhas.length})` : `(${openFolhas.length})`}
                 </h3>
               </div>
               <span className="text-[10px] text-slate-400 font-mono">Por agendar</span>
@@ -900,22 +930,22 @@ interface BatchScheduleAlert {
               Arraste para um dia do calendário ou clique em <span className="text-hp-300 font-bold">Agendar</span>.
             </p>
 
-            {/* Campo de Pesquisa nas Folhas em Aberto */}
+            {/* Campo de Pesquisa rápido sincronizado com o filtro geral */}
             <div className="relative mb-3">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Pesquisar folha, cliente, matrícula..."
-                value={openFolhasSearchTerm}
-                onChange={e => setOpenFolhasSearchTerm(e.target.value)}
+                placeholder="Filtrar por empresa, viatura..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
                 className="w-full pl-8 pr-7 py-1.5 bg-slate-950/80 border border-slate-700/80 focus:border-hp-500 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-hp-500/50 transition-all"
               />
-              {openFolhasSearchTerm && (
+              {searchTerm && (
                 <button
                   type="button"
-                  onClick={() => setOpenFolhasSearchTerm('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition-colors"
-                  title="Limpar pesquisa"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Limpar filtro"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -929,13 +959,13 @@ interface BatchScheduleAlert {
                 </div>
               ) : filteredOpenFolhas.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-400 italic space-y-2">
-                  <p>Nenhuma folha encontrada para &quot;{openFolhasSearchTerm}&quot;.</p>
+                  <p>Nenhuma folha em aberto encontrada para &quot;{searchTerm}&quot;.</p>
                   <button
                     type="button"
-                    onClick={() => setOpenFolhasSearchTerm('')}
-                    className="text-[11px] text-hp-400 hover:text-hp-300 underline font-medium"
+                    onClick={() => setSearchTerm('')}
+                    className="text-[11px] text-hp-400 hover:text-hp-300 underline font-medium cursor-pointer"
                   >
-                    Limpar pesquisa
+                    Limpar filtro
                   </button>
                 </div>
               ) : (
@@ -1023,8 +1053,18 @@ interface BatchScheduleAlert {
                   placeholder="Filtrar por empresa, viatura..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1 bg-slate-950/80 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-hp-500"
+                  className="w-full pl-9 pr-7 py-1 bg-slate-950/80 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-hp-500"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Limpar filtro"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               <select

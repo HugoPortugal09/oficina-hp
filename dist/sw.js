@@ -1,5 +1,5 @@
-// Oficina HP - Service Worker v3.2.0 (Safe Network-First & Auto-Recovery)
-const CACHE_NAME = 'oficina-hp-v3.2.0';
+// Oficina HP - Service Worker v3.3.0 (Safe Network-First & Auto-Recovery)
+const CACHE_NAME = 'oficina-hp-v3.3.0';
 
 self.addEventListener('install', (event) => {
   // Activate immediately without waiting for old tabs to close
