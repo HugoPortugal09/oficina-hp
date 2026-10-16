@@ -2867,6 +2867,310 @@ export function generatePassaporteTecnicoPDF(
   return doc;
 }
 
+export interface AtividadeSemanalDayItem {
+  id: string;
+  tipo: 'folha' | 'tarefa';
+  numeroOuTitulo: string;
+  tipoOuAcao: string;
+  matricula?: string;
+  marcaModelo?: string;
+  empresa?: string;
+  tecnico?: string;
+  horas?: number;
+  pecas?: number;
+  concluido: boolean;
+  status?: string;
+  descricao?: string;
+}
+
+export interface AtividadeSemanalDayCol {
+  index: number;
+  label: string; // "Segunda-feira", "Terça-feira", etc.
+  short: string; // "Seg", "Ter", etc.
+  formattedDate: string; // "12/10"
+  isoStr: string; // "2026-10-12"
+  items: AtividadeSemanalDayItem[];
+  totalHoras?: number;
+}
+
+export interface AtividadeSemanalGridA4Options {
+  days: AtividadeSemanalDayCol[];
+  startDateStr: string;
+  endDateStr: string;
+  semanaNum?: number | string;
+  selectedTecnico?: string;
+  selectedTipo?: string;
+  searchTerm?: string;
+  metrics?: {
+    totalActivities: number;
+    totalConcluidas: number;
+    totalAbertas: number;
+    totalHoras: number;
+    totalPecas: number;
+  };
+}
+
+/**
+ * Generates an executive A4 Landscape (297mm x 210mm) document for Weekly Activity:
+ * Displays active week days as columns (Monday to Friday always included;
+ * Saturday and Sunday only included if there is recorded activity).
+ */
+export function generateAtividadeSemanalGridA4PDF(options: AtividadeSemanalGridA4Options): jsPDF {
+  const {
+    days,
+    startDateStr,
+    endDateStr,
+    semanaNum: customSemanaNum,
+    selectedTecnico,
+    selectedTipo,
+    searchTerm,
+    metrics
+  } = options;
+
+  const semanaNum = customSemanaNum || (days[0]?.isoStr ? getWeekNumber(days[0].isoStr) : getWeekNumber(startDateStr));
+
+  // A4 Landscape: 297mm width x 210mm height
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+    compress: true
+  });
+
+  const runAutoTable = (opts: any) => {
+    const fn = (autoTable as any)?.default?.default || (autoTable as any)?.default || autoTable;
+    if (typeof fn === 'function') {
+      fn(doc, opts);
+    } else if (typeof (doc as any).autoTable === 'function') {
+      (doc as any).autoTable(opts);
+    }
+  };
+
+  const accentColor = [16, 185, 129]; // Emerald #10b981 for Atividade Semanal
+  const dataEmissao = getTodayFormatted();
+
+  // 1. TOP HEADER ACCENT BARS (Largura 297mm)
+  doc.setFillColor(11, 21, 40); // Dark Navy Slate
+  doc.rect(0, 0, 297, 5, 'F');
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(197, 0, 100, 5, 'F');
+
+  // 2. GRAUMP LOGO
+  try {
+    if (GRAU_LOGO_BASE64) {
+      doc.addImage(GRAU_LOGO_BASE64, 'PNG', 12, 8, 26, 17, undefined, 'FAST');
+    } else {
+      throw new Error('No logo');
+    }
+  } catch (err) {
+    doc.setFillColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.text('GRAUMP', 12, 19);
+  }
+
+  // 3. HEADER TITLES (Alinhados à direita a 285mm)
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('QUADRO DE ATIVIDADE SEMANAL DA OFICINA', 285, 13, { align: 'right' });
+
+  // Subtitle with days description
+  const hasSab = days.some(d => d.index === 5);
+  const hasDom = days.some(d => d.index === 6);
+  let scopeLabel = 'Segunda a Sexta-feira';
+  if (hasSab && hasDom) scopeLabel = 'Segunda a Domingo (Semana Completa)';
+  else if (hasSab) scopeLabel = 'Segunda a Sábado';
+  else if (hasDom) scopeLabel = 'Segunda a Sexta + Domingo';
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`SEMANA ${semanaNum} • ${startDateStr} a ${endDateStr} (${scopeLabel})`, 285, 18, { align: 'right' });
+
+  // Metadata Row
+  const tecLabel = selectedTecnico && selectedTecnico !== 'TODOS' ? `TÉCNICO: ${selectedTecnico.toUpperCase()}` : 'TODOS OS TÉCNICOS';
+  const tipoLabel = selectedTipo && selectedTipo !== 'TODOS' ? `  •  FILTRO: ${selectedTipo.toUpperCase()}` : '';
+  const searchPart = searchTerm ? `  •  PESQUISA: "${searchTerm}"` : '';
+
+  const totalItems = metrics?.totalActivities ?? days.reduce((acc, d) => acc + d.items.length, 0);
+  const totalHoras = metrics?.totalHoras ?? days.reduce((acc, d) => acc + (d.totalHoras || 0), 0);
+  const totalPecas = metrics?.totalPecas ?? days.reduce((acc, d) => acc + d.items.reduce((sum, it) => sum + (it.pecas || 0), 0), 0);
+  const totalConcluidas = metrics?.totalConcluidas ?? days.reduce((acc, d) => acc + d.items.filter(it => it.concluido).length, 0);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(5, 150, 105); // Emerald 600
+  doc.text(
+    `${tecLabel}${tipoLabel}  •  TOTAL: ${totalItems} REGISTOS (${totalConcluidas} Concluídos • ${totalHoras.toFixed(1)}h • ${totalPecas} Peças)${searchPart}  •  EMISSÃO: ${dataEmissao}`,
+    285,
+    23,
+    { align: 'right' }
+  );
+
+  // Linha divisória horizontal
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(12, 26, 285, 26);
+
+  // 4. PREPARAR COLUNAS E LINHAS DO CALENDÁRIO
+  const numCols = days.length; // 5, 6 ou 7
+  const tableWidth = 273; // 285 - 12
+  const colWidth = tableWidth / numCols;
+
+  // Cabeçalhos de coluna
+  const tableHead = [
+    days.map(d => {
+      const horasPart = d.totalHoras && d.totalHoras > 0 ? ` • ${d.totalHoras.toFixed(1)}h` : '';
+      return `${d.label.toUpperCase()}\n${d.formattedDate} (${d.items.length} reg.${horasPart})`;
+    })
+  ];
+
+  const maxItems = Math.max(1, ...days.map(d => d.items.length));
+  const tableRows: string[][] = [];
+
+  for (let r = 0; r < maxItems; r++) {
+    const rowCells: string[] = [];
+    for (let c = 0; c < numCols; c++) {
+      const day = days[c];
+      const item = day.items[r];
+
+      if (item) {
+        const lines: string[] = [];
+        const statusBadge = item.concluido ? '[CONCLUÍDO]' : '[EM CURSO]';
+        lines.push(`${statusBadge} ${item.numeroOuTitulo}${item.tipoOuAcao ? ` • ${item.tipoOuAcao}` : ''}`);
+
+        if (item.matricula) {
+          lines.push(`${item.matricula}${item.marcaModelo ? ` (${item.marcaModelo})` : ''}`);
+        }
+        if (item.empresa) {
+          lines.push(item.empresa);
+        }
+
+        const details: string[] = [];
+        if (item.tecnico) details.push(`Téc: ${item.tecnico}`);
+        if (item.horas && item.horas > 0) details.push(`${item.horas.toFixed(1)}h`);
+        if (item.pecas && item.pecas > 0) details.push(`${item.pecas} peças`);
+        if (details.length > 0) {
+          lines.push(details.join(' • '));
+        }
+
+        if (item.descricao) {
+          const cleanDesc = item.descricao.replace(/\n/g, ' ').trim();
+          const shortDesc = cleanDesc.length > 55 ? cleanDesc.substring(0, 52) + '...' : cleanDesc;
+          lines.push(`Trabalhos: ${shortDesc}`);
+        }
+
+        rowCells.push(lines.join('\n'));
+      } else {
+        if (r === 0 && day.items.length === 0) {
+          rowCells.push('— Sem atividade registada —');
+        } else {
+          rowCells.push('');
+        }
+      }
+    }
+    tableRows.push(rowCells);
+  }
+
+  // Column styles mapping
+  const columnStyles: Record<number, any> = {};
+  for (let c = 0; c < numCols; c++) {
+    columnStyles[c] = {
+      cellWidth: colWidth,
+      valign: 'top'
+    };
+  }
+
+  runAutoTable({
+    startY: 28,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [11, 21, 40], // Dark navy slate
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+      cellPadding: 2.5
+    },
+    styles: {
+      fontSize: 6.8,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.2,
+      overflow: 'linebreak'
+    },
+    columnStyles,
+    margin: { left: 12, right: 12, top: 10, bottom: 12 },
+    didParseCell: (data: any) => {
+      if (data.section === 'body') {
+        const raw = String(data.cell.raw || '');
+        if (raw.includes('[CONCLUÍDO]')) {
+          data.cell.styles.fillColor = [240, 253, 244]; // Emerald 50
+          data.cell.styles.textColor = [6, 78, 59]; // Dark emerald
+        } else if (raw.includes('[EM CURSO]')) {
+          data.cell.styles.fillColor = [254, 243, 199]; // Amber 50
+          data.cell.styles.textColor = [146, 64, 14]; // Dark amber
+        } else if (raw === '— Sem atividade registada —') {
+          data.cell.styles.fillColor = [248, 250, 252];
+          data.cell.styles.textColor = [148, 163, 184];
+          data.cell.styles.fontStyle = 'italic';
+          data.cell.styles.halign = 'center';
+        } else if (raw === '') {
+          data.cell.styles.fillColor = [255, 255, 255];
+        }
+      }
+    }
+  });
+
+  // 5. RODAPÉ EXECUTIVO (A4 Landscape: width 297, height 210)
+  const pageCount = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const footerY = 202;
+    const textY = 206.5;
+
+    // Barra base do rodapé
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(0, footerY, 297, 8, 'F');
+
+    // Acento visual no rodapé
+    doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+    try {
+      doc.triangle(0, 210, 30, 210, 0, footerY - 5, 'F');
+    } catch (e) {}
+    doc.rect(0, footerY + 2, 22, 6, 'F');
+
+    // Texto de marca à esquerda
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('GRAUMP', 10, textY);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(203, 213, 225);
+    doc.text(' • Oficina HP Gestão & Frotas', 23, textY);
+
+    // Texto central informativo
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      `Relatório Oficial de Atividade Semanal da Oficina • Semana ${semanaNum} • Folha A4 Horizontal • Processado por Computador`,
+      148.5,
+      textY,
+      { align: 'center' }
+    );
+
+    // Numeração de página à direita
+    doc.setTextColor(255, 255, 255);
+    doc.text(`Página ${i} de ${pageCount}`, 285, textY, { align: 'right' });
+  }
+
+  return doc;
+}
+
 export interface AtividadeSemanalRow {
   dateStr: string;
   diaSemana: string;

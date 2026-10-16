@@ -19,11 +19,18 @@ import {
   ShieldCheck,
   CheckSquare,
   Activity,
-  FileText
+  FileText,
+  Printer,
+  Loader2
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { formatDateToInput, cleanPersonName, getWeekNumber } from '../utils/dateUtils';
+import {
+  generateAtividadeSemanalGridA4PDF,
+  type AtividadeSemanalDayCol,
+  type AtividadeSemanalDayItem
+} from '../services/pdfService';
 import type {
   FolhaServico,
   Tarefa,
@@ -158,6 +165,8 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [selectedTipo, setSelectedTipo] = useState<'TODOS' | 'folhas' | 'tarefas' | 'concluidos'>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [isGeneratingA4Pdf, setIsGeneratingA4Pdf] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   // Navigate weeks
   const handlePrevWeek = () => {
@@ -565,8 +574,119 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
 
   const currentWeekNum = useMemo(() => getWeekNumber(currentMonday), [currentMonday]);
 
+  // Print currently selected week in A4 Landscape (Segunda a Sexta sempre; Sábado e Domingo só se tiver informação)
+  const handlePrintA4Atividade = () => {
+    if (isGeneratingA4Pdf) return;
+    setIsGeneratingA4Pdf(true);
+    setFeedbackMessage('A preparar mapa de atividade semanal em formato A4 horizontal...');
+
+    try {
+      // Regra do utilizador: Segunda a Sexta (índices 0 a 4) são sempre incluídos.
+      // Sábado (5) e Domingo (6) só são incluídos se existirem marcações/registos.
+      const hasSabado = currentWeekActivities.some(a => a.dateStr === weekDays[5].isoStr);
+      const hasDomingo = currentWeekActivities.some(a => a.dateStr === weekDays[6].isoStr);
+
+      const activeDays = weekDays.filter(d => {
+        if (d.index < 5) return true;
+        if (d.index === 5) return hasSabado;
+        if (d.index === 6) return hasDomingo;
+        return false;
+      });
+
+      const dayCols: AtividadeSemanalDayCol[] = activeDays.map(d => {
+        const dayActs = currentWeekActivities.filter(a => a.dateStr === d.isoStr);
+        const dayHours = dayActs.reduce((acc, a) => acc + (a.horas || 0), 0);
+
+        const items: AtividadeSemanalDayItem[] = dayActs.map(a => {
+          let tipoOuAcao = a.rawFolha?.tipo || (a.tipo === 'tarefa' ? 'Tarefa' : 'Serviço');
+          return {
+            id: a.id,
+            tipo: a.tipo,
+            numeroOuTitulo: a.folhaNumero || a.titulo,
+            tipoOuAcao,
+            matricula: a.matricula,
+            marcaModelo: a.marcaModelo,
+            empresa: a.empresaNome,
+            tecnico: (a.tecnicoFullNames && a.tecnicoFullNames.length > 0)
+              ? a.tecnicoFullNames.join(', ')
+              : a.tecnico || a.tecnicoInitials,
+            horas: a.horas,
+            pecas: a.qtdPecas,
+            concluido: a.concluido,
+            status: a.concluido ? 'Concluído' : (a.status || 'Em Aberto'),
+            descricao: a.descricao
+          };
+        });
+
+        return {
+          index: d.index,
+          label: d.label,
+          short: d.short,
+          formattedDate: d.formattedDayMonth,
+          isoStr: d.isoStr,
+          items,
+          totalHoras: dayHours
+        };
+      });
+
+      const startDateStr = weekDays[0].formattedDayMonth;
+      const lastDayObj = activeDays[activeDays.length - 1];
+      const endDateStr = lastDayObj.formattedDayMonth;
+      const semanaNum = getWeekNumber(currentMonday);
+
+      const doc = generateAtividadeSemanalGridA4PDF({
+        days: dayCols,
+        startDateStr,
+        endDateStr,
+        semanaNum,
+        selectedTecnico: selectedTecnico !== 'TODOS' ? selectedTecnico : undefined,
+        selectedTipo: selectedTipo !== 'TODOS' ? selectedTipo : undefined,
+        searchTerm: searchTerm.trim() || undefined,
+        metrics: {
+          totalActivities: currentWeekActivities.length,
+          totalConcluidas: weekMetrics.ofConcluidas + weekMetrics.atConcluidas + weekMetrics.ctConcluidas + weekMetrics.tarefasConcluidas,
+          totalAbertas: weekMetrics.ofAbertas + weekMetrics.atAbertas + weekMetrics.ctAbertas + weekMetrics.tarefasAbertas,
+          totalHoras: weekMetrics.totalHoras,
+          totalPecas: weekMetrics.totalPecas
+        }
+      });
+
+      const filename = `Atividade_Semanal_A4_Semana_${semanaNum}_${weekDays[0].isoStr}_a_${lastDayObj.isoStr}.pdf`;
+      doc.save(filename);
+
+      try {
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        const win = window.open(url, '_blank');
+        if (win) win.focus();
+      } catch (e) {}
+
+      let scopeText = 'Segunda a Sexta';
+      if (hasSabado && hasDomingo) scopeText = 'Segunda a Domingo';
+      else if (hasSabado) scopeText = 'Segunda a Sábado';
+      else if (hasDomingo) scopeText = 'Segunda a Sexta + Domingo';
+
+      setFeedbackMessage(`✅ Atividade semanal A4 gerada com sucesso! (${activeDays.length} dias incluídos: ${scopeText} • ${currentWeekActivities.length} registos)`);
+      setTimeout(() => setFeedbackMessage(null), 5000);
+    } catch (err: any) {
+      console.error('[AtividadeSemanal] Erro ao gerar PDF A4:', err);
+      setFeedbackMessage(`❌ Erro ao gerar PDF A4: ${err?.message || err}`);
+      setTimeout(() => setFeedbackMessage(null), 6000);
+    } finally {
+      setIsGeneratingA4Pdf(false);
+    }
+  };
+
   return (
     <div className="space-y-3.5 animate-in fade-in duration-300">
+      {/* Toast Feedback */}
+      {feedbackMessage && (
+        <div className="fixed bottom-4 right-4 z-50 p-3 rounded-xl bg-slate-900 border border-emerald-500/50 shadow-2xl text-xs text-white flex items-center gap-2 animate-in slide-in-from-bottom duration-200">
+          <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{feedbackMessage}</span>
+        </div>
+      )}
+
       {/* Top Header & Week Navigation */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/70 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-3.5 shadow-xl">
         <div>
@@ -589,7 +709,7 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
         </div>
 
         {/* Week Switcher Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handlePrevWeek}
             title="Semana Anterior"
@@ -618,6 +738,31 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
             className="px-2.5 py-1.5 rounded-xl bg-hp-600/20 hover:bg-hp-600/30 text-hp-300 border border-hp-500/30 text-xs font-bold transition-all active:scale-95 ml-1"
           >
             Esta Semana
+          </button>
+
+          {/* Print A4 Weekly Activity Button */}
+          <button
+            type="button"
+            onClick={handlePrintA4Atividade}
+            disabled={isGeneratingA4Pdf}
+            title="Imprimir atividade da semana selecionada em Folha A4 na horizontal"
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 border ${
+              isGeneratingA4Pdf
+                ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-emerald-400/30 shadow-emerald-950/40'
+            }`}
+          >
+            {isGeneratingA4Pdf ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-200" />
+                <span>A Preparar A4...</span>
+              </>
+            ) : (
+              <>
+                <Printer className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Imprimir A4</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -759,7 +904,7 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
           </select>
         </div>
 
-        {/* Legend */}
+        {/* Legend & Quick Print */}
         <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-400">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
@@ -769,6 +914,20 @@ export const AtividadeSemanal: React.FC<AtividadeSemanalProps> = ({
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
             <span className="text-amber-300">Em Aberto / Curso</span>
           </div>
+          <button
+            type="button"
+            onClick={handlePrintA4Atividade}
+            disabled={isGeneratingA4Pdf}
+            title="Imprimir atividade da semana em Folha A4 na horizontal"
+            className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ml-1"
+          >
+            {isGeneratingA4Pdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+            ) : (
+              <Printer className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+            <span>Imprimir A4</span>
+          </button>
         </div>
       </div>
 
