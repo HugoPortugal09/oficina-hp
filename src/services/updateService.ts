@@ -46,15 +46,26 @@ export async function checkForAppUpdate(): Promise<boolean> {
 
 export function reloadAppWithCacheClear(): void {
   try {
-    if (typeof window !== 'undefined' && 'caches' in window) {
-      caches.keys().then(names => {
-        for (const name of names) {
-          caches.delete(name);
-        }
-      }).catch(() => {});
+    if (typeof window !== 'undefined') {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          for (const reg of regs) {
+            reg.unregister();
+          }
+        }).catch(() => {});
+      }
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          for (const name of names) {
+            caches.delete(name);
+          }
+        }).catch(() => {});
+      }
     }
   } catch {}
 
   // Force clean reload bypass
-  window.location.href = window.location.pathname + '?_v=' + Date.now();
+  setTimeout(() => {
+    window.location.href = window.location.pathname + '?_v=' + Date.now();
+  }, 100);
 }

@@ -371,14 +371,23 @@ interface BatchScheduleAlert {
     return folhas.filter(f => f.status !== 'Concluído' && !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
   }, [folhas]);
 
-  // Filtered Open Folhas based on the main planning search query (searchTerm)
+  // Filtered Open Folhas based on the main planning search query (searchTerm) and technician
   const filteredOpenFolhas = useMemo(() => {
+    let result = openFolhas;
+
+    if (selectedTecnico !== 'TODOS') {
+      result = result.filter(f => {
+        const tec = f.tecnicoPlaneado || f.tecnicoAtribuido || '';
+        return tec.includes(selectedTecnico);
+      });
+    }
+
     const rawQuery = searchTerm.trim();
-    if (!rawQuery) return openFolhas;
+    if (!rawQuery) return result;
 
     const normWords = normalizeText(rawQuery).split(/\s+/).filter(Boolean);
 
-    return openFolhas.filter(f => {
+    return result.filter(f => {
       const emp = empresas.find(e => e.id === f.empresaId);
       const cleanPlate = (f.matricula || '').replace(/[^a-zA-Z0-9]/g, '');
       const searchable = normalizeText([
@@ -403,7 +412,7 @@ interface BatchScheduleAlert {
 
       return normWords.every(w => searchable.includes(w));
     });
-  }, [openFolhas, searchTerm, empresas]);
+  }, [openFolhas, searchTerm, selectedTecnico, empresas]);
 
   // Open Visita Modal (New or Edit)
   const handleOpenVisitaModal = (visita?: VisitaCliente) => {
