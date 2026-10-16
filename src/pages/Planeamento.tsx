@@ -27,10 +27,12 @@ import {
   Sparkles,
   GripVertical,
   Printer,
-  Loader2
+  Loader2,
+  Check
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
+import { getTipoStyles } from '../utils/statusColors';
 import type {
   FolhaServico,
   StatusFolhaServico,
@@ -145,10 +147,16 @@ interface BatchScheduleAlert {
   
   const [isScheduleFolhaModalOpen, setIsScheduleFolhaModalOpen] = useState(false);
   const [selectedFolhaToSchedule, setSelectedFolhaToSchedule] = useState<FolhaServico | null>(null);
-  const [scheduleData, setScheduleData] = useState({
+  const [scheduleData, setScheduleData] = useState<{
+    data: string;
+    hora: string;
+    tecnico: string;
+    tecnicos: string[];
+  }>({
     data: formatDateISO(new Date()),
     hora: '09:00',
-    tecnico: 'Hugo Portugal'
+    tecnico: 'Hugo Portugal',
+    tecnicos: ['Hugo Portugal']
   });
   const [scheduleAlsoOtherFolhas, setScheduleAlsoOtherFolhas] = useState(false);
   const [selectedOtherFolhaIds, setSelectedOtherFolhaIds] = useState<string[]>([]);
@@ -533,10 +541,18 @@ interface BatchScheduleAlert {
   // Open Schedule Modal for a Folha
   const handleOpenScheduleFolha = (folha: FolhaServico) => {
     setSelectedFolhaToSchedule(folha);
+    const existingRaw = folha.tecnicoPlaneado || (selectedTecnico !== 'TODOS' ? selectedTecnico : 'Hugo Portugal');
+    const existingTecs = existingRaw
+      .split(/,\s*/)
+      .map(t => t.trim())
+      .filter(Boolean);
+    const initialTecs = existingTecs.length > 0 ? existingTecs : ['Hugo Portugal'];
+
     setScheduleData({
       data: folha.dataPlaneada || folha.data || formatDateISO(new Date()),
       hora: folha.horaPlaneada || '09:00',
-      tecnico: folha.tecnicoPlaneado || 'Hugo Portugal'
+      tecnico: initialTecs.join(', '),
+      tecnicos: initialTecs
     });
     setScheduleAlsoOtherFolhas(false);
     setSelectedOtherFolhaIds([]);
@@ -554,11 +570,15 @@ interface BatchScheduleAlert {
       newStatus = 'Feito';
     }
 
+    const assignedTecnicos = (scheduleData.tecnicos && scheduleData.tecnicos.length > 0)
+      ? scheduleData.tecnicos.join(', ')
+      : scheduleData.tecnico || 'Hugo Portugal';
+
     const updated: FolhaServico = {
       ...selectedFolhaToSchedule,
       dataPlaneada: scheduleData.data,
       horaPlaneada: scheduleData.hora,
-      tecnicoPlaneado: scheduleData.tecnico,
+      tecnicoPlaneado: assignedTecnicos,
       status: newStatus,
       atualizadoEm: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -579,7 +599,7 @@ interface BatchScheduleAlert {
             ...otherFolha,
             dataPlaneada: scheduleData.data,
             horaPlaneada: scheduleData.hora,
-            tecnicoPlaneado: scheduleData.tecnico,
+            tecnicoPlaneado: assignedTecnicos,
             status: otherStatus,
             atualizadoEm: new Date().toISOString(),
             updatedAt: new Date().toISOString()
@@ -635,7 +655,7 @@ interface BatchScheduleAlert {
       const vDate = formatDateToInput(v.data);
       const inWeek = vDate >= weekStartStr && vDate <= weekEndStr;
       if (!inWeek) return false;
-      if (selectedTecnico !== 'TODOS' && v.tecnico !== selectedTecnico) return false;
+      if (selectedTecnico !== 'TODOS' && (!v.tecnico || !v.tecnico.includes(selectedTecnico))) return false;
       if (searchTerm.trim()) {
         const words = normalizeText(searchTerm.trim()).split(/\s+/).filter(Boolean);
         const searchable = normalizeText([
@@ -661,7 +681,7 @@ interface BatchScheduleAlert {
       const plannedDate = formatDateToInput(f.dataPlaneada);
       const inWeek = plannedDate >= weekStartStr && plannedDate <= weekEndStr;
       if (!inWeek) return false;
-      if (selectedTecnico !== 'TODOS' && f.tecnicoPlaneado && f.tecnicoPlaneado !== selectedTecnico) return false;
+      if (selectedTecnico !== 'TODOS' && (!f.tecnicoPlaneado || !f.tecnicoPlaneado.includes(selectedTecnico))) return false;
       if (searchTerm.trim()) {
         const words = normalizeText(searchTerm.trim()).split(/\s+/).filter(Boolean);
         const emp = empresas.find(e => e.id === f.empresaId);
@@ -973,6 +993,7 @@ interface BatchScheduleAlert {
                   const emp = empresas.find(e => e.id === f.empresaId);
                   const isScheduled = !!f.dataPlaneada;
                   const isDraggingThis = draggedItem?.type === 'folha' && draggedItem?.id === f.id;
+                  const tipoStyle = getTipoStyles(f.tipo);
 
                   return (
                     <div
@@ -980,18 +1001,31 @@ interface BatchScheduleAlert {
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, 'folha', f.id)}
                       onDragEnd={handleDragEnd}
-                      className={`p-2.5 rounded-xl border transition-all space-y-1.5 text-xs cursor-grab active:cursor-grabbing select-none ${
+                      className={`p-2.5 rounded-xl border border-l-4 transition-all space-y-1.5 text-xs cursor-grab active:cursor-grabbing select-none ${
                         isDraggingThis
                           ? 'opacity-40 border-dashed border-hp-400 bg-hp-950/40 scale-95'
-                          : 'bg-slate-900/80 border-slate-800 hover:border-hp-500/60 hover:shadow-lg hover:shadow-hp-500/10'
+                          : f.tipo === 'Oficina'
+                          ? 'bg-amber-950/20 border-slate-800 border-l-amber-500 hover:border-amber-500/60 hover:shadow-lg hover:shadow-amber-500/10'
+                          : f.tipo === 'Assistência Técnica'
+                          ? 'bg-sky-950/20 border-slate-800 border-l-sky-500 hover:border-sky-500/60 hover:shadow-lg hover:shadow-sky-500/10'
+                          : f.tipo === 'Garantia'
+                          ? 'bg-purple-950/20 border-slate-800 border-l-purple-500 hover:border-purple-500/60 hover:shadow-lg hover:shadow-purple-500/10'
+                          : f.tipo === 'Contrato'
+                          ? 'bg-teal-950/20 border-slate-800 border-l-teal-500 hover:border-teal-500/60 hover:shadow-lg hover:shadow-teal-500/10'
+                          : f.tipo === 'Entrega e Formação'
+                          ? 'bg-indigo-950/20 border-slate-800 border-l-indigo-500 hover:border-indigo-500/60 hover:shadow-lg hover:shadow-indigo-500/10'
+                          : f.tipo === 'Validação e Preparação'
+                          ? 'bg-emerald-950/20 border-slate-800 border-l-emerald-500 hover:border-emerald-500/60 hover:shadow-lg hover:shadow-emerald-500/10'
+                          : 'bg-slate-900/80 border-slate-800 border-l-slate-600 hover:border-hp-500/60 hover:shadow-lg hover:shadow-hp-500/10'
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <GripVertical className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 shrink-0" />
-                          <span className="font-mono font-bold text-hp-400">{f.numero}</span>
+                          <span className={`font-mono font-bold ${tipoStyle.text}`}>{f.numero}</span>
                         </div>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${tipoStyle.badge}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${tipoStyle.dot}`} />
                           {f.tipo}
                         </span>
                       </div>
@@ -1006,6 +1040,15 @@ interface BatchScheduleAlert {
                         <Building2 className="w-3 h-3 text-slate-500 shrink-0" />
                         <span className="truncate">{emp?.nome || 'Cliente'}</span>
                       </div>
+
+                      {f.tecnicoPlaneado && (
+                        <div className="text-[10px] text-slate-300 font-mono truncate flex items-center gap-1 pt-0.5">
+                          <User className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate" title={`Técnico(s): ${f.tecnicoPlaneado}`}>
+                            Téc: {f.tecnicoPlaneado}
+                          </span>
+                        </div>
+                      )}
 
                       {f.dataPlaneada && (
                         <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono pt-1 border-t border-slate-800/60">
@@ -1192,6 +1235,7 @@ interface BatchScheduleAlert {
                         {dayFolhas.map(f => {
                           const emp = empresas.find(e => e.id === f.empresaId);
                           const isDraggingThis = draggedItem?.type === 'folha' && draggedItem?.id === f.id;
+                          const tipoStyle = getTipoStyles(f.tipo);
 
                           return (
                             <div
@@ -1202,16 +1246,28 @@ interface BatchScheduleAlert {
                               onDragEnter={(e) => handleDayDragEnter(e, day.isoStr)}
                               onDragOver={(e) => handleDayDragOver(e, day.isoStr)}
                               onDrop={(e) => handleDayDrop(e, day.isoStr)}
-                              className={`p-2 rounded-xl border transition-all text-xs space-y-1 relative cursor-grab active:cursor-grabbing select-none ${
+                              className={`p-2 rounded-xl border border-l-4 transition-all text-xs space-y-1 relative cursor-grab active:cursor-grabbing select-none ${
                                 isDraggingThis
                                   ? 'opacity-40 border-dashed border-hp-400 bg-hp-950/40 scale-95'
-                                  : 'bg-hp-950/20 border-hp-500/30 hover:border-hp-400 hover:shadow-md'
+                                  : f.tipo === 'Oficina'
+                                  ? 'bg-amber-950/25 border-amber-500/30 border-l-amber-500 hover:border-amber-400'
+                                  : f.tipo === 'Assistência Técnica'
+                                  ? 'bg-sky-950/25 border-sky-500/30 border-l-sky-500 hover:border-sky-400'
+                                  : f.tipo === 'Garantia'
+                                  ? 'bg-purple-950/25 border-purple-500/30 border-l-purple-500 hover:border-purple-400'
+                                  : f.tipo === 'Contrato'
+                                  ? 'bg-teal-950/25 border-teal-500/30 border-l-teal-500 hover:border-teal-400'
+                                  : f.tipo === 'Entrega e Formação'
+                                  ? 'bg-indigo-950/25 border-indigo-500/30 border-l-indigo-500 hover:border-indigo-400'
+                                  : f.tipo === 'Validação e Preparação'
+                                  ? 'bg-emerald-950/25 border-emerald-500/30 border-l-emerald-500 hover:border-emerald-400'
+                                  : 'bg-slate-900/80 border-slate-700/60 border-l-slate-500 hover:border-hp-400'
                               }`}
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-1">
-                                  <GripVertical className="w-3 h-3 text-hp-400/60 shrink-0" />
-                                  <span className="font-mono font-bold text-hp-400">{f.numero}</span>
+                                  <GripVertical className="w-3 h-3 text-slate-500 shrink-0" />
+                                  <span className={`font-mono font-bold ${tipoStyle.text}`}>{f.numero}</span>
                                 </div>
                                 {f.horaPlaneada && (
                                   <span className="text-[10px] text-slate-300 font-mono flex items-center gap-1">
@@ -1225,17 +1281,23 @@ interface BatchScheduleAlert {
                                 {f.matricula} • {f.marca} {f.modelo}
                               </div>
 
-                              <div className="text-[10px] text-slate-300 truncate">
-                                {emp?.nome || 'Cliente'}
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[10px] text-slate-300 truncate">
+                                  {emp?.nome || 'Cliente'}
+                                </span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold border shrink-0 ${tipoStyle.badge}`}>
+                                  {f.tipo}
+                                </span>
                               </div>
 
                               {f.tecnicoPlaneado && (
-                                <div className="text-[9px] text-hp-300/80 font-mono truncate">
-                                  Téc: {f.tecnicoPlaneado}
+                                <div className="text-[9px] text-slate-300 font-mono truncate flex items-center gap-1 pt-0.5" title={`Técnico(s): ${f.tecnicoPlaneado}`}>
+                                  <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                  <span className="truncate">Téc: {f.tecnicoPlaneado}</span>
                                 </div>
                               )}
 
-                              <div className="pt-1 flex items-center justify-between border-t border-hp-500/20">
+                              <div className="pt-1 flex items-center justify-between border-t border-slate-800">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenScheduleFolha(f)}
@@ -1585,7 +1647,13 @@ interface BatchScheduleAlert {
               <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5">
                 <div className="text-white font-bold">{selectedFolhaToSchedule.matricula} - {selectedFolhaToSchedule.marca} {selectedFolhaToSchedule.modelo}</div>
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Tipo: <span className="text-hp-300 font-semibold">{selectedFolhaToSchedule.tipo}</span></span>
+                  <div className="flex items-center gap-1.5">
+                    <span>Tipo:</span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium border inline-flex items-center gap-1 ${getTipoStyles(selectedFolhaToSchedule.tipo).badge}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${getTipoStyles(selectedFolhaToSchedule.tipo).dot}`} />
+                      {selectedFolhaToSchedule.tipo}
+                    </span>
+                  </div>
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
                     Novo estado: Agendado
                   </span>
@@ -1619,18 +1687,51 @@ interface BatchScheduleAlert {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
-                  Técnico Atribuído *
-                </label>
-                <select
-                  value={scheduleData.tecnico}
-                  onChange={e => setScheduleData({ ...scheduleData, tecnico: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-hp-500"
-                >
-                  {TECNICOS_DISPONIVEIS.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-medium text-slate-400">
+                    Técnicos Atribuídos *
+                  </label>
+                  <span className="text-[11px] text-hp-400 font-medium">
+                    {scheduleData.tecnicos.length} selecionado{scheduleData.tecnicos.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-2 bg-slate-950 border border-slate-700 rounded-xl">
+                  {TECNICOS_DISPONIVEIS.map(t => {
+                    const isSelected = scheduleData.tecnicos.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => {
+                          let nextTecnicos: string[];
+                          if (isSelected) {
+                            if (scheduleData.tecnicos.length === 1) {
+                              return; // Manter pelo menos 1 técnico
+                            }
+                            nextTecnicos = scheduleData.tecnicos.filter(item => item !== t);
+                          } else {
+                            nextTecnicos = [...scheduleData.tecnicos, t];
+                          }
+                          setScheduleData({
+                            ...scheduleData,
+                            tecnicos: nextTecnicos,
+                            tecnico: nextTecnicos.join(', ')
+                          });
+                        }}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left ${
+                          isSelected
+                            ? 'bg-hp-500/25 text-hp-300 border border-hp-500/50 shadow-sm'
+                            : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        <span className="truncate">{t}</span>
+                        {isSelected && (
+                          <Check className="w-3.5 h-3.5 text-hp-400 shrink-0 ml-1" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Alerta Inteligente: Outros serviços em aberto deste cliente */}
