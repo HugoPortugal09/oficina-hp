@@ -4,6 +4,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json ./
 RUN npm install --omit=dev
+ENV CACHE_BUSTER="2026-10-17-v2"
 COPY dist ./dist
 COPY server*.mjs ./
 EXPOSE 80

@@ -142,6 +142,35 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Debug deployment files endpoint
+  if (req.url === '/api/debug-server') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    let files = [];
+    try {
+      files = fs.readdirSync(DIST_DIR);
+    } catch (e) {
+      files = [e.message];
+    }
+    let assetFiles = [];
+    try {
+      assetFiles = fs.readdirSync(path.join(DIST_DIR, 'assets'));
+    } catch (e) {
+      assetFiles = [e.message];
+    }
+    res.end(JSON.stringify({
+      version: '2026-10-17-v2',
+      distDir: DIST_DIR,
+      files,
+      assetCount: assetFiles.length,
+      sampleAssets: assetFiles.slice(0, 15),
+      hasNewIndex: assetFiles.includes('index-CNEDWza4.js'),
+      hasOldIndex: assetFiles.includes('index-D1_ERkRS.js'),
+      env: process.env.NODE_ENV,
+      port: PORT
+    }));
+    return;
+  }
+
   // Cron automation endpoints
   if (req.url === '/api/cron/check' || req.url === '/api/cron/run') {
     if (cronModule && typeof cronModule.runServerAutomations === 'function') {
