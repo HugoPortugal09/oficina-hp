@@ -40,5 +40,37 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );
 
-// Register PWA Service Worker
-registerServiceWorker();
+// Register PWA Service Worker with auto-reload on update
+registerServiceWorker((registration) => {
+  console.log('[PWA] Nova versão instalada. A ativar e recarregar automaticamente...');
+  if (registration.waiting) {
+    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+  }
+  if ('caches' in window) {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).finally(() => {
+      window.location.reload();
+    });
+  } else {
+    window.location.reload();
+  }
+});
+
+// Auto-check for updates whenever the user opens, focuses, or returns to the application
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      console.log('[PWA] Novo Service Worker ativo no cliente. A atualizar...');
+      window.location.reload();
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg) reg.update();
+      });
+    }
+  });
+}
