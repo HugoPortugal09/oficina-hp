@@ -34,6 +34,35 @@ export function isQuotaError(err: any): boolean {
 }
 
 /**
+ * Limpa chaves órfãs e pesadas que não pertencem ao estado do cliente (e.g. templates de email HTML, notificações antigas).
+ * Liberta imediatamente megabytes de memória no navegador.
+ */
+export function cleanupOrphanLocalStorageKeys(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (
+        key &&
+        (key.startsWith('email_') ||
+          key.startsWith('task_notification_') ||
+          key.startsWith('auto_last_') ||
+          key.startsWith('folha_photos_'))
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    if (keysToRemove.length > 0) {
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+      console.log(`[Storage Cleanup] Removed ${keysToRemove.length} orphan/heavy email and notification keys from localStorage.`);
+    }
+  } catch (err) {
+    console.warn('[Storage Cleanup] Error removing orphan keys:', err);
+  }
+}
+
+/**
  * Calcula o espaço atualmente ocupado no LocalStorage.
  */
 export function getStorageUsage(): { usedKB: number; totalKB: number; percent: number } {

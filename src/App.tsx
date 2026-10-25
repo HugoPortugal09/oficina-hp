@@ -58,6 +58,7 @@ function FullscreenFallback() {
 
 import { db, STORAGE_KEYS } from './services/dbService';
 import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
+import { cleanupOrphanLocalStorageKeys } from './utils/storageUtils';
 import { startAutomationRunner } from './services/automationRunner';
 import { parseCurrentRoute, buildPath, findFolhaByParam } from './utils/routeUtils';
 import { InstallPwaPrompt } from './components/InstallPwaPrompt';
@@ -423,6 +424,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    cleanupOrphanLocalStorageKeys();
     db.initSeed();
     loadAllData();
 

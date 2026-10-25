@@ -195,11 +195,12 @@ export async function syncPullFromCloud(options?: { force?: boolean }): Promise<
 
   try {
     const pb = getPocketBase();
-    // Exclude heavy photo records from full sync - photos are fetched on demand via fetchFolhaPhotos
+    // Only pull core application collections (starting with oficina_hp_).
+    // This strictly excludes heavy HTML email templates, task notifications and photos that clog localStorage.
     let records: any[] = [];
     try {
       records = await pb.collection(SYNC_COLLECTION).getFullList({
-        filter: 'key !~ "folha_photos_"',
+        filter: 'key ~ "oficina_hp_"',
         sort: '-created'
       });
     } catch {
@@ -213,8 +214,8 @@ export async function syncPullFromCloud(options?: { force?: boolean }): Promise<
       let hasChanges = false;
       for (const record of records) {
         if (record.key && record.data) {
-          // Skip any photo keys if they somehow bypass the filter
-          if (record.key.startsWith('folha_photos_')) continue;
+          // Strictly ignore any non-core or photo keys
+          if (!record.key.startsWith('oficina_hp_') || record.key.startsWith('folha_photos_')) continue;
           const currentLocalStr = localStorage.getItem(record.key);
           let currentLocal = null;
           try {
@@ -257,8 +258,8 @@ export function subscribeToRealtimeSync(): () => void {
       if (e.action === 'create' || e.action === 'update') {
         const record = e.record;
         if (record.key && record.data) {
-          // Photos are managed on-demand by photoStorageService to avoid blocking main thread
-          if (record.key.startsWith('folha_photos_')) return;
+          // Only sync core business collections, ignore email notifications and photo keys
+          if (!record.key.startsWith('oficina_hp_') || record.key.startsWith('folha_photos_')) return;
 
           const currentLocalStr = localStorage.getItem(record.key);
           let currentLocal = null;

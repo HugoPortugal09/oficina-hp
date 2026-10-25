@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   Search,
@@ -41,6 +41,12 @@ interface PecasProps {
 export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits, currentUser }) => {
   const permissions = getPermissionsForRole(currentUser?.role || 'administrador');
   const [searchTerm, setSearchTerm] = useState('');
+  const [displayCount, setDisplayCount] = useState(30);
+
+  useEffect(() => {
+    setDisplayCount(30);
+  }, [searchTerm]);
+
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
     try {
       const saved = localStorage.getItem('oficina_hp_view_pecas');
@@ -74,42 +80,43 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits
     }
   }, [propKits]);
 
-  // Calculate Parts usage over 30, 90, and 360 days
-  const now = new Date().getTime();
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  const cutoff30 = now - 30 * ONE_DAY_MS;
-  const cutoff90 = now - 90 * ONE_DAY_MS;
-  const cutoff360 = now - 360 * ONE_DAY_MS;
+  // Calculate Parts usage over 30, 90, and 360 days (memoized to eliminate heavy body recalculation on render)
+  const { totalUsadas30, totalUsadas90, totalUsadas360, partUsageMap } = useMemo(() => {
+    const now = new Date().getTime();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const cutoff30 = now - 30 * ONE_DAY_MS;
+    const cutoff90 = now - 90 * ONE_DAY_MS;
+    const cutoff360 = now - 360 * ONE_DAY_MS;
 
-  // Global usage counts across all sheets
-  let totalUsadas30 = 0;
-  let totalUsadas90 = 0;
-  let totalUsadas360 = 0;
+    let u30 = 0;
+    let u90 = 0;
+    let u360 = 0;
+    const usageMap: { [key: string]: { d30: number; d90: number; d360: number } } = {};
 
-  // Map for individual part usage
-  const partUsageMap: { [key: string]: { d30: number; d90: number; d360: number } } = {};
+    folhas.forEach(f => {
+      const folhaTime = new Date(f.data).getTime() || now;
+      const allPecas = [...(f.pecas || []), ...(f.pecasAdicionais || [])];
 
-  folhas.forEach(f => {
-    const folhaTime = new Date(f.data).getTime() || now;
-    const allPecas = [...(f.pecas || []), ...(f.pecasAdicionais || [])];
+      allPecas.forEach(p => {
+        const qtd = Number(p.qtd) || 0;
+        if (folhaTime >= cutoff30) u30 += qtd;
+        if (folhaTime >= cutoff90) u90 += qtd;
+        if (folhaTime >= cutoff360) u360 += qtd;
 
-    allPecas.forEach(p => {
-      const qtd = Number(p.qtd) || 0;
-      if (folhaTime >= cutoff30) totalUsadas30 += qtd;
-      if (folhaTime >= cutoff90) totalUsadas90 += qtd;
-      if (folhaTime >= cutoff360) totalUsadas360 += qtd;
-
-      const refKey = (p.referencia || p.designacao || '').trim().toLowerCase();
-      if (refKey) {
-        if (!partUsageMap[refKey]) {
-          partUsageMap[refKey] = { d30: 0, d90: 0, d360: 0 };
+        const refKey = (p.referencia || p.designacao || '').trim().toLowerCase();
+        if (refKey) {
+          if (!usageMap[refKey]) {
+            usageMap[refKey] = { d30: 0, d90: 0, d360: 0 };
+          }
+          if (folhaTime >= cutoff30) usageMap[refKey].d30 += qtd;
+          if (folhaTime >= cutoff90) usageMap[refKey].d90 += qtd;
+          if (folhaTime >= cutoff360) usageMap[refKey].d360 += qtd;
         }
-        if (folhaTime >= cutoff30) partUsageMap[refKey].d30 += qtd;
-        if (folhaTime >= cutoff90) partUsageMap[refKey].d90 += qtd;
-        if (folhaTime >= cutoff360) partUsageMap[refKey].d360 += qtd;
-      }
+      });
     });
-  });
+
+    return { totalUsadas30: u30, totalUsadas90: u90, totalUsadas360: u360, partUsageMap: usageMap };
+  }, [folhas]);
 
   const getUsageForPart = (p: PecaCatalogo) => {
     const keyRef = (p.referencia || '').trim().toLowerCase();
@@ -391,6 +398,8 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits
     );
   });
 
+  const visiblePecas = useMemo(() => filteredPecas.slice(0, displayCount), [filteredPecas, displayCount]);
+
   const filteredKits = kitsList.filter(k => {
     const q = kitSearchTerm.toLowerCase();
     return (
@@ -562,7 +571,7 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits
       {/* Grid or Table View */}
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredPecas.map(p => {
+          {visiblePecas.map(p => {
             const isLowStock = p.stockAtual <= p.stockMinimo;
             const displayPrice = p.preco !== undefined ? p.preco : p.precoVenda;
             const usage = getUsageForPart(p);
@@ -698,7 +707,7 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {filteredPecas.map(p => {
+              {visiblePecas.map(p => {
                 const isLowStock = p.stockAtual <= p.stockMinimo;
                 const displayPrice = p.preco !== undefined ? p.preco : p.precoVenda;
                 const usage = getUsageForPart(p);
@@ -758,6 +767,26 @@ export const Pecas: React.FC<PecasProps> = ({ pecas, folhas = [], kits: propKits
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Load More Button for Instant Performance */}
+      {filteredPecas.length > displayCount && (
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 py-6">
+          <button
+            type="button"
+            onClick={() => setDisplayCount(prev => prev + 30)}
+            className="px-5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-hp-500 text-xs font-bold text-slate-200 hover:text-white transition-all shadow-md flex items-center gap-2 cursor-pointer"
+          >
+            A mostrar {visiblePecas.length} de {filteredPecas.length} peças • Carregar mais (+30)
+          </button>
+          <button
+            type="button"
+            onClick={() => setDisplayCount(filteredPecas.length)}
+            className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+          >
+            Mostrar todas ({filteredPecas.length})
+          </button>
         </div>
       )}
       </>

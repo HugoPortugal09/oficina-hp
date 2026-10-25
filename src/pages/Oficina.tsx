@@ -400,6 +400,11 @@ export const Oficina: React.FC<OficinaProps> = ({
   const tipoDropdownRef = useRef<HTMLDivElement>(null);
   const [filterRequisicao, setFilterRequisicao] = useState<string>('TODOS');
   const [filterFaturacao, setFilterFaturacao] = useState<string>('TODOS');
+  const [displayCount, setDisplayCount] = useState(30);
+
+  useEffect(() => {
+    setDisplayCount(30);
+  }, [searchTerm, filterStatus, filterTipos, filterRequisicao, filterFaturacao]);
 
   // Modal / Form state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1782,6 +1787,8 @@ export const Oficina: React.FC<OficinaProps> = ({
     }).sort(sortByDateDesc(f => f.data, f => f.numero));
   }, [folhas, searchTerm, filterStatus, filterTipos, filterRequisicao, filterFaturacao, empresaMap, equipMap, clientMap]);
 
+  const visibleFolhas = useMemo(() => filteredFolhas.slice(0, displayCount), [filteredFolhas, displayCount]);
+
   const hasAdicionais = ((editingFolha.servicosAdicionais?.length || 0) > 0) || ((editingFolha.pecasAdicionais?.length || 0) > 0);
 
   // Print open service sheets filtered by selected types in A3 Landscape
@@ -2239,7 +2246,7 @@ export const Oficina: React.FC<OficinaProps> = ({
       {/* View Mode: Cards (Grid) */}
       {viewMode === 'cards' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredFolhas.map(fs => {
+          {visibleFolhas.map(fs => {
             const empresa = empresas.find(e => e.id === fs.empresaId);
             const totalServices = (fs.servicos?.length || 0) + (fs.servicosAdicionais?.length || 0);
             const servicesDone = (fs.servicos?.filter(s => s.concluido).length || 0) + (fs.servicosAdicionais?.filter(s => s.concluido).length || 0);
@@ -2470,7 +2477,7 @@ export const Oficina: React.FC<OficinaProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredFolhas.map((fs, index) => {
+                {visibleFolhas.map((fs, index) => {
                   const empresa = empresas.find(e => e.id === fs.empresaId);
                   const isNearBottom = index >= filteredFolhas.length - 2 && filteredFolhas.length > 2;
                   return (
@@ -2624,6 +2631,26 @@ export const Oficina: React.FC<OficinaProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Load More Button for Instant Performance */}
+      {filteredFolhas.length > displayCount && (
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 py-6">
+          <button
+            type="button"
+            onClick={() => setDisplayCount(prev => prev + 30)}
+            className="px-5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-hp-500 text-xs font-bold text-slate-200 hover:text-white transition-all shadow-md flex items-center gap-2 cursor-pointer"
+          >
+            A mostrar {visibleFolhas.length} de {filteredFolhas.length} folhas • Carregar mais (+30)
+          </button>
+          <button
+            type="button"
+            onClick={() => setDisplayCount(filteredFolhas.length)}
+            className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+          >
+            Mostrar todas ({filteredFolhas.length})
+          </button>
         </div>
       )}
 

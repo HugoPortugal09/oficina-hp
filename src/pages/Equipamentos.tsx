@@ -96,7 +96,51 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
   const safeEmpresas = Array.isArray(empresas) ? empresas : [];
   const safeFolhas = Array.isArray(folhas) ? folhas : [];
 
+  const [displayCount, setDisplayCount] = useState(30);
+
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Reset display count when searching
+  useEffect(() => {
+    setDisplayCount(30);
+  }, [searchTerm]);
+
+  // Pre-index folhas per equipment in O(N) to eliminate 60,000+ comparisons on render
+  const equipamentoLatestMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getEquipamentoLatestData>>();
+    const folhasByEq = new Map<string, FolhaServico[]>();
+
+    safeFolhas.forEach(f => {
+      if (f.equipamentoId) {
+        let list = folhasByEq.get(f.equipamentoId);
+        if (!list) { list = []; folhasByEq.set(f.equipamentoId, list); }
+        list.push(f);
+      }
+      if (f.matricula) {
+        const mat = f.matricula.trim().toUpperCase();
+        let list = folhasByEq.get(mat);
+        if (!list) { list = []; folhasByEq.set(mat, list); }
+        list.push(f);
+      }
+    });
+
+    safeEquipamentos.forEach(eq => {
+      const matchSet = new Set<FolhaServico>();
+      if (eq.id && folhasByEq.has(eq.id)) {
+        folhasByEq.get(eq.id)!.forEach(f => matchSet.add(f));
+      }
+      if (eq.matricula) {
+        const mat = eq.matricula.trim().toUpperCase();
+        if (folhasByEq.has(mat)) {
+          folhasByEq.get(mat)!.forEach(f => matchSet.add(f));
+        }
+      }
+      map.set(eq.id, getEquipamentoLatestData(eq, Array.from(matchSet)));
+    });
+
+    return map;
+  }, [safeEquipamentos, safeFolhas]);
+
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
     try {
       const saved = localStorage.getItem('oficina_hp_view_equipamentos');
@@ -360,6 +404,8 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
     );
   });
 
+  const visibleEquipamentos = useMemo(() => filteredEquipamentos.slice(0, displayCount), [filteredEquipamentos, displayCount]);
+
   return (
     <div className="space-y-3.5">
       {/* Controls */}
@@ -421,9 +467,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
       {/* Grid or Table of Equipments */}
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredEquipamentos.map(eq => {
+          {visibleEquipamentos.map(eq => {
             const empresa = empresas.find(e => e.id === eq.empresaId);
-            const latestData = getEquipamentoLatestData(eq, folhas);
+            const latestData = equipamentoLatestMap.get(eq.id) || getEquipamentoLatestData(eq, []);
             const historyFolhas = latestData.matchingFolhas;
             const coverPhoto = eq.fotos && eq.fotos.length > 0 ? eq.fotos[0] : eq.fotoUrl;
 
@@ -609,9 +655,9 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {filteredEquipamentos.map(eq => {
+              {visibleEquipamentos.map(eq => {
                 const empresa = empresas.find(e => e.id === eq.empresaId);
-                const latestData = getEquipamentoLatestData(eq, folhas);
+                const latestData = equipamentoLatestMap.get(eq.id) || getEquipamentoLatestData(eq, []);
                 const historyFolhas = latestData.matchingFolhas;
 
                 return (
@@ -681,6 +727,26 @@ export const Equipamentos: React.FC<EquipamentosProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Load More Button for Instant Performance */}
+      {filteredEquipamentos.length > displayCount && (
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 py-6">
+          <button
+            type="button"
+            onClick={() => setDisplayCount(prev => prev + 30)}
+            className="px-5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-hp-500 text-xs font-bold text-slate-200 hover:text-white transition-all shadow-md flex items-center gap-2 cursor-pointer"
+          >
+            A mostrar {visibleEquipamentos.length} de {filteredEquipamentos.length} viaturas • Carregar mais (+30)
+          </button>
+          <button
+            type="button"
+            onClick={() => setDisplayCount(filteredEquipamentos.length)}
+            className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
+          >
+            Mostrar todas ({filteredEquipamentos.length})
+          </button>
         </div>
       )}
 
