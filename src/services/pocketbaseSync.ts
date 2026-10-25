@@ -195,14 +195,26 @@ export async function syncPullFromCloud(options?: { force?: boolean }): Promise<
 
   try {
     const pb = getPocketBase();
-    const records = await pb.collection(SYNC_COLLECTION).getFullList({
-      sort: '-created'
-    });
+    // Exclude heavy photo records from full sync - photos are fetched on demand via fetchFolhaPhotos
+    let records: any[] = [];
+    try {
+      records = await pb.collection(SYNC_COLLECTION).getFullList({
+        filter: 'key !~ "folha_photos_"',
+        sort: '-created'
+      });
+    } catch {
+      // Fallback without filter if server doesn't support the operator
+      records = await pb.collection(SYNC_COLLECTION).getFullList({
+        sort: '-created'
+      });
+    }
 
     if (records && records.length > 0) {
       let hasChanges = false;
       for (const record of records) {
         if (record.key && record.data) {
+          // Skip any photo keys if they somehow bypass the filter
+          if (record.key.startsWith('folha_photos_')) continue;
           const currentLocalStr = localStorage.getItem(record.key);
           let currentLocal = null;
           try {
@@ -245,6 +257,9 @@ export function subscribeToRealtimeSync(): () => void {
       if (e.action === 'create' || e.action === 'update') {
         const record = e.record;
         if (record.key && record.data) {
+          // Photos are managed on-demand by photoStorageService to avoid blocking main thread
+          if (record.key.startsWith('folha_photos_')) return;
+
           const currentLocalStr = localStorage.getItem(record.key);
           let currentLocal = null;
           try {

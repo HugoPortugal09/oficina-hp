@@ -434,13 +434,20 @@ export default function App() {
     // 2. Realtime SSE Subscription from PocketBase
     const unsubscribeRealtime = subscribeToRealtimeSync();
 
-    // 3. Listener for local database changes
+    // 3. Listener for local database changes with 150ms debounce to avoid rapid successive re-renders
+    let dbChangeTimer: any = null;
     const handleDbChange = () => {
-      loadAllData();
+      if (dbChangeTimer) clearTimeout(dbChangeTimer);
+      dbChangeTimer = setTimeout(() => {
+        loadAllData();
+      }, 150);
     };
 
     // 4. Sync on Window Focus, Visibility Change and Reconnect (when switching tabs or waking PC)
+    let syncThrottleTimer: any = null;
     const handleSync = () => {
+      if (syncThrottleTimer) return;
+      syncThrottleTimer = setTimeout(() => { syncThrottleTimer = null; }, 3000);
       syncPullFromCloud().then(() => loadAllData()).catch(() => {});
     };
 
@@ -450,10 +457,10 @@ export default function App() {
       }
     };
 
-    // 5. Periodic Background Sync (every 8 seconds)
+    // 5. Periodic Background Sync (every 60 seconds - relaxed from 8s since Realtime SSE already syncs instantly)
     const syncInterval = setInterval(() => {
       syncPullFromCloud().catch(() => {});
-    }, 8000);
+    }, 60000);
 
     // 6. Background Automation Runner (Monday 07:30 weekly planeamento, response times, etc.)
     const stopAutomationRunner = startAutomationRunner();
@@ -464,6 +471,8 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      if (dbChangeTimer) clearTimeout(dbChangeTimer);
+      if (syncThrottleTimer) clearTimeout(syncThrottleTimer);
       unsubscribeRealtime();
       clearInterval(syncInterval);
       stopAutomationRunner();
