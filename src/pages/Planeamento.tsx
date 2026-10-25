@@ -126,6 +126,7 @@ export const Planeamento: React.FC<PlaneamentoProps> = ({
   const [currentMonday, setCurrentMonday] = useState<Date>(() => getMonday(new Date()));
   const [selectedTecnico, setSelectedTecnico] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [openFolhasSearch, setOpenFolhasSearch] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isGeneratingA4Pdf, setIsGeneratingA4Pdf] = useState(false);
   
@@ -371,7 +372,7 @@ interface BatchScheduleAlert {
     return folhas.filter(f => f.status !== 'Concluído' && !f.status.toUpperCase().startsWith('FEITO') && f.status !== 'Feito');
   }, [folhas]);
 
-  // Filtered Open Folhas based on the main planning search query (searchTerm) and technician
+  // Filtered Open Folhas based on its own dedicated search query (openFolhasSearch) and technician
   const filteredOpenFolhas = useMemo(() => {
     let result = openFolhas;
 
@@ -382,7 +383,7 @@ interface BatchScheduleAlert {
       });
     }
 
-    const rawQuery = searchTerm.trim();
+    const rawQuery = openFolhasSearch.trim();
     if (!rawQuery) return result;
 
     const normWords = normalizeText(rawQuery).split(/\s+/).filter(Boolean);
@@ -412,7 +413,7 @@ interface BatchScheduleAlert {
 
       return normWords.every(w => searchable.includes(w));
     });
-  }, [openFolhas, searchTerm, selectedTecnico, empresas]);
+  }, [openFolhas, openFolhasSearch, selectedTecnico, empresas]);
 
   // Open Visita Modal (New or Edit)
   const handleOpenVisitaModal = (visita?: VisitaCliente) => {
@@ -949,7 +950,7 @@ interface BatchScheduleAlert {
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-hp-400" />
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Folhas em Aberto {searchTerm.trim() ? `(${filteredOpenFolhas.length}/${openFolhas.length})` : `(${openFolhas.length})`}
+                  Folhas em Aberto {openFolhasSearch.trim() ? `(${filteredOpenFolhas.length}/${openFolhas.length})` : `(${openFolhas.length})`}
                 </h3>
               </div>
               <span className="text-[10px] text-slate-400 font-mono">Por agendar</span>
@@ -959,22 +960,22 @@ interface BatchScheduleAlert {
               Arraste para um dia do calendário ou clique em <span className="text-hp-300 font-bold">Agendar</span>.
             </p>
 
-            {/* Campo de Pesquisa rápido sincronizado com o filtro geral */}
+            {/* Campo de Pesquisa dedicado às Folhas em Aberto */}
             <div className="relative mb-3">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Filtrar por empresa, viatura..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Filtrar folhas em aberto..."
+                value={openFolhasSearch}
+                onChange={e => setOpenFolhasSearch(e.target.value)}
                 className="w-full pl-8 pr-7 py-1.5 bg-slate-950/80 border border-slate-700/80 focus:border-hp-500 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-hp-500/50 transition-all"
               />
-              {searchTerm && (
+              {openFolhasSearch && (
                 <button
                   type="button"
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => setOpenFolhasSearch('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                  title="Limpar filtro"
+                  title="Limpar filtro das folhas em aberto"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -988,10 +989,10 @@ interface BatchScheduleAlert {
                 </div>
               ) : filteredOpenFolhas.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-400 italic space-y-2">
-                  <p>Nenhuma folha em aberto encontrada para &quot;{searchTerm}&quot;.</p>
+                  <p>Nenhuma folha em aberto encontrada para &quot;{openFolhasSearch}&quot;.</p>
                   <button
                     type="button"
-                    onClick={() => setSearchTerm('')}
+                    onClick={() => setOpenFolhasSearch('')}
                     className="text-[11px] text-hp-400 hover:text-hp-300 underline font-medium cursor-pointer"
                   >
                     Limpar filtro
@@ -1102,7 +1103,7 @@ interface BatchScheduleAlert {
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Filtrar por empresa, viatura..."
+                  placeholder="Filtrar agendamentos da semana..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-7 py-1 bg-slate-950/80 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-hp-500"
