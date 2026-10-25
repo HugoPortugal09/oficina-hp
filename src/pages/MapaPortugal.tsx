@@ -237,7 +237,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       // Center of Portugal
       const map = L.map(mapContainerRef.current, {
         center: [39.6, -8.1],
-        zoom: 7.4,
+        zoom: 7.2,
         minZoom: 6,
         maxZoom: 18,
         zoomControl: false
@@ -277,10 +277,33 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       maxZoom: 19
     }).addTo(map);
 
+    // Invalidate size immediately and after layout tick
+    map.invalidateSize();
+    const t1 = setTimeout(() => map.invalidateSize(), 100);
+    const t2 = setTimeout(() => map.invalidateSize(), 300);
+
     return () => {
-      // Keep map instance mounted across prop updates
+      clearTimeout(t1);
+      clearTimeout(t2);
     };
   }, [mapStyle]);
+
+  // Handle dynamic container resize (window resize, sidebar toggle, flex layout changes)
+  useEffect(() => {
+    const el = mapContainerRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    });
+    ro.observe(el);
+
+    return () => {
+      ro.disconnect();
+    };
+  }, []);
 
   // 6. Geographic Co-location Pin Grouping & Rendering
   // Groups services that share the exact physical address/location (e.g. 5 services at JF da Estrela)
@@ -467,11 +490,29 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     // Render markers on map
     renderMarkers();
 
-    // Auto-fit bounds on first load or filter change
-    if (filteredMarkers.length > 0) {
-      const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
-      map.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40], maxZoom: 12 });
-    }
+    const fitBoundsToAllMarkers = () => {
+      const currentMap = mapInstanceRef.current;
+      if (!currentMap) return;
+      currentMap.invalidateSize();
+      if (filteredMarkers.length > 0) {
+        const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
+        currentMap.fitBounds(L.latLngBounds(latLngs), {
+          padding: [50, 50],
+          maxZoom: 11
+        });
+      } else {
+        currentMap.setView([39.6, -8.1], 7.2);
+      }
+    };
+
+    fitBoundsToAllMarkers();
+    const t1 = setTimeout(fitBoundsToAllMarkers, 150);
+    const t2 = setTimeout(fitBoundsToAllMarkers, 400);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [filteredMarkers, onSelectFolha]);
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -482,6 +523,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     setSelectedMarkerId(item.folha.id);
     const map = mapInstanceRef.current;
     if (map) {
+      map.invalidateSize();
       map.flyTo([item.coords.lat, item.coords.lng], 13, {
         duration: 1.2
       });
@@ -495,7 +537,16 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
   const handleResetPortugalView = () => {
     const map = mapInstanceRef.current;
     if (map) {
-      map.flyTo([39.6, -8.1], 7.4, { duration: 1 });
+      map.invalidateSize();
+      if (filteredMarkers.length > 0) {
+        const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
+        map.fitBounds(L.latLngBounds(latLngs), {
+          padding: [50, 50],
+          maxZoom: 11
+        });
+      } else {
+        map.flyTo([39.6, -8.1], 7.2, { duration: 1 });
+      }
     }
   };
 
@@ -706,6 +757,22 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Interactive Leaflet Map Box (8 Columns) */}
         <div className="lg:col-span-8 rounded-3xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl relative">
+          {/* Floating Map Re-center and Info pill */}
+          <div className="absolute top-3.5 left-3.5 z-[400] flex items-center gap-2 pointer-events-auto">
+            <button
+              type="button"
+              onClick={handleResetPortugalView}
+              className="px-3.5 py-2 rounded-xl bg-slate-900/95 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xl border border-slate-700/80 backdrop-blur-md transition-all active:scale-95"
+              title="Recentrar mapa e enquadrar todos os serviços"
+            >
+              <Navigation className="w-3.5 h-3.5 text-hp-400" />
+              <span>Recentrar Portugal</span>
+            </button>
+            <span className="px-2.5 py-2 rounded-xl bg-slate-900/90 text-slate-300 font-mono text-[11px] font-bold border border-slate-800 backdrop-blur-md hidden sm:inline-block shadow-lg">
+              📍 {filteredMarkers.length} no mapa
+            </span>
+          </div>
+
           <div
             ref={mapContainerRef}
             className="w-full h-[620px] z-10"
