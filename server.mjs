@@ -57,7 +57,24 @@ const transporter = nodemailer.createTransport({
 });
 
 export async function sendEmail({ to, subject, html, text, attachments }) {
-  const recipients = Array.isArray(to) ? to.join(', ') : to;
+  let recipientsList = Array.isArray(to) ? to : (to ? to.split(',').map(s => s.trim()) : []);
+  // Filtrar e bloquear endereços inexistentes (ex: @oficinahp.pt)
+  recipientsList = recipientsList.filter(email => {
+    const clean = (email || '').toLowerCase().trim();
+    if (!clean) return false;
+    if (clean === 'hugo.portugal@oficinahp.pt' || clean.endsWith('@oficinahp.pt')) {
+      console.log(`[Server] 🚫 Ignorado endereço inexistente: ${email}`);
+      return false;
+    }
+    return true;
+  });
+
+  if (recipientsList.length === 0) {
+    console.warn('[Server] ⚠️ Nenhum destinatário válido após filtragem. Envio de email cancelado.');
+    return { messageId: 'skipped_no_valid_recipients' };
+  }
+
+  const recipients = recipientsList.join(', ');
   console.log(`[Server] A enviar email para: ${recipients} | Assunto: ${subject}`);
   const mailOptions = {
     from: `"Oficina HP" <${process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com'}>`,

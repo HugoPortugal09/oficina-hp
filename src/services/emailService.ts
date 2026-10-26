@@ -28,6 +28,19 @@ export async function postSendEmailApi(
   payload: SendEmailApiPayload
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    const rawTo = Array.isArray(payload.to) ? payload.to : payload.to.split(',').map(s => s.trim());
+    const cleanTo = rawTo.filter(e => {
+      const lower = (e || '').toLowerCase().trim();
+      return lower && lower !== 'hugo.portugal@oficinahp.pt' && !lower.endsWith('@oficinahp.pt');
+    });
+
+    if (cleanTo.length === 0) {
+      console.warn('[EmailService] ⚠️ Nenhum destinatário válido após exclusão de endereços inexistentes.');
+      return { success: true, messageId: 'skipped_no_valid_recipients' };
+    }
+
+    const cleanPayload = { ...payload, to: cleanTo };
+
     const resp = await fetch('/api/send-email', {
       method: 'POST',
       headers: {
@@ -35,7 +48,7 @@ export async function postSendEmailApi(
         'x-app-auth': INTERNAL_API_KEY,
         'Authorization': `Bearer ${INTERNAL_API_KEY}`
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(cleanPayload)
     });
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.success) {
