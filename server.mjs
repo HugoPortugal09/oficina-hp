@@ -11,6 +11,13 @@ try {
   console.warn('[Server] ⚠️ server-automations.mjs não disponível ou erro ao carregar:', cronErr.message);
 }
 
+let emailImporterModule = null;
+try {
+  emailImporterModule = await import('./server-email-importer.mjs');
+} catch (importerErr) {
+  console.warn('[Server] ⚠️ server-email-importer.mjs não disponível ou erro ao carregar:', importerErr.message);
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -132,6 +139,26 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: err.message || String(err) }));
       }
     });
+    return;
+  }
+
+  // API Route: POST or GET /api/check-incoming-emails (Processar emails novos de oficinahpapp@gmail.com)
+  if (req.url.startsWith('/api/check-incoming-emails')) {
+    try {
+      console.log('[Server] 📥 A executar verificação de emails recebidos a pedido...');
+      if (!emailImporterModule || typeof emailImporterModule.checkAndImportEmails !== 'function') {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'Módulo de importação de email não disponível no servidor' }));
+        return;
+      }
+      const result = await emailImporterModule.checkAndImportEmails();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      console.error('[Server] Erro na verificação de emails recebidos:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message || String(err) }));
+    }
     return;
   }
 

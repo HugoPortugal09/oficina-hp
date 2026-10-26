@@ -20,13 +20,16 @@ import {
   BellRing,
   Bot,
   Timer,
-  RotateCcw
+  RotateCcw,
+  Inbox,
+  RefreshCw,
+  FileCheck
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
 import { Modal } from '../components/Modal';
 import { db, STORAGE_KEYS, INITIAL_AUTOMACOES } from '../services/dbService';
-import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail, sendWeeklyAtividadeSemanalEmail, sendTarefasPendentesEmail } from '../services/emailService';
+import { sendDailyTemposRespostaEmail, sendWeeklyPlaneamentoEmail, sendWeeklyAtividadeSemanalEmail, sendTarefasPendentesEmail, checkIncomingEmailsNow } from '../services/emailService';
 import type { AutomacaoItem, TipoAutomacao, FolhaServico, VisitaCliente, Empresa, Tarefa } from '../types';
 
 export const Automacoes: React.FC = () => {
@@ -54,6 +57,48 @@ export const Automacoes: React.FC = () => {
   const [newEmailInputs, setNewEmailInputs] = useState<Record<string, string>>({});
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ id: string; success: boolean; msg: string } | null>(null);
+
+  // Email Inbox Importer State
+  const [isCheckingEmails, setIsCheckingEmails] = useState(false);
+  const [emailCheckFeedback, setEmailCheckFeedback] = useState<{ count: number; msg: string; success: boolean } | null>(null);
+
+  const handleCheckEmailsNow = async () => {
+    if (isCheckingEmails) return;
+    setIsCheckingEmails(true);
+    setEmailCheckFeedback(null);
+    try {
+      const result = await checkIncomingEmailsNow();
+      if (result.success) {
+        if (result.count && result.count > 0) {
+          setEmailCheckFeedback({
+            count: result.count,
+            success: true,
+            msg: `🎉 Sucesso! ${result.count} folha(s) de serviço importada(s) do Gmail com estado Concluído.`
+          });
+        } else {
+          setEmailCheckFeedback({
+            count: 0,
+            success: true,
+            msg: result.message || '📬 Caixa de entrada verificada: nenhum email de folha de serviço por processar no momento.'
+          });
+        }
+      } else {
+        setEmailCheckFeedback({
+          count: 0,
+          success: false,
+          msg: `⚠️ ${result.error || 'Não foi possível verificar a caixa de correio.'}`
+        });
+      }
+    } catch (err: any) {
+      setEmailCheckFeedback({
+        count: 0,
+        success: false,
+        msg: `Erro ao contactar servidor: ${err?.message || err}`
+      });
+    } finally {
+      setIsCheckingEmails(false);
+    }
+  };
 
   // Modal State for New/Edit Automation
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -402,6 +447,58 @@ export const Automacoes: React.FC = () => {
             </div>
           </div>
         </GlassCard>
+      </div>
+
+      {/* 📥 Robô de Importação Automática de Folhas (Gmail) */}
+      <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900/90 via-slate-900/60 to-indigo-950/40 border border-indigo-500/30 shadow-xl backdrop-blur-xl relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-hp-600 to-sky-500 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 shrink-0">
+              <Inbox className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-black text-white">Importador Automático de Folhas (Gmail)</h3>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Monitorização Ativa (a cada 2 min)
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  oficinahpapp@gmail.com
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Sempre que uma folha de serviço for concluída no programa antigo e enviada por email, o robô extrai automaticamente os dados da viatura, cliente, trabalhos e peças, abrindo a folha na app com estado <b>Concluído</b>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+            <button
+              onClick={handleCheckEmailsNow}
+              disabled={isCheckingEmails}
+              className="py-2.5 px-4 rounded-2xl text-xs font-bold text-white bg-gradient-to-r from-hp-600 via-indigo-600 to-sky-600 hover:from-hp-500 hover:to-sky-500 shadow-lg shadow-hp-600/20 border border-hp-400/30 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingEmails ? 'animate-spin text-amber-300' : 'text-white'}`} />
+              <span>{isCheckingEmails ? 'A Verificar Gmail...' : 'Verificar Emails Agora'}</span>
+            </button>
+          </div>
+        </div>
+
+        {emailCheckFeedback && (
+          <div className={`mt-3.5 p-3 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in fade-in border ${
+            emailCheckFeedback.success
+              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+              : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+          }`}>
+            {emailCheckFeedback.success ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            )}
+            <span>{emailCheckFeedback.msg}</span>
+          </div>
+        )}
       </div>
 
       {/* Automations List */}

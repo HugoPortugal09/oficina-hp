@@ -3757,3 +3757,41 @@ export async function sendTarefasPendentesEmail(
     };
   }
 }
+
+/**
+ * Força a verificação e importação de novos emails recebidos do programa antigo no Gmail (oficinahpapp@gmail.com)
+ */
+export async function checkIncomingEmailsNow(): Promise<{
+  success: boolean;
+  count?: number;
+  message?: string;
+  sheets?: Array<{ numero: string; matricula: string; cliente: string; data: string; pecasCount: number; subject?: string }>;
+  error?: string;
+}> {
+  try {
+    const response = await fetch('/api/check-incoming-emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-app-auth': 'hp_app_sec_98fbc71a3d42'
+      }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return {
+        success: false,
+        error: `Erro HTTP ${response.status}: ${errText}`
+      };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (err: any) {
+    console.error('[EmailService] Erro ao contactar /api/check-incoming-emails:', err);
+    return {
+      success: false,
+      error: err?.message || 'Falha na comunicação com o servidor'
+    };
+  }
+}

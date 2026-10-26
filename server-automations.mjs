@@ -14,6 +14,13 @@ if (autoTablePkg) {
 const POCKETBASE_URL = process.env.POCKETBASE_URL || 'https://oficina-hp-pocketbase.l1mamt.easypanel.host';
 const TIMEZONE = 'Europe/Lisbon';
 
+let emailImporterModule = null;
+try {
+  emailImporterModule = await import('./server-email-importer.mjs');
+} catch (err) {
+  console.warn('[ServerCron] ⚠️ server-email-importer.mjs não disponível:', err.message);
+}
+
 let isChecking = false;
 
 /**
@@ -1220,10 +1227,42 @@ export function startServerAutomationCron(sendEmailFn) {
     runServerAutomations(sendEmailFn).catch(console.error);
   }, 10000);
 
-  // Check every 60 seconds
+  // Run initial check for incoming service sheet emails after 15 seconds
+  setTimeout(async () => {
+    if (emailImporterModule && typeof emailImporterModule.checkAndImportEmails === 'function') {
+      try {
+        console.log('📬 [ServerCron] A verificar novos emails do programa antigo no arranque...');
+        const res = await emailImporterModule.checkAndImportEmails();
+        if (res?.count > 0) {
+          console.log(`[ServerCron] ✅ ${res.count} folhas importadas do Gmail no arranque.`);
+        }
+      } catch (err) {
+        console.error('[ServerCron] Erro na verificação inicial de emails:', err.message);
+      }
+    }
+  }, 15000);
+
+  // Check scheduled automations every 60 seconds
   const interval = setInterval(() => {
     runServerAutomations(sendEmailFn).catch(console.error);
   }, 60 * 1000);
 
-  return () => clearInterval(interval);
+  // Check incoming emails from oficinahpapp@gmail.com every 2 minutes (120 seconds)
+  const emailInterval = setInterval(async () => {
+    if (emailImporterModule && typeof emailImporterModule.checkAndImportEmails === 'function') {
+      try {
+        const res = await emailImporterModule.checkAndImportEmails();
+        if (res?.count > 0) {
+          console.log(`[ServerCron] ✅ ${res.count} novas folhas importadas do Gmail.`);
+        }
+      } catch (err) {
+        console.error('[ServerCron] Erro na verificação periódica de emails:', err.message);
+      }
+    }
+  }, 120 * 1000);
+
+  return () => {
+    clearInterval(interval);
+    clearInterval(emailInterval);
+  };
 }

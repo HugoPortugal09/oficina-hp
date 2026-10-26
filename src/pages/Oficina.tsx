@@ -42,7 +42,8 @@ import {
   Loader2,
   X,
   Printer,
-  Link2
+  Link2,
+  Inbox
 } from 'lucide-react';
 import { GlassCard } from '../components/GlassCard';
 import { Badge } from '../components/Badge';
@@ -57,7 +58,7 @@ import { uploadFolhaPhotos, fetchFolhaPhotos } from '../services/photoStorageSer
 import { generateFolhaServicoPDF, generatePropostaPDF, generateFolhasServicoA3PDF, type FolhasServicoA3Row } from '../services/pdfService';
 import { resolvePortugalCoordinates, calculateDistanceKm, OFICINA_HP_BASE } from '../services/portugalGeoService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
-import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendFolhaServicoEmail } from '../services/emailService';
+import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendFolhaServicoEmail, checkIncomingEmailsNow } from '../services/emailService';
 import { estimateDistanceKm } from '../services/distanceService';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel, getFaturacaoBadgeVariant } from '../utils/statusColors';
 import type {
@@ -625,6 +626,31 @@ export const Oficina: React.FC<OficinaProps> = ({
       handleOpenFolhaModal(selectedFolhaToOpen);
     }
   }, [selectedFolhaToOpen]);
+
+  const [isSyncingEmails, setIsSyncingEmails] = useState(false);
+
+  const handleSyncEmails = async () => {
+    if (isSyncingEmails) return;
+    setIsSyncingEmails(true);
+    try {
+      const res = await checkIncomingEmailsNow();
+      if (res.success) {
+        if (res.count && res.count > 0) {
+          alert(`🎉 Sucesso! ${res.count} nova(s) folha(s) de serviço importada(s) do Gmail com estado Concluído.`);
+          const updatedFolhas = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS) || [];
+          setFolhas(updatedFolhas);
+        } else {
+          alert(res.message || '📬 Caixa de entrada verificada: nenhuma nova folha por processar.');
+        }
+      } else {
+        alert(`Aviso: ${res.error || 'Não foi possível verificar os emails.'}`);
+      }
+    } catch (e: any) {
+      alert(`Erro ao verificar emails: ${e?.message || e}`);
+    } finally {
+      setIsSyncingEmails(false);
+    }
+  };
 
   const handleOpenCreate = () => {
     const config = db.getConfig();
@@ -2192,6 +2218,21 @@ export const Oficina: React.FC<OficinaProps> = ({
           >
             <Sparkles className="w-4 h-4 text-amber-400 group-hover:rotate-12 transition-transform" />
             <span>Scanner IA</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSyncEmails}
+            disabled={isSyncingEmails}
+            title="Verificar emails de folhas de serviço fechadas em oficinahpapp@gmail.com"
+            className="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+          >
+            {isSyncingEmails ? (
+              <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+            ) : (
+              <Inbox className="w-4 h-4 text-indigo-400" />
+            )}
+            <span>{isSyncingEmails ? 'A Verificar...' : 'Verificar Emails'}</span>
           </button>
 
           {permissions.canEditServicos && (
