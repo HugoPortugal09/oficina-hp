@@ -6,6 +6,6 @@ COPY package.json ./
 RUN npm install --omit=dev
 ENV CACHE_BUSTER="2026-10-17-v2"
 COPY dist ./dist
-COPY server*.mjs ./
+COPY server*.mjs automations_state.json* ./
 EXPOSE 80
 CMD ["node", "server.mjs"]

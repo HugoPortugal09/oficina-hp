@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import PocketBase from 'pocketbase';
 import { jsPDF } from 'jspdf';
 import autoTablePkg from 'jspdf-autotable';
@@ -13,6 +15,40 @@ if (autoTablePkg) {
 
 const POCKETBASE_URL = process.env.POCKETBASE_URL || 'https://oficina-hp-pocketbase.l1mamt.easypanel.host';
 const TIMEZONE = 'Europe/Lisbon';
+
+// Local Persistent Execution State Tracker to PREVENT any loop even if PocketBase fails
+const STATE_FILE = path.join(process.cwd(), 'automations_state.json');
+
+function loadExecutionState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.warn('[ServerCron] Aviso ao ler automations_state.json:', e.message);
+  }
+  return {};
+}
+
+function saveExecutionState(state) {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[ServerCron] Aviso ao gravar automations_state.json:', e.message);
+  }
+}
+
+const memoryState = loadExecutionState();
+
+function isAlreadyExecuted(key, expectedToken) {
+  return memoryState[key] === expectedToken;
+}
+
+function recordExecution(key, token) {
+  memoryState[key] = token;
+  saveExecutionState(memoryState);
+  console.log(`[ServerCron] 🔒 Bloqueado disparo duplicado para '${key}' com token '${token}'`);
+}
 
 let emailImporterModule = null;
 try {
@@ -99,20 +135,24 @@ async function setAppData(pb, key, data) {
       existing = await pb.collection('app_data').getFirstListItem(`key="${key}"`);
     } catch {}
 
+    const payload = Array.isArray(data) || (typeof data === 'object' && data !== null)
+      ? data
+      : { value: data };
+
     if (existing) {
       await pb.collection('app_data').update(existing.id, {
-        data,
-        timestamp: new Date().toISOString()
+        data: payload
       });
     } else {
       await pb.collection('app_data').create({
         key,
-        data,
-        timestamp: new Date().toISOString()
+        data: payload
       });
     }
+    return true;
   } catch (err) {
     console.warn(`[ServerAutomation] Aviso ao gravar chave '${key}':`, err.message);
+    return false;
   }
 }
 
@@ -805,12 +845,17 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
       // -------------------------------------------------------------
       if (auto.tipo === 'email_planeamento') {
         const isMonday = lisbon.dayOfWeek === 1;
-        const isPast730 = lisbon.totalMinutes >= (7 * 60 + 30); // 07:30
-        const lastSentWeek = await getAppData(pb, `auto_last_week_${auto.id}`, null);
+        // Janela estrita: Segundas-feiras entre 07:30 e 08:30 (nunca à tarde ou à noite)
+        const inWindow = isMonday && ((lisbon.hour === 7 && lisbon.minute >= 30) || (lisbon.hour === 8 && lisbon.minute <= 30));
+        const stateKey = `planeamento_${auto.id}`;
+        const alreadySent = isAlreadyExecuted(stateKey, lisbon.weekKey) || auto.lastRunWeek === lisbon.weekKey;
 
-        const shouldRun = forced || (isMonday && isPast730 && lastSentWeek !== lisbon.weekKey);
+        const shouldRun = forced || (inWindow && !alreadySent);
 
         if (shouldRun) {
+          // Bloqueio imediato antes do envio para evitar corridas ou re-disparos a cada minuto
+          recordExecution(stateKey, lisbon.weekKey);
+          auto.lastRunWeek = lisbon.weekKey;
           console.log(`[ServerCron] 🚀 A executar 'email_planeamento' para a semana ${lisbon.weekKey}...`);
           try {
             const rawFolhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
@@ -926,6 +971,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
 
             // Update automacoes list
             automacoes[i].ultimoDisparo = `Hoje às ${lisbon.timeStr}`;
+            automacoes[i].lastRunWeek = lisbon.weekKey;
             await setAppData(pb, 'oficina_hp_automacoes', automacoes);
 
             console.log(`[ServerCron] ✅ Planeamento semanal enviado para: ${recipients.join(', ')}`);
@@ -942,12 +988,17 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
       // -------------------------------------------------------------
       if (auto.tipo === 'email_tempos_resposta') {
         const isWeekday = lisbon.dayOfWeek >= 1 && lisbon.dayOfWeek <= 5;
-        const isPast600 = lisbon.totalMinutes >= (6 * 60); // 06:00
-        const lastSentDay = await getAppData(pb, `auto_last_day_${auto.id}`, null);
+        // Janela estrita: Dias úteis entre as 06:00 e as 07:00
+        const inWindow = isWeekday && (lisbon.hour === 6);
+        const stateKey = `tempos_${auto.id}`;
+        const alreadySent = isAlreadyExecuted(stateKey, lisbon.dateIso) || auto.lastRunDate === lisbon.dateIso;
 
-        const shouldRun = forced || (isWeekday && isPast600 && lastSentDay !== lisbon.dateIso);
+        const shouldRun = forced || (inWindow && !alreadySent);
 
         if (shouldRun) {
+          // Bloqueio imediato antes do envio para evitar corridas
+          recordExecution(stateKey, lisbon.dateIso);
+          auto.lastRunDate = lisbon.dateIso;
           console.log(`[ServerCron] 🚀 A executar 'email_tempos_resposta' (3 PDFs A3) para o dia ${lisbon.dateIso}...`);
           try {
             const rawFolhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
@@ -1021,6 +1072,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
             await setAppData(pb, `auto_last_day_${auto.id}`, lisbon.dateIso);
             await setAppData(pb, `oficina_hp_last_run_day_${auto.id}`, lisbon.dateIso);
             automacoes[i].ultimoDisparo = `Hoje às ${lisbon.timeStr}`;
+            automacoes[i].lastRunDate = lisbon.dateIso;
             await setAppData(pb, 'oficina_hp_automacoes', automacoes);
 
             console.log(`[ServerCron] ✅ Tempos de resposta com ${attachments.length} PDFs A3 enviado para: ${recipients.join(', ')}`);
@@ -1036,12 +1088,17 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
       // 3. ALERTA DE STOCK MÍNIMO (Diário às 08:00)
       // -------------------------------------------------------------
       if (auto.tipo === 'alerta_stock') {
-        const isPast800 = lisbon.totalMinutes >= (8 * 60); // 08:00
-        const lastSentDay = await getAppData(pb, `auto_last_day_${auto.id}`, null);
+        // Janela estrita: Apenas entre as 08:00 e as 08:30 (NUNCA à noite ou de madrugada!)
+        const inWindow = (lisbon.hour === 8 && lisbon.minute <= 30);
+        const stateKey = `stock_${auto.id}`;
+        const alreadySent = isAlreadyExecuted(stateKey, lisbon.dateIso) || auto.lastRunDate === lisbon.dateIso;
 
-        const shouldRun = forced || (isPast800 && lastSentDay !== lisbon.dateIso);
+        const shouldRun = forced || (inWindow && !alreadySent);
 
         if (shouldRun) {
+          // Bloqueio imediato antes do envio para evitar corridas
+          recordExecution(stateKey, lisbon.dateIso);
+          auto.lastRunDate = lisbon.dateIso;
           try {
             const pecas = await getAppData(pb, 'oficina_hp_pecas_catalogo', []);
             const pecasBaixoStock = pecas.filter(p => (Number(p.stock) || 0) <= (Number(p.stockMinimo) || 0));
@@ -1087,6 +1144,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
 
             await setAppData(pb, `auto_last_day_${auto.id}`, lisbon.dateIso);
             automacoes[i].ultimoDisparo = `Hoje às ${lisbon.timeStr}`;
+            automacoes[i].lastRunDate = lisbon.dateIso;
             await setAppData(pb, 'oficina_hp_automacoes', automacoes);
             results.push({ id: auto.id, tipo: auto.tipo, success: true });
           } catch (err) {
@@ -1100,12 +1158,17 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
       // -------------------------------------------------------------
       if (auto.tipo === 'email_atividade_semanal') {
         const isSunday = lisbon.dayOfWeek === 0;
-        const isPast900 = lisbon.totalMinutes >= (9 * 60); // 09:00
-        const lastSentWeek = await getAppData(pb, `auto_last_week_${auto.id}`, null);
+        // Janela estrita: Domingos entre as 09:00 e as 09:30 (NUNCA à noite ou durante a semana!)
+        const inWindow = isSunday && (lisbon.hour === 9 && lisbon.minute <= 30);
+        const stateKey = `atividade_${auto.id}`;
+        const alreadySent = isAlreadyExecuted(stateKey, lisbon.weekKey) || auto.lastRunWeek === lisbon.weekKey;
 
-        const shouldRun = forced || (isSunday && isPast900 && lastSentWeek !== lisbon.weekKey);
+        const shouldRun = forced || (inWindow && !alreadySent);
 
         if (shouldRun) {
+          // Bloqueio imediato antes do envio para evitar corridas
+          recordExecution(stateKey, lisbon.weekKey);
+          auto.lastRunWeek = lisbon.weekKey;
           try {
             const rawFolhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
             const concluidas = rawFolhas.filter(f => f.status === 'Concluído' || f.status.startsWith('FEITO')).length;
@@ -1132,6 +1195,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
 
             await setAppData(pb, `auto_last_week_${auto.id}`, lisbon.weekKey);
             automacoes[i].ultimoDisparo = `Hoje às ${lisbon.timeStr}`;
+            automacoes[i].lastRunWeek = lisbon.weekKey;
             await setAppData(pb, 'oficina_hp_automacoes', automacoes);
             results.push({ id: auto.id, tipo: auto.tipo, success: true });
           } catch (err) {
@@ -1145,12 +1209,17 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
       // -------------------------------------------------------------
       if (auto.tipo === 'alerta_revisao') {
         const isFriday = lisbon.dayOfWeek === 5;
-        const isPast1700 = lisbon.totalMinutes >= (17 * 60); // 17:00
-        const lastSentWeek = await getAppData(pb, `auto_last_week_${auto.id}`, null);
+        // Janela estrita: Sextas-feiras entre as 17:00 e as 17:30
+        const inWindow = isFriday && (lisbon.hour === 17 && lisbon.minute <= 30);
+        const stateKey = `revisao_${auto.id}`;
+        const alreadySent = isAlreadyExecuted(stateKey, lisbon.weekKey) || auto.lastRunWeek === lisbon.weekKey;
 
-        const shouldRun = forced || (isFriday && isPast1700 && lastSentWeek !== lisbon.weekKey);
+        const shouldRun = forced || (inWindow && !alreadySent);
 
         if (shouldRun) {
+          // Bloqueio imediato antes do envio para evitar corridas
+          recordExecution(stateKey, lisbon.weekKey);
+          auto.lastRunWeek = lisbon.weekKey;
           try {
             const equipamentos = await getAppData(pb, 'oficina_hp_equipamentos', []);
             const necessitamRevisao = equipamentos.filter(e => {
@@ -1198,6 +1267,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
 
             await setAppData(pb, `auto_last_week_${auto.id}`, lisbon.weekKey);
             automacoes[i].ultimoDisparo = `Hoje às ${lisbon.timeStr}`;
+            automacoes[i].lastRunWeek = lisbon.weekKey;
             await setAppData(pb, 'oficina_hp_automacoes', automacoes);
             results.push({ id: auto.id, tipo: auto.tipo, success: true });
           } catch (err) {
