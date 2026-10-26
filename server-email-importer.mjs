@@ -1,6 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import PocketBase from 'pocketbase';
+import { getServerData, setServerData as saveToLocalServerStore } from './server-storage.mjs';
 
 const POCKETBASE_URL = process.env.POCKETBASE_URL || 'https://oficina-hp-pocketbase.l1mamt.easypanel.host';
 const EMAIL_USER = process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com';
@@ -231,21 +232,28 @@ export function parseServiceSheetText(rawText, filename = '') {
 }
 
 /**
- * Lê coleção do PocketBase app_data
+ * Lê coleção do armazenamento local do servidor ou PocketBase app_data
  */
 async function getAppData(pb, key, fallback = []) {
+  const local = getServerData(key);
+  if (local !== null && local !== undefined) return local;
   try {
     const record = await pb.collection('app_data').getFirstListItem(`key="${key}"`);
-    return record?.data || fallback;
+    if (record?.data !== undefined) {
+      saveToLocalServerStore(key, record.data);
+      return record.data;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
 }
 
 /**
- * Grava coleção no PocketBase app_data
+ * Grava coleção no armazenamento do servidor e tenta sincronizar no PocketBase
  */
 async function setAppData(pb, key, data) {
+  saveToLocalServerStore(key, data);
   try {
     let existing = null;
     try {
@@ -266,8 +274,8 @@ async function setAppData(pb, key, data) {
     }
     return true;
   } catch (err) {
-    console.error(`[EmailImporter] Erro ao gravar key="${key}":`, err.message);
-    return false;
+    console.warn(`[EmailImporter] Aviso ao gravar key="${key}" no PocketBase:`, err.message);
+    return true;
   }
 }
 
@@ -319,7 +327,7 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
 
       let empresas = await getAppData(pb, 'oficina_hp_empresas', []);
       let equipamentos = await getAppData(pb, 'oficina_hp_equipamentos', []);
-      let folhas = await getAppData(pb, 'oficina_hp_folhas', []);
+      let folhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
       let logs = await getAppData(pb, 'oficina_hp_email_import_logs', []);
 
       const { PDFParse } = await import('pdf-parse');
@@ -500,13 +508,13 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
         }
       }
 
-      // Guardar tudo no PocketBase
+      // Guardar tudo no armazenamento do servidor e PocketBase
       if (importedSheets.length > 0 && !dryRun) {
-        await setAppData(pb, 'oficina_hp_folhas', folhas);
+        await setAppData(pb, 'oficina_hp_folhas_servico', folhas);
         await setAppData(pb, 'oficina_hp_equipamentos', equipamentos);
         await setAppData(pb, 'oficina_hp_empresas', empresas);
         await setAppData(pb, 'oficina_hp_email_import_logs', logs.slice(0, 100));
-        console.log(`[EmailImporter] ✅ Sincronização concluída com sucesso! ${importedSheets.length} folhas gravadas no PocketBase.`);
+        console.log(`[EmailImporter] ✅ Sincronização concluída com sucesso! ${importedSheets.length} folhas gravadas.`);
       }
 
       return {

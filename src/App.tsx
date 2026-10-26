@@ -57,7 +57,7 @@ function FullscreenFallback() {
 }
 
 import { db, STORAGE_KEYS } from './services/dbService';
-import { syncPullFromCloud, subscribeToRealtimeSync } from './services/pocketbaseSync';
+import { syncPullFromCloud, subscribeToRealtimeSync, syncPushAllToServer } from './services/pocketbaseSync';
 import { cleanupOrphanLocalStorageKeys } from './utils/storageUtils';
 import { startAutomationRunner } from './services/automationRunner';
 import { parseCurrentRoute, buildPath, findFolhaByParam } from './utils/routeUtils';
@@ -428,10 +428,13 @@ export default function App() {
     db.initSeed();
     loadAllData();
 
-    // 1. Initial Pull from PocketBase Cloud
+    // 1. Initial Pull from PocketBase Cloud & Push to Server Storage
     syncPullFromCloud().then(() => {
       loadAllData();
-    }).catch(() => {});
+      syncPushAllToServer().catch(() => {});
+    }).catch(() => {
+      syncPushAllToServer().catch(() => {});
+    });
 
     // 2. Realtime SSE Subscription from PocketBase
     const unsubscribeRealtime = subscribeToRealtimeSync();
@@ -451,6 +454,7 @@ export default function App() {
       if (syncThrottleTimer) return;
       syncThrottleTimer = setTimeout(() => { syncThrottleTimer = null; }, 3000);
       syncPullFromCloud().then(() => loadAllData()).catch(() => {});
+      syncPushAllToServer().catch(() => {});
     };
 
     const handleVisibilityChange = () => {

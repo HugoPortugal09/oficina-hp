@@ -3,6 +3,7 @@ import path from 'path';
 import PocketBase from 'pocketbase';
 import { jsPDF } from 'jspdf';
 import autoTablePkg from 'jspdf-autotable';
+import { getServerData, setServerData as saveToLocalServerStore } from './server-storage.mjs';
 
 // Apply autotable plugin to jsPDF in Node.js
 if (autoTablePkg) {
@@ -114,21 +115,31 @@ export function getLisbonTime(date = new Date()) {
 }
 
 /**
- * Reads a collection from PocketBase app_data
+ * Reads a collection from server local storage first, with PocketBase fallback
  */
 async function getAppData(pb, key, fallback = []) {
+  const localVal = getServerData(key);
+  if (localVal !== null && localVal !== undefined) {
+    return localVal;
+  }
   try {
     const record = await pb.collection('app_data').getFirstListItem(`key="${key}"`);
-    return record?.data || fallback;
+    if (record?.data !== undefined) {
+      saveToLocalServerStore(key, record.data);
+      return record.data;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
 }
 
 /**
- * Saves a key-value record in PocketBase app_data
+ * Saves a key-value record in server local storage and attempts PocketBase app_data
  */
 async function setAppData(pb, key, data) {
+  // Always update server storage
+  saveToLocalServerStore(key, data);
   try {
     let existing = null;
     try {
@@ -151,8 +162,8 @@ async function setAppData(pb, key, data) {
     }
     return true;
   } catch (err) {
-    console.warn(`[ServerAutomation] Aviso ao gravar chave '${key}':`, err.message);
-    return false;
+    console.warn(`[ServerAutomation] Aviso ao gravar chave '${key}' no PocketBase:`, err.message);
+    return true; // Still considered successful because server storage is updated
   }
 }
 
@@ -878,14 +889,23 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
               };
             });
 
-            // Filter items
+            // Filter items: A folha só entra no planeamento semanal se tiver uma dataPlaneada explícita
             const weekIsoSet = new Set(weekDays.map(w => w.isoStr));
-            const weekFolhas = rawFolhas.filter(f => weekIsoSet.has(normalizeToIso(f.dataPlaneada || f.data)));
-            const weekVisitas = rawVisitas.filter(v => weekIsoSet.has(normalizeToIso(v.data)));
+            const weekFolhas = rawFolhas.filter(f => {
+              if (!f.dataPlaneada || f.dataPlaneada === '-' || !f.dataPlaneada.trim()) return false;
+              const iso = normalizeToIso(f.dataPlaneada);
+              return weekIsoSet.has(iso);
+            });
+            const weekVisitas = rawVisitas.filter(v => {
+              if (!v.data || v.data === '-' || !v.data.trim()) return false;
+              return weekIsoSet.has(normalizeToIso(v.data));
+            });
 
-            const hasSab = weekFolhas.some(f => normalizeToIso(f.dataPlaneada || f.data) === weekDays[5].isoStr) ||
+            // Regra: Segunda a Sexta (índices 0 a 4) são sempre incluídos.
+            // Sábado (5) e Domingo (6) só são incluídos se existirem marcações explícitas!
+            const hasSab = weekFolhas.some(f => normalizeToIso(f.dataPlaneada) === weekDays[5].isoStr) ||
                            weekVisitas.some(v => normalizeToIso(v.data) === weekDays[5].isoStr);
-            const hasDom = weekFolhas.some(f => normalizeToIso(f.dataPlaneada || f.data) === weekDays[6].isoStr) ||
+            const hasDom = weekFolhas.some(f => normalizeToIso(f.dataPlaneada) === weekDays[6].isoStr) ||
                            weekVisitas.some(v => normalizeToIso(v.data) === weekDays[6].isoStr);
 
             const activeDays = weekDays.filter(d => {
@@ -896,7 +916,7 @@ export async function runServerAutomations(sendEmailFn, forced = false) {
             });
 
             const dayCols = activeDays.map(d => {
-              const dayFolhas = weekFolhas.filter(f => normalizeToIso(f.dataPlaneada || f.data) === d.isoStr);
+              const dayFolhas = weekFolhas.filter(f => normalizeToIso(f.dataPlaneada) === d.isoStr);
               const dayVisitas = weekVisitas.filter(v => normalizeToIso(v.data) === d.isoStr);
 
               const items = [

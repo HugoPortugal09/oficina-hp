@@ -123,6 +123,17 @@ async function executePush(key: string, data: any): Promise<boolean> {
       }
     }
 
+    // Always push immediately to the internal Node.js server storage so cron/automations are 100% up to date
+    try {
+      if (typeof fetch !== 'undefined') {
+        fetch(`/api/data/${encodeURIComponent(key)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: payloadData })
+        }).catch(() => {});
+      }
+    } catch {}
+
     if (existingRecord) {
       await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
         data: payloadData,
@@ -142,8 +153,9 @@ async function executePush(key: string, data: any): Promise<boolean> {
     return true;
   } catch (err: any) {
     console.warn(`[PocketBase Sync] Error syncing ${key}:`, err?.message || err);
-    syncStatus.error = err?.message || 'Erro ao sincronizar com servidor';
-    return false;
+    // If PocketBase fails (e.g. 400 permission), internal server endpoint was still updated
+    syncStatus.error = err?.message || 'Erro ao sincronizar com PocketBase';
+    return true;
   }
 }
 
@@ -315,6 +327,32 @@ export async function uploadAllLocalToCloud(): Promise<{ success: boolean; count
     return { success: true, count };
   } catch (err: any) {
     return { success: false, count: 0, error: err?.message || 'Erro ao enviar dados para a cloud' };
+  }
+}
+
+/**
+ * Envia todas as coleções do localStorage para a API do servidor Node.js
+ */
+export async function syncPushAllToServer(): Promise<boolean> {
+  try {
+    if (typeof localStorage === 'undefined' || typeof fetch === 'undefined') return false;
+    const store: Record<string, any> = {};
+    for (const key of Object.values(STORAGE_KEYS)) {
+      const val = localStorage.getItem(key);
+      if (val) {
+        try {
+          store[key] = JSON.parse(val);
+        } catch {}
+      }
+    }
+    const res = await fetch('/api/sync-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: store })
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

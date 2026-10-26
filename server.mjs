@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
+import { getServerData, setServerData, getAllServerData } from './server-storage.mjs';
 
 let cronModule = null;
 try {
@@ -177,6 +178,67 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ success: false, error: err.message || String(err) }));
     }
     return;
+  }
+
+  // API Route: POST /api/sync-all (Recebe múltiplas coleções do cliente e persiste no servidor)
+  if (req.url === '/api/sync-all' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body);
+        const store = payload.data || payload;
+        let count = 0;
+        if (typeof store === 'object' && store !== null) {
+          for (const [key, val] of Object.entries(store)) {
+            if (key.startsWith('oficina_hp_')) {
+              setServerData(key, val);
+              count++;
+            }
+          }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, count, timestamp: new Date().toISOString() }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // API Route: GET /api/data-all (Devolve todas as coleções do servidor)
+  if (req.url === '/api/data-all' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, data: getAllServerData() }));
+    return;
+  }
+
+  // API Route: GET or POST /api/data/:key (Sincronização individual por coleção)
+  if (req.url.startsWith('/api/data/')) {
+    const key = decodeURIComponent(req.url.replace(/^\/api\/data\//, '').split('?')[0]);
+    if (req.method === 'GET') {
+      const data = getServerData(key);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, key, data }));
+      return;
+    } else if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body);
+          const dataToSave = payload.data !== undefined ? payload.data : payload;
+          setServerData(key, dataToSave);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, key }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+      return;
+    }
   }
 
   // Healthcheck endpoint
