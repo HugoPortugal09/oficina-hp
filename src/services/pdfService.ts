@@ -1706,11 +1706,12 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
   doc.setLineWidth(0.4);
   doc.line(14, 38, 283, 38);
 
-  // --- FOLHA 1: MAPA DE PORTUGAL (ENQUADRAMENTO VERTICAL SEM DEFORMAÇÃO) ---
+  // --- FOLHA 1: MAPA DE PORTUGAL E DISTRIBUIÇÃO OPERACIONAL ---
   const mapStartY = 42;
   const maxMapW = 269; // 297 - 28
-  const maxMapH = 344; // De 42 até 386 (deixa espaço para barra de legenda em 388..402)
+  const maxMapH = 344; // De 42 até 386
 
+  let renderedImageSuccess = false;
   if (mapImageBase64) {
     try {
       const imgProps = doc.getImageProperties(mapImageBase64);
@@ -1724,35 +1725,285 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
         renderW = maxMapH * imgRatio;
       }
 
-      // Centralizar imagem na área útil da Folha 1
       const renderX = 14 + (maxMapW - renderW) / 2;
       const renderY = mapStartY + (maxMapH - renderH) / 2;
 
-      // Fundo escuro elegante de apoio
-      doc.setFillColor(15, 23, 42); // Slate 900
+      // Fundo suave de suporte
+      doc.setFillColor(248, 250, 252); // Slate 50
       doc.roundedRect(renderX, renderY, renderW, renderH, 2.5, 2.5, 'F');
 
-      // Desenhar mapa proporcional (zero distorção / círculos perfeitamente redondos)
+      // Desenhar mapa proporcional
       doc.addImage(mapImageBase64, 'JPEG', renderX, renderY, renderW, renderH, undefined, 'FAST');
 
-      // Moldura exterior
+      // Moldura exterior nítida
       doc.setDrawColor(51, 65, 85); // Slate 700
       doc.setLineWidth(0.4);
       doc.roundedRect(renderX, renderY, renderW, renderH, 2.5, 2.5, 'D');
+      renderedImageSuccess = true;
     } catch (e) {
       console.warn('[PDF] Erro ao renderizar imagem do mapa:', e);
-      doc.setFillColor(241, 245, 249);
-      doc.roundedRect(14, mapStartY, maxMapW, 200, 2, 2, 'F');
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139);
-      doc.text('Pré-visualização do mapa não disponível no momento da exportação.', 148.5, mapStartY + 100, { align: 'center' });
+      renderedImageSuccess = false;
     }
-  } else {
+  }
+
+  // Se a imagem não estiver disponível ou falhar na captura, desenha o Mapa Geográfico Vetorial de Portugal de Alta Definição
+  if (!renderedImageSuccess) {
+    const geoW = 180;
+    const geoH = 340;
+    const geoX = 14;
+    const geoY = mapStartY;
+
+    // Fundo do mapa com relevo suave
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(geoX, geoY, geoW, geoH, 3, 3, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(geoX, geoY, geoW, geoH, 3, 3, 'D');
+
+    // Faixas de Regiões Geográficas
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(148, 163, 184);
+
+    // Norte
     doc.setFillColor(241, 245, 249);
-    doc.roundedRect(14, mapStartY, maxMapW, 200, 2, 2, 'F');
-    doc.setFontSize(10);
-    doc.setTextColor(100, 116, 139);
-    doc.text('Mapa não carregado. Abra o mapa antes de imprimir.', 148.5, mapStartY + 100, { align: 'center' });
+    doc.roundedRect(geoX + 4, geoY + 4, geoW - 8, 90, 2, 2, 'F');
+    doc.text('NORTE', geoX + 8, geoY + 14);
+
+    // Centro
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(geoX + 4, geoY + 98, geoW - 8, 85, 2, 2, 'F');
+    doc.text('CENTRO', geoX + 8, geoY + 108);
+
+    // Lisboa e Vale do Tejo
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(geoX + 4, geoY + 187, geoW - 8, 55, 2, 2, 'F');
+    doc.text('LISBOA & VALE DO TEJO', geoX + 8, geoY + 197);
+
+    // Alentejo & Algarve (Sul)
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(geoX + 4, geoY + 246, geoW - 8, 90, 2, 2, 'F');
+    doc.text('ALENTEJO & ALGARVE (SUL)', geoX + 8, geoY + 256);
+
+    // Cidades de Referência em Portugal
+    const refCities = [
+      { name: 'Braga', lat: 41.5454, lng: -8.4265 },
+      { name: 'Porto', lat: 41.1579, lng: -8.6291 },
+      { name: 'Aveiro', lat: 40.6405, lng: -8.6538 },
+      { name: 'Coimbra', lat: 40.2033, lng: -8.4103 },
+      { name: 'Leiria', lat: 39.7438, lng: -8.8078 },
+      { name: 'Santarém', lat: 39.2369, lng: -8.6853 },
+      { name: 'Lisboa', lat: 38.7223, lng: -9.1393 },
+      { name: 'Setúbal', lat: 38.5244, lng: -8.8882 },
+      { name: 'Évora', lat: 38.5714, lng: -7.9073 },
+      { name: 'Faro', lat: 37.0194, lng: -7.9304 }
+    ];
+
+    const minLat = 36.95;
+    const maxLat = 42.15;
+    const minLng = -9.55;
+    const maxLng = -6.18;
+
+    const toX = (lng: number) => geoX + 16 + ((lng - minLng) / (maxLng - minLng)) * (geoW - 32);
+    const toY = (lat: number) => (geoY + geoH - 12) - ((lat - minLat) / (maxLat - minLat)) * (geoH - 24);
+
+    // Desenhar cidades de referência
+    refCities.forEach(c => {
+      const cx = toX(c.lng);
+      const cy = toY(c.lat);
+      doc.setFillColor(203, 213, 225);
+      doc.circle(cx, cy, 1.2, 'F');
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(148, 163, 184);
+      doc.text(c.name, cx + 2.5, cy + 1);
+    });
+
+    // Sede GRAUMP (Albergaria-a-Velha)
+    const hqX = toX(-8.4806);
+    const hqY = toY(40.6922);
+    doc.setFillColor(15, 23, 42); // Navy
+    doc.circle(hqX, hqY, 4, 'F');
+    doc.setFillColor(250, 204, 21); // Gold star
+    doc.circle(hqX, hqY, 2.5, 'F');
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('★ OFICINA HP (Albergaria-a-Velha)', hqX + 5, hqY + 1.5);
+
+    // Agrupar serviços por proximidade geográfica para desenhar pins
+    interface ClusteredPin {
+      lat: number;
+      lng: number;
+      cidade: string;
+      items: typeof items;
+    }
+    const pinClusters: ClusteredPin[] = [];
+    items.forEach(it => {
+      const lat = it.coords.lat || 39.5;
+      const lng = it.coords.lng || -8.2;
+      const match = pinClusters.find(p => Math.abs(p.lat - lat) < 0.04 && Math.abs(p.lng - lng) < 0.04);
+      if (match) {
+        match.items.push(it);
+      } else {
+        pinClusters.push({ lat, lng, cidade: it.coords.cidade || 'Portugal', items: [it] });
+      }
+    });
+
+    // Desenhar cada pin no mapa vetorial
+    pinClusters.forEach(cp => {
+      const px = toX(cp.lng);
+      const py = toY(cp.lat);
+      const count = cp.items.length;
+      const hasAT = cp.items.some(i => i.isAT);
+      const hasCT = cp.items.some(i => i.isCT);
+
+      const pinColor = hasAT ? [234, 88, 12] : hasCT ? [147, 51, 234] : [2, 132, 199];
+
+      // Sombra e anel exterior
+      doc.setFillColor(pinColor[0], pinColor[1], pinColor[2]);
+      doc.circle(px, py, count > 1 ? 4.5 : 3.5, 'F');
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(0.6);
+      doc.circle(px, py, count > 1 ? 4.5 : 3.5, 'D');
+
+      // Se múltiplos serviços no local, desenha o número
+      if (count > 1) {
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 255, 255);
+        doc.text(String(count), px, py + 1.2, { align: 'center' });
+      }
+
+      // Etiqueta da localidade e folha
+      const labelText = `${cp.cidade} (${count > 1 ? `${count} serv.` : cp.items[0].folha.numero})`;
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(pinColor[0], pinColor[1], pinColor[2]);
+      doc.text(labelText, px + 5.5, py + 1);
+    });
+
+    // --- PAINEL LATERAL DIREITO: KPIs & RESUMO REGIONAL ---
+    const sideX = 200;
+    const sideW = 83;
+    const sideY = mapStartY;
+
+    // Cartão 1: Distribuição Regional
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.roundedRect(sideX, sideY, sideW, 88, 3, 3, 'F');
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('DISTRIBUIÇÃO TERRITORIAL', sideX + 8, sideY + 12);
+
+    const kpiRegions = [
+      { label: 'Norte (Porto, Braga, Famalicão)', count: stats.norteCount, color: [2, 132, 199] },
+      { label: 'Centro (Coimbra, Aveiro, Leiria)', count: stats.centroCount, color: [16, 185, 129] },
+      { label: 'Lisboa & Vale do Tejo', count: stats.lisboaCount, color: [245, 158, 11] },
+      { label: 'Sul (Alentejo & Algarve)', count: stats.sulCount, color: [239, 68, 68] }
+    ];
+
+    kpiRegions.forEach((reg, idx) => {
+      const regY = sideY + 22 + idx * 16;
+      doc.setFillColor(15, 23, 42); // Dark slate
+      doc.roundedRect(sideX + 6, regY, sideW - 12, 13, 2, 2, 'F');
+
+      doc.setFillColor(reg.color[0], reg.color[1], reg.color[2]);
+      doc.circle(sideX + 11, regY + 6.5, 2.5, 'F');
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(226, 232, 240);
+      doc.text(reg.label, sideX + 16, regY + 8);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text(String(reg.count), sideX + sideW - 10, regY + 8.5, { align: 'right' });
+    });
+
+    // Cartão 2: Resumo por Categoria de Serviço
+    const card2Y = sideY + 94;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(sideX, card2Y, sideW, 72, 3, 3, 'FD');
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('CATEGORIAS NO TERRENO', sideX + 8, card2Y + 12);
+
+    // Bloco AT
+    doc.setFillColor(255, 247, 237); // Orange tint
+    doc.setDrawColor(254, 215, 170);
+    doc.roundedRect(sideX + 6, card2Y + 18, sideW - 12, 22, 2, 2, 'FD');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(194, 65, 12);
+    doc.text('⚡ Assistência Técnica (AT):', sideX + 10, card2Y + 27);
+    doc.setFontSize(11);
+    doc.text(`${stats.atCount} pedidos`, sideX + sideW - 10, card2Y + 28, { align: 'right' });
+
+    // Bloco CT
+    doc.setFillColor(250, 245, 255); // Purple tint
+    doc.setDrawColor(233, 213, 255);
+    doc.roundedRect(sideX + 6, card2Y + 44, sideW - 12, 22, 2, 2, 'FD');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(126, 34, 206);
+    doc.text('📜 Contratos de Manutenção (CT):', sideX + 10, card2Y + 53);
+    doc.setFontSize(11);
+    doc.text(`${stats.ctCount} pedidos`, sideX + sideW - 10, card2Y + 54, { align: 'right' });
+
+    // Cartão 3: Instruções Operacionais
+    const card3Y = sideY + 172;
+    doc.setFillColor(240, 249, 255); // Sky 50
+    doc.setDrawColor(186, 230, 253);
+    doc.roundedRect(sideX, card3Y, sideW, 168, 3, 3, 'FD');
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(2, 132, 199);
+    doc.text('ROTEIRO OPERACIONAL', sideX + 8, card3Y + 12);
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    const instrucoes = [
+      '• Os pinos representam clientes e viaturas',
+      '  com pedidos em aberto no terreno.',
+      '',
+      '• Pinos numerados indicam múltiplos serviços',
+      '  sobrepostos na mesma entidade/estaleiro.',
+      '',
+      '• Para consultar os detalhes completos',
+      '  (Matrícula, Avaria, Data e Estado),',
+      '  consulte a Tabela Detalhada na Folha 2.'
+    ];
+    let instY = card3Y + 22;
+    instrucoes.forEach(line => {
+      doc.text(line, sideX + 8, instY);
+      instY += 4.5;
+    });
+
+    // Top Locais no Terreno
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('LOCAIS COM MAIOR CONCENTRAÇÃO:', sideX + 8, instY + 5);
+    instY += 12;
+
+    pinClusters.slice(0, 5).forEach((cl, i) => {
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${i + 1}. ${cl.cidade}:`, sideX + 8, instY);
+      doc.setTextColor(2, 132, 199);
+      doc.text(`${cl.items.length} serviço(s)`, sideX + sideW - 10, instY, { align: 'right' });
+      instY += 5.5;
+    });
   }
 
   // --- FOLHA 1: BARRA DE LEGENDA INFORMATIVA (Fundo da Folha 1) ---
@@ -1848,10 +2099,6 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
     const marcaModelo = `${f.marca || ''} ${f.modelo || ''}`.trim() || '-';
     const dataPed = formatDate(f.data);
     const clienteNome = item.empresa?.nome || item.cliente?.nome || 'Cliente Geral';
-    const localidade = item.moradaExibicao || `${item.coords.cidade}, ${item.coords.distrito}`;
-    const regiaoDistrito = `${item.coords.distrito} (${item.coords.regiao})`;
-    const distKm = `${item.distanciaKm} Km`;
-    const contacto = item.cliente?.telemovel || item.empresa?.telefone || '-';
     const anomalia = (f.anomalias || f.notasInternas || f.notasCliente || '-').replace(/\n/g, ' ');
 
     return [
@@ -1860,12 +2107,8 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
       f.matricula || '---',
       marcaModelo,
       clienteNome,
-      localidade,
-      regiaoDistrito,
-      distKm,
       dataPed,
       f.status,
-      contacto,
       anomalia
     ];
   });
@@ -1878,12 +2121,8 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
       'Matrícula',
       'Marca / Modelo',
       'Cliente / Entidade',
-      'Localização / Morada',
-      'Distrito / Região',
-      'Dist. Sede',
       'Data Pedido',
       'Estado Atual',
-      'Contacto',
       'Anomalia / Resumo da Intervenção'
     ]],
     body: tableRows,
@@ -1892,30 +2131,26 @@ export function generateMapaServicosA3PDF(options: MapaServicosA3Options): jsPDF
       fillColor: [30, 41, 59], // Dark slate
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 8,
-      cellPadding: 3
+      fontSize: 8.5,
+      cellPadding: 3.2
     },
     styles: {
-      fontSize: 7.5,
-      cellPadding: 2.4,
+      fontSize: 8,
+      cellPadding: 2.8,
       textColor: [30, 41, 59],
       lineColor: [226, 232, 240],
       lineWidth: 0.2,
       overflow: 'linebreak'
     },
     columnStyles: {
-      0: { cellWidth: 18, fontStyle: 'bold', textColor: [2, 132, 199] }, // Folha
-      1: { cellWidth: 26, fontStyle: 'bold' }, // Tipo
-      2: { cellWidth: 20, fontStyle: 'bold' }, // Matrícula
-      3: { cellWidth: 28 }, // Marca/Modelo
-      4: { cellWidth: 44 }, // Cliente
-      5: { cellWidth: 54 }, // Morada
-      6: { cellWidth: 28 }, // Região
-      7: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }, // Dist Km
-      8: { cellWidth: 18, halign: 'center' }, // Data
-      9: { cellWidth: 32 }, // Estado
-      10: { cellWidth: 22 }, // Contacto
-      11: { cellWidth: 84 }  // Anomalia
+      0: { cellWidth: 25, fontStyle: 'bold', textColor: [2, 132, 199] }, // Folha
+      1: { cellWidth: 35, fontStyle: 'bold' }, // Tipo
+      2: { cellWidth: 28, fontStyle: 'bold' }, // Matrícula
+      3: { cellWidth: 42 }, // Marca/Modelo
+      4: { cellWidth: 72 }, // Cliente
+      5: { cellWidth: 26, halign: 'center' }, // Data Pedido
+      6: { cellWidth: 38, halign: 'center' }, // Estado Atual
+      7: { cellWidth: 126 }  // Anomalia
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]
@@ -2085,12 +2320,8 @@ export function generateFolhasServicoA3PDF(options: FolhasServicoA3Options): jsP
       f.matricula || '---',
       marcaModelo,
       clienteNome,
-      item.localidade,
-      item.distritoRegiao,
-      item.distKm,
       dataPed,
       f.status,
-      item.contacto,
       anomalia
     ];
   });
@@ -2103,12 +2334,8 @@ export function generateFolhasServicoA3PDF(options: FolhasServicoA3Options): jsP
       'Matrícula',
       'Marca / Modelo',
       'Cliente / Entidade',
-      'Localização / Morada',
-      'Distrito / Região',
-      'Dist. Sede',
       'Data Pedido',
       'Estado Atual',
-      'Contacto',
       'Anomalia / Resumo da Intervenção'
     ]],
     body: tableRows,
@@ -2117,30 +2344,26 @@ export function generateFolhasServicoA3PDF(options: FolhasServicoA3Options): jsP
       fillColor: [30, 41, 59], // Dark slate
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 8,
-      cellPadding: 3
+      fontSize: 8.5,
+      cellPadding: 3.2
     },
     styles: {
-      fontSize: 7.5,
-      cellPadding: 2.4,
+      fontSize: 8,
+      cellPadding: 2.8,
       textColor: [30, 41, 59],
       lineColor: [226, 232, 240],
       lineWidth: 0.2,
       overflow: 'linebreak'
     },
     columnStyles: {
-      0: { cellWidth: 18, fontStyle: 'bold', textColor: [2, 132, 199] }, // Folha
-      1: { cellWidth: 26, fontStyle: 'bold' }, // Tipo
-      2: { cellWidth: 20, fontStyle: 'bold' }, // Matrícula
-      3: { cellWidth: 28 }, // Marca/Modelo
-      4: { cellWidth: 44 }, // Cliente
-      5: { cellWidth: 54 }, // Morada
-      6: { cellWidth: 28 }, // Região
-      7: { cellWidth: 18, halign: 'center', fontStyle: 'bold' }, // Dist Km
-      8: { cellWidth: 18, halign: 'center' }, // Data
-      9: { cellWidth: 32 }, // Estado
-      10: { cellWidth: 22 }, // Contacto
-      11: { cellWidth: 84 }  // Anomalia
+      0: { cellWidth: 25, fontStyle: 'bold', textColor: [2, 132, 199] }, // Folha
+      1: { cellWidth: 35, fontStyle: 'bold' }, // Tipo
+      2: { cellWidth: 28, fontStyle: 'bold' }, // Matrícula
+      3: { cellWidth: 42 }, // Marca/Modelo
+      4: { cellWidth: 72 }, // Cliente
+      5: { cellWidth: 26, halign: 'center' }, // Data Pedido
+      6: { cellWidth: 38, halign: 'center' }, // Estado Atual
+      7: { cellWidth: 126 }  // Anomalia
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]

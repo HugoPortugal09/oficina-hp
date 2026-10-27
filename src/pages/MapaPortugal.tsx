@@ -274,7 +274,8 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
 
     L.tileLayer(tileUrl, {
       attribution,
-      maxZoom: 19
+      maxZoom: 19,
+      crossOrigin: true
     }).addTo(map);
 
     // Invalidate size immediately and after layout tick
@@ -496,12 +497,19 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
       currentMap.invalidateSize();
       if (filteredMarkers.length > 0) {
         const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
-        currentMap.fitBounds(L.latLngBounds(latLngs), {
-          padding: [50, 50],
-          maxZoom: 11
+        // Include Portugal baseline points so the whole country stays in view
+        latLngs.push([37.05, -8.95]); // Algarve / Sagres
+        latLngs.push([41.95, -6.85]); // Bragança / Norte
+        const bounds = L.latLngBounds(latLngs);
+        currentMap.fitBounds(bounds, {
+          padding: [30, 30],
+          maxZoom: 7.8
         });
       } else {
-        currentMap.setView([39.6, -8.1], 7.2);
+        currentMap.fitBounds([
+          [36.95, -9.55],
+          [42.16, -6.18]
+        ], { padding: [20, 20] });
       }
     };
 
@@ -538,15 +546,10 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     const map = mapInstanceRef.current;
     if (map) {
       map.invalidateSize();
-      if (filteredMarkers.length > 0) {
-        const latLngs = filteredMarkers.map(m => [m.coords.lat, m.coords.lng] as [number, number]);
-        map.fitBounds(L.latLngBounds(latLngs), {
-          padding: [50, 50],
-          maxZoom: 11
-        });
-      } else {
-        map.flyTo([39.6, -8.1], 7.2, { duration: 1 });
-      }
+      map.fitBounds([
+        [36.95, -9.55],
+        [42.16, -6.18]
+      ], { padding: [20, 20] });
     }
   };
 
@@ -559,15 +562,22 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
     try {
       let mapImageBase64: string | undefined;
       const mapEl = mapContainerRef.current;
+      const currentMap = mapInstanceRef.current;
 
-      if (mapEl) {
+      if (mapEl && currentMap) {
         try {
-          // Brief pause to ensure all tiles and pins are rendered
-          await new Promise(res => setTimeout(res, 250));
+          currentMap.invalidateSize();
+          currentMap.fitBounds([
+            [36.95, -9.55],
+            [42.16, -6.18]
+          ], { padding: [20, 20] });
+
+          // Wait for tiles to settle
+          await new Promise(res => setTimeout(res, 400));
 
           const canvas = await html2canvas(mapEl, {
             useCORS: true,
-            allowTaint: true,
+            allowTaint: false,
             logging: false,
             scale: 2,
             backgroundColor: mapStyle === 'dark' ? '#090d16' : '#ffffff',
@@ -578,7 +588,7 @@ export const MapaPortugal: React.FC<MapaPortugalProps> = ({
               );
             }
           });
-          mapImageBase64 = canvas.toDataURL('image/jpeg', 0.9);
+          mapImageBase64 = canvas.toDataURL('image/jpeg', 0.92);
         } catch (captureErr) {
           console.warn('[MapaPortugal] Aviso na captura de imagem do mapa:', captureErr);
         }
