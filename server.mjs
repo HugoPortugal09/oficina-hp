@@ -96,6 +96,32 @@ export async function sendEmail({ to, subject, html, text, attachments }) {
 let rateLimitWindowStart = Date.now();
 let rateLimitCount = 0;
 
+// SSE (Server-Sent Events) clients for real-time bidirectional synchronization
+const sseClients = new Set();
+
+export function broadcastSync(key) {
+  if (sseClients.size === 0) return;
+  const payload = JSON.stringify({ type: 'sync', key, timestamp: new Date().toISOString() });
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+// Keep-alive heartbeat to prevent intermediate proxies/routers from dropping the connection
+setInterval(() => {
+  for (const client of sseClients) {
+    try {
+      client.write(': keepalive\n\n');
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}, 25000);
+
 const server = http.createServer(async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -180,7 +206,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // API Route: POST /api/sync-all (Recebe múltiplas coleções do cliente e persiste no servidor)
+  // API Route: GET /api/sync-events (Real-Time SSE para sincronização instantânea entre múltiplos PCs)
+  if (req.url === '/api/sync-events' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.write(`data: {"type":"connected","timestamp":"${new Date().toISOString()}"}\n\n`);
+    sseClients.add(res);
+    req.on('close', () => {
+      sseClients.delete(res);
+    });
+    return;
+  }
+
+  // API Route: POST /api/sync-all (Recebe múltiplas coleções do cliente e persiste no servidor com merge)
   if (req.url === '/api/sync-all' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -188,17 +230,20 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = JSON.parse(body);
         const store = payload.data || payload;
+        const resultStore = {};
         let count = 0;
         if (typeof store === 'object' && store !== null) {
           for (const [key, val] of Object.entries(store)) {
             if (key.startsWith('oficina_hp_')) {
-              setServerData(key, val);
+              const merged = setServerData(key, val);
+              resultStore[key] = merged;
+              broadcastSync(key);
               count++;
             }
           }
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, count, timestamp: new Date().toISOString() }));
+        res.end(JSON.stringify({ success: true, count, data: resultStore, timestamp: new Date().toISOString() }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: err.message }));
@@ -214,7 +259,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // API Route: GET or POST /api/data/:key (Sincronização individual por coleção)
+  // API Route: GET or POST /api/data/:key (Sincronização individual por coleção com merge e broadcast)
   if (req.url.startsWith('/api/data/')) {
     const key = decodeURIComponent(req.url.replace(/^\/api\/data\//, '').split('?')[0]);
     if (req.method === 'GET') {
@@ -229,9 +274,10 @@ const server = http.createServer(async (req, res) => {
         try {
           const payload = JSON.parse(body);
           const dataToSave = payload.data !== undefined ? payload.data : payload;
-          setServerData(key, dataToSave);
+          const merged = setServerData(key, dataToSave);
+          broadcastSync(key);
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, key }));
+          res.end(JSON.stringify({ success: true, key, data: merged }));
         } catch (err) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: err.message }));

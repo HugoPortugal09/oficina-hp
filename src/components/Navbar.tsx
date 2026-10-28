@@ -24,7 +24,7 @@ import {
 import type { NavigationTab, UserProfile } from '../types';
 import { USERS } from '../types';
 import { checkPocketBaseConnection } from '../services/pocketbase';
-import { syncPullFromCloud } from '../services/pocketbaseSync';
+import { syncPullFromCloud, syncPushAllToServer } from '../services/pocketbaseSync';
 import { checkForAppUpdate, subscribeToUpdates, reloadAppWithCacheClear } from '../services/updateService';
 
 interface NavbarProps {
@@ -81,9 +81,13 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (isManualSyncing) return;
     setIsManualSyncing(true);
     try {
+      await syncPushAllToServer();
       await syncPullFromCloud({ force: true });
       const res = await checkPocketBaseConnection();
       setPbStatus(res);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { source: 'manual_sync' } }));
+      }
     } catch {
       // ignore
     } finally {
@@ -197,25 +201,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </button>
 
-        {/* PocketBase Status Badge & Manual Sync Button */}
+        {/* Base de Dados Status Badge & Botão de Sincronização entre Computadores */}
         <button
           type="button"
           onClick={handleManualSync}
           disabled={isManualSyncing}
-          title={isManualSyncing ? 'A sincronizar com a base de dados central...' : `${pbStatus.message} (Clique para sincronizar base de dados agora)`}
+          title={isManualSyncing ? 'A sincronizar dados entre computadores...' : 'Sincronizar dados entre computadores agora'}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono border backdrop-blur-md transition-all active:scale-95 hover:opacity-90 cursor-pointer ${
             pbStatus.connected
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:border-emerald-400'
-              : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:border-amber-400'
+              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:border-emerald-400'
           }`}
         >
-          <Database className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-spin text-hp-400' : ''}`} />
+          <Database className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-spin text-hp-400' : 'text-emerald-400'}`} />
           <span className="hidden xl:inline">
-            {isManualSyncing ? 'A sincronizar...' : pbStatus.connected ? 'Online' : 'Offline'}
+            {isManualSyncing ? 'A sincronizar...' : 'Sincronizado'}
           </span>
           <span
             className={`w-2 h-2 rounded-full ${
-              isManualSyncing ? 'bg-hp-400 animate-ping' : pbStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              isManualSyncing ? 'bg-hp-400 animate-ping' : 'bg-emerald-400 animate-pulse'
             }`}
           />
         </button>

@@ -371,14 +371,21 @@ export default function App() {
   };
 
   const handleSaveVisita = (visita: VisitaCliente) => {
+    const nowIso = new Date().toISOString();
+    const visitaWithTimestamp: VisitaCliente = {
+      ...visita,
+      atualizadoEm: nowIso,
+      updatedAt: nowIso,
+      criadoEm: (visita as any).criadoEm || nowIso
+    };
     const existing = db.get<VisitaCliente>(STORAGE_KEYS.VISITAS);
-    const index = existing.findIndex(v => v.id === visita.id);
+    const index = existing.findIndex(v => v.id === visita.id || (v.numero && v.numero === visita.numero));
     let updated: VisitaCliente[];
     if (index >= 0) {
       updated = [...existing];
-      updated[index] = visita;
+      updated[index] = { ...existing[index], ...visitaWithTimestamp };
     } else {
-      updated = [visita, ...existing];
+      updated = [visitaWithTimestamp, ...existing];
     }
     db.save(STORAGE_KEYS.VISITAS, updated);
     setVisitas(updated);
@@ -428,13 +435,13 @@ export default function App() {
     db.initSeed();
     loadAllData();
 
-    // 1. Initial Pull from PocketBase Cloud & Push to Server Storage
-    syncPullFromCloud().then(() => {
-      loadAllData();
-      syncPushAllToServer().catch(() => {});
-    }).catch(() => {
-      syncPushAllToServer().catch(() => {});
-    });
+    // 1. Initial Bidirectional Sync (Push local changes first to preserve them, then pull complete server state)
+    syncPushAllToServer()
+      .then(() => syncPullFromCloud())
+      .then(() => loadAllData())
+      .catch(() => {
+        syncPullFromCloud().then(() => loadAllData()).catch(() => {});
+      });
 
     // 2. Realtime SSE Subscription from PocketBase
     const unsubscribeRealtime = subscribeToRealtimeSync();

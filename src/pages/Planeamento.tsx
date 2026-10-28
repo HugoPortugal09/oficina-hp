@@ -508,6 +508,7 @@ interface BatchScheduleAlert {
       if (matched) targetEmpresaId = matched.id;
     }
 
+    const nowIso = new Date().toISOString();
     const savedVisita: VisitaCliente = {
       id: editingVisita?.id || db.generateId('vis'),
       numero: editingVisita?.numero || db.generateSequenceNumber(STORAGE_KEYS.VISITAS, 'VIS'),
@@ -524,7 +525,10 @@ interface BatchScheduleAlert {
       status: visitaForm.status || 'Agendada',
       notas: visitaForm.notas,
       folhaServicoId: visitaForm.folhaServicoId,
-      dataCriacao: editingVisita?.dataCriacao || formatDateISO(new Date())
+      dataCriacao: editingVisita?.dataCriacao || formatDateISO(new Date()),
+      criadoEm: (editingVisita as any)?.criadoEm || nowIso,
+      atualizadoEm: nowIso,
+      updatedAt: nowIso
     };
 
     onSaveVisita(savedVisita);
