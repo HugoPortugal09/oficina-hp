@@ -127,33 +127,53 @@ export async function uploadFolhaPhotos(
   // 1. Gravar de imediato localmente no IndexedDB (nunca se perde)
   await savePhotosToIndexedDB(folhaId, photos, folhaNumero);
 
-  // 2. Enviar diretamente para o PocketBase na coleção 'app_data'
   const recordKey = `folha_photos_${folhaId}`;
   const nowIso = new Date().toISOString();
+  const payloadData: FolhaPhotosRecord = {
+    folhaId,
+    folhaNumero,
+    photos,
+    updatedAt: nowIso
+  };
 
+  // 2. Enviar para o Servidor Central Node.js (autoritativo)
+  let serverSaved = false;
+  try {
+    if (typeof fetch !== 'undefined') {
+      const res1 = await fetch(`/api/data/${encodeURIComponent(recordKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: payloadData })
+      });
+      if (res1.ok) serverSaved = true;
+
+      if (folhaNumero) {
+        const numKey = `folha_photos_num_${folhaNumero}`;
+        await fetch(`/api/data/${encodeURIComponent(numKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: payloadData })
+        });
+      }
+    }
+  } catch (srvErr) {
+    console.warn('[PhotoService] Aviso ao gravar fotos no servidor central:', srvErr);
+  }
+
+  // 3. Enviar para o PocketBase na coleção 'app_data' (backup secundário)
   try {
     const pb = getPocketBase();
 
     let existingRecord: any = null;
     try {
       existingRecord = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="${recordKey}"`);
-    } catch {
-      // 404 - ainda não existe
-    }
+    } catch {}
 
-    // Se tiver folhaNumero, verificar se existe por folhaNumero caso ID seja recente
     if (!existingRecord && folhaNumero) {
       try {
         existingRecord = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="folha_photos_num_${folhaNumero}"`);
       } catch {}
     }
-
-    const payloadData: FolhaPhotosRecord = {
-      folhaId,
-      folhaNumero,
-      photos,
-      updatedAt: nowIso
-    };
 
     if (existingRecord) {
       await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
@@ -168,7 +188,6 @@ export async function uploadFolhaPhotos(
       });
     }
 
-    // Se tiver número, criar ou atualizar também o backup por número para redundância total
     if (folhaNumero) {
       try {
         const numKey = `folha_photos_num_${folhaNumero}`;
@@ -189,15 +208,14 @@ export async function uploadFolhaPhotos(
             timestamp: nowIso
           });
         }
-      } catch (errBackup) {
-        console.warn('[PhotoService] Aviso no backup por número:', errBackup);
-      }
+      } catch {}
     }
 
-    console.log(`[PhotoService] ✓ ${photos.length} fotografias sincronizadas com sucesso para a folha ${folhaNumero || folhaId}`);
     return { success: true, count: photos.length };
   } catch (err: any) {
-    console.error('[PhotoService] Erro ao sincronizar fotos com a Cloud PocketBase:', err);
+    if (serverSaved) {
+      return { success: true, count: photos.length };
+    }
     return {
       success: false,
       count: photos.length,
@@ -208,8 +226,9 @@ export async function uploadFolhaPhotos(
 
 /**
  * Procura fotografias de uma folha:
- * 1. Primeiro no IndexedDB local
- * 2. Em simultâneo ou fallback, pesquisa no PocketBase Cloud
+ * 1. Primeiro no Servidor Central Node.js (/api/data/folha_photos_...)
+ * 2. No IndexedDB local
+ * 3. Em simultâneo ou fallback, pesquisa no PocketBase Cloud
  */
 export async function fetchFolhaPhotos(folhaId: string, folhaNumero?: string): Promise<string[]> {
   if (!folhaId && !folhaNumero) return [];
@@ -220,7 +239,32 @@ export async function fetchFolhaPhotos(folhaId: string, folhaNumero?: string): P
     localPhotos = await getPhotosFromIndexedDB(folhaId);
   }
 
-  // 2. Consultar o PocketBase Cloud
+  // 2. Consultar Servidor Central Node.js
+  try {
+    if (typeof fetch !== 'undefined') {
+      const keysToTry: string[] = [];
+      if (folhaNumero) keysToTry.push(`folha_photos_num_${folhaNumero}`);
+      if (folhaId) keysToTry.push(`folha_photos_${folhaId}`);
+
+      for (const k of keysToTry) {
+        const res = await fetch(`/api/data/${encodeURIComponent(k)}`);
+        if (res.ok) {
+          const json = await res.json();
+          const srvPhotos = json?.data?.photos;
+          if (Array.isArray(srvPhotos) && srvPhotos.length > 0) {
+            if (folhaId) {
+              savePhotosToIndexedDB(folhaId, srvPhotos, folhaNumero).catch(() => {});
+            }
+            return srvPhotos;
+          }
+        }
+      }
+    }
+  } catch (srvErr) {
+    console.warn('[PhotoService] Aviso ao consultar fotos no servidor central:', srvErr);
+  }
+
+  // 3. Consultar o PocketBase Cloud
   try {
     const pb = getPocketBase();
     let cloudRecord: any = null;
@@ -239,17 +283,13 @@ export async function fetchFolhaPhotos(folhaId: string, folhaNumero?: string): P
 
     if (cloudRecord && cloudRecord.data && Array.isArray(cloudRecord.data.photos)) {
       const cloudPhotos: string[] = cloudRecord.data.photos;
-      // Atualizar cache local no IndexedDB
       if (folhaId && cloudPhotos.length > 0) {
         savePhotosToIndexedDB(folhaId, cloudPhotos, folhaNumero).catch(() => {});
       }
       return cloudPhotos;
     }
-  } catch (err) {
-    console.warn('[PhotoService] Não foi possível consultar fotos remotas na Cloud:', err);
-  }
+  } catch {}
 
-  // Se a cloud falhou ou não encontrou, retornar fotos locais se existirem
   return localPhotos || [];
 }
 

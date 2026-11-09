@@ -63,6 +63,46 @@ export function mergeCollectionData(localData: any, remoteData: any): any {
     'eq_002'
   ]);
 
+  const BLACKLISTED_TRUNCATED_PLATES = new Set([
+    'VRWG3SNBCF'
+  ]);
+
+  const isInvalidItem = (item: any): boolean => {
+    if (!item || typeof item !== 'object') return false;
+    if (item.id && BLACKLISTED_IDS.has(item.id)) return true;
+    if (!item.numero && item.matricula && BLACKLISTED_TRUNCATED_PLATES.has(String(item.matricula).trim().toUpperCase())) {
+      return true;
+    }
+    return false;
+  };
+
+  const smartMergeTwoItems = (olderItem: any, newerItem: any): any => {
+    const merged = { ...olderItem, ...newerItem };
+
+    const oldMat = String(olderItem?.matricula || '').trim().toUpperCase();
+    const newMat = String(newerItem?.matricula || '').trim().toUpperCase();
+    if (oldMat.length > newMat.length && newMat.length >= 8 && oldMat.startsWith(newMat)) {
+      merged.matricula = olderItem.matricula;
+      if (olderItem.equipamentoId) merged.equipamentoId = olderItem.equipamentoId;
+      if (olderItem.modelo) merged.modelo = olderItem.modelo;
+      if (olderItem.nSerie) merged.nSerie = olderItem.nSerie;
+    }
+
+    if ((!Array.isArray(merged.servicos) || merged.servicos.length === 0) && Array.isArray(olderItem?.servicos) && olderItem.servicos.length > 0) {
+      merged.servicos = olderItem.servicos;
+    }
+
+    if ((!Array.isArray(merged.fotos) || merged.fotos.length === 0) && Array.isArray(olderItem?.fotos) && olderItem.fotos.length > 0) {
+      merged.fotos = olderItem.fotos;
+    }
+
+    if (!merged.notasCliente && olderItem?.notasCliente) {
+      merged.notasCliente = olderItem.notasCliente;
+    }
+
+    return merged;
+  };
+
   const mergedMap = new Map<string, any>();
 
   const getKey = (item: any, idx: number): string => {
@@ -77,13 +117,13 @@ export function mergeCollectionData(localData: any, remoteData: any): any {
 
   // Add remote items first
   remoteData.forEach((item: any, idx: number) => {
-    if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
+    if (isInvalidItem(item)) return;
     mergedMap.set(getKey(item, idx), item);
   });
 
-  // Merge or add local items (compare accurate timestamps)
+  // Merge or add local items (compare accurate timestamps & data completeness)
   localData.forEach((item: any, idx: number) => {
-    if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
+    if (isInvalidItem(item)) return;
     const key = getKey(item, idx);
     if (mergedMap.has(key)) {
       const remoteItem = mergedMap.get(key);
@@ -91,14 +131,11 @@ export function mergeCollectionData(localData: any, remoteData: any): any {
       const remoteTime = getItemTimestamp(remoteItem);
 
       if (localTime >= remoteTime) {
-        // Local was updated more recently or simultaneously: preserve local with any extra remote fields
-        mergedMap.set(key, { ...remoteItem, ...item });
+        mergedMap.set(key, smartMergeTwoItems(remoteItem, item));
       } else {
-        // Remote is newer: Remote takes precedence
-        mergedMap.set(key, { ...item, ...remoteItem });
+        mergedMap.set(key, smartMergeTwoItems(item, remoteItem));
       }
     } else {
-      // Local-only item (e.g. newly created on this machine)
       mergedMap.set(key, item);
     }
   });

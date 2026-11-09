@@ -55,6 +55,7 @@ import { getShareableFolhaUrl } from '../utils/routeUtils';
 import { sortByDateDesc, formatDate, formatDateToInput, getTodayFormatted, cleanPersonName } from '../utils/dateUtils';
 import { compressImageFile } from '../utils/imageUtils';
 import { uploadFolhaPhotos, fetchFolhaPhotos } from '../services/photoStorageService';
+import { syncPullFromCloud } from '../services/pocketbaseSync';
 import { generateFolhaServicoPDF, generatePropostaPDF, generateFolhasServicoA3PDF, type FolhasServicoA3Row } from '../services/pdfService';
 import { resolvePortugalCoordinates, calculateDistanceKm, OFICINA_HP_BASE } from '../services/portugalGeoService';
 import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
@@ -513,6 +514,17 @@ export const Oficina: React.FC<OficinaProps> = ({
     });
   }
 
+  if (editingFolha.localizacao && !locationOptions.some(o => o.value === editingFolha.localizacao)) {
+    const customOneWay = estimateDistanceKm(editingFolha.localizacao) || 0;
+    const customRoundTrip = editingFolha.distanciaKms || Math.round(customOneWay * 2 * 10) / 10;
+    locationOptions.push({
+      label: `${editingFolha.localizacao} [${customRoundTrip} KM Ida e Volta]`,
+      value: editingFolha.localizacao,
+      type: editingFolha.localizacaoTipo || 'estaleiro',
+      defaultKm: customRoundTrip
+    });
+  }
+
   // Handle clicking outside plate dropdown
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -548,8 +560,8 @@ export const Oficina: React.FC<OficinaProps> = ({
   }, [folhas]);
 
   /**
-   * Abre o modal de edição de folha resolvendo automaticamente dados do equipamento
-   * (mesmo que a folha seja importada ou não tenha equipamentoId associado originalmente)
+   * Abre o modal de edição de folha resolvendo automaticamente dados do equipamento e localização
+   * (mesmo que a folha seja importada ou tenha matrícula truncada)
    */
   const handleOpenFolhaModal = (fs: FolhaServico) => {
     let resolvedEquipId = fs.equipamentoId;
@@ -559,25 +571,45 @@ export const Oficina: React.FC<OficinaProps> = ({
     let resolvedKms = fs.kmsAtuais;
     let resolvedHoras = fs.horasAtuais;
     let resolvedMatricula = (fs.matricula || '').trim();
+    let resolvedLocalizacao = fs.localizacao;
 
-    // Tenta encontrar o equipamento quer por ID, quer por matrícula, quer por número de série
+    // Tenta encontrar o equipamento quer por ID, quer por matrícula completa, número de série ou prefixo VIN (>=8 chars)
     const cleanPlate = resolvedMatricula.toUpperCase();
     const normPlate = cleanPlate.replace(/[^A-Z0-9]/gi, '');
     const match = equipamentos.find(
       e => (resolvedEquipId && e.id === resolvedEquipId) ||
            (cleanPlate && e.matricula && e.matricula.trim().toUpperCase() === cleanPlate) ||
            (normPlate && e.matricula && e.matricula.replace(/[^A-Z0-9]/gi, '') === normPlate) ||
-           (fs.nSerie && e.nSerie && e.nSerie.trim().toUpperCase() === fs.nSerie.trim().toUpperCase())
+           (fs.nSerie && e.nSerie && e.nSerie.trim().toUpperCase() === fs.nSerie.trim().toUpperCase()) ||
+           (normPlate.length >= 8 && e.matricula && e.matricula.replace(/[^A-Z0-9]/gi, '').toUpperCase().startsWith(normPlate)) ||
+           (normPlate.length >= 8 && e.nSerie && e.nSerie.replace(/[^A-Z0-9]/gi, '').toUpperCase().startsWith(normPlate))
     );
 
     if (match) {
       resolvedEquipId = match.id;
-      if (!resolvedMatricula && match.matricula) resolvedMatricula = match.matricula;
+      if (match.matricula && (!resolvedMatricula || match.matricula.length > resolvedMatricula.length)) {
+        resolvedMatricula = match.matricula;
+      }
       if (!resolvedEmpresaId && match.empresaId) resolvedEmpresaId = match.empresaId;
-      if (!resolvedMarca && match.marca) resolvedMarca = match.marca;
-      if (!resolvedModelo && match.modelo) resolvedModelo = match.modelo;
+      if (match.marca) resolvedMarca = match.marca;
+      if (match.modelo) resolvedModelo = match.modelo.trim();
       if (!resolvedKms && match.kmsAtuais) resolvedKms = match.kmsAtuais;
       if (!resolvedHoras && match.horasAtuais) resolvedHoras = match.horasAtuais;
+    }
+
+    // Normalizar localização se corresponder a um estaleiro ou sede da empresa sem o prefixo "Estaleiro " / "Sede: "
+    const companyObj = empresas.find(emp => emp.id === resolvedEmpresaId);
+    if (companyObj && resolvedLocalizacao && !resolvedLocalizacao.startsWith('Estaleiro ') && !resolvedLocalizacao.startsWith('Sede: ') && resolvedLocalizacao !== GRAUMP_LOCATION) {
+      const normLoc = resolvedLocalizacao.toLowerCase().trim();
+      const matchedEst = companyObj.estaleiros?.find(
+        est => (est.morada && (est.morada.toLowerCase().includes(normLoc) || normLoc.includes(est.morada.toLowerCase()))) ||
+               (est.nome && (est.nome.toLowerCase().includes(normLoc) || normLoc.includes(est.nome.toLowerCase())))
+      );
+      if (matchedEst) {
+        resolvedLocalizacao = `Estaleiro ${matchedEst.nome}: ${matchedEst.morada || matchedEst.nome}`;
+      } else if (companyObj.moradaSede && (companyObj.moradaSede.toLowerCase().includes(normLoc) || normLoc.includes(companyObj.moradaSede.toLowerCase()))) {
+        resolvedLocalizacao = `Sede: ${companyObj.moradaSede || companyObj.nome}`;
+      }
     }
 
     setEditingFolha({
@@ -588,10 +620,11 @@ export const Oficina: React.FC<OficinaProps> = ({
       marca: resolvedMarca,
       modelo: resolvedModelo,
       kmsAtuais: resolvedKms,
-      horasAtuais: resolvedHoras
+      horasAtuais: resolvedHoras,
+      localizacao: resolvedLocalizacao
     });
 
-    // Sincronizar fotografias dedicadas da Cloud / IndexedDB em tempo real
+    // Sincronizar fotografias dedicadas do Servidor / Cloud / IndexedDB em tempo real
     fetchFolhaPhotos(fs.id, fs.numero).then(cloudPhotos => {
       if (cloudPhotos && cloudPhotos.length > 0) {
         setEditingFolha(prev => {
@@ -634,13 +667,14 @@ export const Oficina: React.FC<OficinaProps> = ({
     setIsSyncingEmails(true);
     try {
       const res = await checkIncomingEmailsNow();
+      await syncPullFromCloud({ force: true });
+      const updatedFolhas = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || [];
+      setFolhas(updatedFolhas);
       if (res.success) {
         if (res.count && res.count > 0) {
-          alert(`🎉 Sucesso! ${res.count} nova(s) folha(s) de serviço importada(s) do Gmail com estado Concluído.`);
-          const updatedFolhas = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS) || [];
-          setFolhas(updatedFolhas);
+          alert(`🎉 Sucesso! ${res.count} folha(s) de serviço importada(s)/atualizada(s) do Gmail com estado Concluído.`);
         } else {
-          alert(res.message || '📬 Caixa de entrada verificada: nenhuma nova folha por processar.');
+          alert(res.message || '📬 Caixa de entrada verificada e dados sincronizados com sucesso.');
         }
       } else {
         alert(`Aviso: ${res.error || 'Não foi possível verificar os emails.'}`);

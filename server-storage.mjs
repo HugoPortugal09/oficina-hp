@@ -60,6 +60,50 @@ const BLACKLISTED_IDS = new Set([
   'eq_002'
 ]);
 
+const BLACKLISTED_TRUNCATED_PLATES = new Set([
+  'VRWG3SNBCF'
+]);
+
+function isInvalidItem(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.id && BLACKLISTED_IDS.has(item.id)) return true;
+  if (!item.numero && item.matricula && BLACKLISTED_TRUNCATED_PLATES.has(String(item.matricula).trim().toUpperCase())) {
+    return true;
+  }
+  return false;
+}
+
+function smartMergeTwoItems(olderItem, newerItem) {
+  const merged = { ...olderItem, ...newerItem };
+
+  // Nunca permitir que uma matrícula truncada (ex: VRWG3SNBCF) substitua a matrícula completa (ex: VRWG3SNBCF0000339)
+  const oldMat = String(olderItem?.matricula || '').trim().toUpperCase();
+  const newMat = String(newerItem?.matricula || '').trim().toUpperCase();
+  if (oldMat.length > newMat.length && newMat.length >= 8 && oldMat.startsWith(newMat)) {
+    merged.matricula = olderItem.matricula;
+    if (olderItem.equipamentoId) merged.equipamentoId = olderItem.equipamentoId;
+    if (olderItem.modelo) merged.modelo = olderItem.modelo;
+    if (olderItem.nSerie) merged.nSerie = olderItem.nSerie;
+  }
+
+  // Preservar serviços se uma das versões tiver serviços e a outra estiver vazia
+  if ((!Array.isArray(merged.servicos) || merged.servicos.length === 0) && Array.isArray(olderItem?.servicos) && olderItem.servicos.length > 0) {
+    merged.servicos = olderItem.servicos;
+  }
+
+  // Preservar fotos se uma das versões tiver fotos e a outra estiver vazia
+  if ((!Array.isArray(merged.fotos) || merged.fotos.length === 0) && Array.isArray(olderItem?.fotos) && olderItem.fotos.length > 0) {
+    merged.fotos = olderItem.fotos;
+  }
+
+  // Preservar notasCliente se uma das versões tiver notas e a outra estiver vazia
+  if (!merged.notasCliente && olderItem?.notasCliente) {
+    merged.notasCliente = olderItem.notasCliente;
+  }
+
+  return merged;
+}
+
 function getKey(item, idx) {
   if (item && typeof item === 'object') {
     if (item.numero && String(item.numero).trim()) return `num:${String(item.numero).trim().toUpperCase()}`;
@@ -85,13 +129,13 @@ export function mergeCollection(currentData, incomingData) {
 
   // 1. Inserir dados existentes no servidor
   currentData.forEach((item, idx) => {
-    if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
+    if (isInvalidItem(item)) return;
     mergedMap.set(getKey(item, idx), item);
   });
 
-  // 2. Fundir dados recebidos (comparar carimbos temporais com precisão)
+  // 2. Fundir dados recebidos (comparar carimbos temporais e completude dos dados)
   incomingData.forEach((item, idx) => {
-    if (item && item.id && BLACKLISTED_IDS.has(item.id)) return;
+    if (isInvalidItem(item)) return;
     const key = getKey(item, idx);
     if (mergedMap.has(key)) {
       const existingItem = mergedMap.get(key);
@@ -99,9 +143,9 @@ export function mergeCollection(currentData, incomingData) {
       const existingTime = getItemTimestamp(existingItem);
 
       if (incomingTime >= existingTime) {
-        mergedMap.set(key, { ...existingItem, ...item });
+        mergedMap.set(key, smartMergeTwoItems(existingItem, item));
       } else {
-        mergedMap.set(key, { ...item, ...existingItem });
+        mergedMap.set(key, smartMergeTwoItems(item, existingItem));
       }
     } else {
       mergedMap.set(key, item);
@@ -133,8 +177,13 @@ export function setServerData(key, data) {
 }
 
 /**
- * Retorna todas as chaves guardadas
+ * Retorna todas as coleções principais (excluindo chaves dedicadas de fotos pesadas que são servidas via /api/data/:key)
  */
 export function getAllServerData() {
-  return memoryStore;
+  const result = {};
+  for (const [k, v] of Object.entries(memoryStore)) {
+    if (k.startsWith('folha_photos_')) continue;
+    result[k] = v;
+  }
+  return result;
 }
