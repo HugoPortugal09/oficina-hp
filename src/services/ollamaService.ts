@@ -438,7 +438,7 @@ Responde EXCLUSIVAMENTE em formato JSON:
   return analyzeInternalNotesHeuristic(notasInternas, context);
 }
 
-function analyzeInternalNotesHeuristic(
+export function analyzeInternalNotesHeuristic(
   text: string,
   context?: {
     numeroFolha?: string;
@@ -447,6 +447,9 @@ function analyzeInternalNotesHeuristic(
     clienteNome?: string;
   }
 ): TaskSuggestionFromNotes {
+  if (!text || text.trim().length < 4 || /^Importada automaticamente via email/i.test(text.trim())) {
+    return { hasActionableTask: false };
+  }
   const lower = text.toLowerCase();
   const fsInfo = context?.numeroFolha ? `[FS ${context.numeroFolha}${context.matricula ? ` - ${context.matricula}` : ''}]` : '';
 
@@ -496,8 +499,30 @@ function analyzeInternalNotesHeuristic(
     };
   }
 
+  // 1.5. Need for new parts, repairs or damaged components (e.g. "Viatura necessita de bomba de travões nova...")
+  if (
+    lower.includes('necessita') || lower.includes('necessário') || lower.includes('necessario') ||
+    lower.includes('reparação') || lower.includes('reparacao') || lower.includes('danificada') ||
+    lower.includes('danificado') || lower.includes('arrancadas') || lower.includes('arrancado') ||
+    lower.includes('substituição') || lower.includes('substituicao') || lower.includes('sem travões') ||
+    lower.includes('sem travoes') || lower.includes('bomba de travões') || lower.includes('bomba de travoes')
+  ) {
+    const isUrg = lower.includes('urgente') || lower.includes('travões') || lower.includes('travoes') || lower.includes('imobilizad');
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `${text.trim()} ${fsInfo}`.trim(),
+        prioridade: isUrg ? 'Alta' : 'Normal',
+        responsavel: responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: `Gerado automaticamente a partir das Notas Internas:\n"${text}"${followUpNote}`
+      },
+      razao: 'Detetada necessidade de reparação ou substituição de peças nas notas internas.'
+    };
+  }
+
   // 2. Budget / Quote patterns
-  if (lower.includes('orçamento') || lower.includes('orcamento') || lower.includes('proposta') || lower.includes('cotacao') || lower.includes('cotação')) {
+  if (lower.includes('orçamento') || lower.includes('orcamento') || lower.includes('orçamentar') || lower.includes('orcamentar') || lower.includes('proposta') || lower.includes('cotacao') || lower.includes('cotação')) {
     const isUrg = lower.includes('urgente') || lower.includes('rapido') || lower.includes('hoje');
     return {
       hasActionableTask: true,

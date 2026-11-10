@@ -259,9 +259,13 @@ export function parseServiceSheetText(rawText, filename = '', emailBodyText = ''
   }
 
   let notasPdf = '';
-  const notasMatch = cleanText.match(
-    /\n\s*NOTAS\s*\n+([\s\S]*?)(?=\n\s*(?:PE[ÇC]AS|REGISTO\s+FOTOGR[ÁA]FICO|Servi[çc]o\s+realizado|HPerformance)|$)/i
-  );
+  const notasMatch =
+    cleanText.match(
+      /\n\s*NOTAS(?:\s+PARA\s+O\s+CLIENTE|\s+T[ÉE]CNICAS)?\s*:?\s*\n+([\s\S]*?)(?=\n\s*(?:NOTAS\s+INTERNAS|PE[ÇC]AS|REGISTO\s+FOTOGR[ÁA]FICO|Servi[çc]o\s+realizado|HPerformance)|$)/i
+    ) ||
+    cleanEmailBody.match(
+      /\n\s*NOTAS(?:\s+PARA\s+O\s+CLIENTE|\s+T[ÉE]CNICAS)?\s*:?\s*\n+([\s\S]*?)(?=\n\s*(?:NOTAS\s+INTERNAS|SERVI[ÇC]OS|PE[ÇC]AS|O\s+PDF\s+com\s+todos|Cumprimentos|HPerformance)|$)/i
+    );
   if (notasMatch) {
     notasPdf = notasMatch[1]
       .replace(/--\s*\d+\s*of\s*\d+\s*--/gi, '')
@@ -270,6 +274,28 @@ export function parseServiceSheetText(rawText, filename = '', emailBodyText = ''
       .replace(/\s+/g, ' ')
       .trim();
   }
+
+  let notasInternasPdf = '';
+  const notasInternasMatch =
+    cleanText.match(
+      /\n\s*NOTAS\s+INTERNAS\s*:?\s*\n+([\s\S]*?)(?=\n\s*(?:NOTAS|PE[ÇC]AS|REGISTO\s+FOTOGR[ÁA]FICO|Servi[çc]o\s+realizado|HPerformance)|$)/i
+    ) ||
+    cleanEmailBody.match(
+      /NOTAS\s+INTERNAS\s*:?\s*\n*([\s\S]*?)(?=\n\s*(?:NOTAS|SERVI[ÇC]OS|PE[ÇC]AS|O\s+PDF\s+com\s+todos|Cumprimentos|HPerformance)|$)/i
+    );
+  if (notasInternasMatch) {
+    notasInternasPdf = notasInternasMatch[1]
+      .replace(/--\s*\d+\s*of\s*\d+\s*--/gi, '')
+      .replace(/HPerformance[^\n]*/gi, '')
+      .replace(/\n+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const notasInternasFinal =
+    notasInternasPdf && notasPdf && notasInternasPdf.toLowerCase() !== notasPdf.toLowerCase()
+      ? `${notasInternasPdf}\n${notasPdf}`
+      : (notasInternasPdf || notasPdf || '');
 
   if (notasPdf && anomalias && !anomalias.toLowerCase().includes(notasPdf.toLowerCase())) {
     anomalias = `${anomalias}\nNotas Técnicas: ${notasPdf}`;
@@ -433,11 +459,240 @@ export function parseServiceSheetText(rawText, filename = '', emailBodyText = ''
     horas,
     anomalias,
     notasCliente: notasPdf || '',
+    notasInternas: notasInternasFinal || '',
     servicos,
     pecas,
     tecnico,
     status: 'Concluído'
   };
+}
+
+/**
+ * Gera o próximo número sequencial de Tarefa (ex: TAR26001)
+ */
+function generateNextTaskNumber(tarefas = []) {
+  const currentYear = new Date().getFullYear().toString().slice(-2);
+  let maxSeq = 0;
+  const reg = new RegExp(`^TAR(?:${currentYear}|20${currentYear}-?)(\\d+)$`);
+  for (const it of (Array.isArray(tarefas) ? tarefas : [])) {
+    const num = it && it.numero ? String(it.numero).trim() : '';
+    const m = num.match(reg);
+    if (m) {
+      const val = parseInt(m[1], 10);
+      if (!isNaN(val) && val > maxSeq) maxSeq = val;
+    }
+  }
+  const next = Math.max(maxSeq, Array.isArray(tarefas) ? tarefas.length : 0) + 1;
+  return `TAR${currentYear}${next.toString().padStart(3, '0')}`;
+}
+
+/**
+ * Interpreta Notas Internas / Notas Técnicas e avalia se correspondem a uma Tarefa pendente
+ */
+export function interpretNotesAsTask(text, context = {}) {
+  if (!text || typeof text !== 'string') return { hasActionableTask: false };
+  const clean = text.trim();
+  if (!clean || clean.length < 4 || /^Importada automaticamente via email/i.test(clean)) {
+    return { hasActionableTask: false };
+  }
+
+  const lower = clean.toLowerCase();
+  const fsInfo = context.numeroFolha
+    ? `[FS ${context.numeroFolha}${context.matricula ? ` - ${context.matricula}` : ''}]`
+    : '';
+
+  const quoteMatch = clean.match(/["']([^"']{5,})["']/);
+  const quotedContent = quoteMatch ? quoteMatch[1].trim() : '';
+
+  let limitDays = 2;
+  if (lower.includes('hoje')) limitDays = 0;
+  else if (lower.includes('amanhã') || lower.includes('amanha') || lower.includes('urgente') || lower.includes('imediato')) limitDays = 1;
+  else if (lower.includes('semana')) limitDays = 7;
+  const limitDate = new Date(Date.now() + limitDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  let responsavel = 'Hugo Portugal';
+  if (lower.includes('gil')) responsavel = 'Gil';
+
+  let followUpNote = '';
+  if (lower.includes('email') || lower.includes('perguntar se foi feito') || lower.includes('não tenha sido') || lower.includes('nao tenha sido')) {
+    followUpNote = '\n\n📧 Acompanhamento: Solicitado envio de email a verificar conclusão caso a tarefa permaneça pendente.';
+  }
+
+  const empInfo = context.nomeEmpresa ? ` (${context.nomeEmpresa})` : '';
+  const baseNotasAdicionais = `Gerada automaticamente a partir das Notas Internas da Folha ${context.numeroFolha || ''}${context.matricula ? ` - ${context.matricula}` : ''}${empInfo}:\n"${clean}"${followUpNote}`;
+
+  // 1. Pedido explícito de criação de tarefa
+  if (
+    lower.includes('cria tarefa') || lower.includes('cries uma tarefa') ||
+    lower.includes('criar tarefa') || lower.includes('criar uma tarefa') ||
+    lower.includes('nova tarefa') || lower.includes('gerar tarefa') ||
+    lower.includes('lembrete') || lower.includes('lembrar')
+  ) {
+    const rawAction = quotedContent || clean.replace(/Quero que cries uma tarefa.*?[.:]/i, '').trim();
+    const cleanDesc = rawAction.length > 5 ? rawAction : `Acompanhar assunto da FS ${context.numeroFolha || ''}`;
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `${cleanDesc} ${fsInfo}`.trim(),
+        prioridade: lower.includes('urgente') ? 'Urgente' : 'Normal',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  // 2. Necessidade de peças, reparação pendente ou componentes danificados / arrancados (ex: "Viatura necessita de bomba de travões nova...")
+  if (
+    lower.includes('necessita') || lower.includes('necessário') || lower.includes('necessario') ||
+    lower.includes('reparação') || lower.includes('reparacao') || lower.includes('danificada') ||
+    lower.includes('danificado') || lower.includes('arrancadas') || lower.includes('arrancado') ||
+    lower.includes('substituição') || lower.includes('substituicao') || lower.includes('sem travões') ||
+    lower.includes('sem travoes') || lower.includes('bomba de travões') || lower.includes('bomba de travoes')
+  ) {
+    const isUrg = lower.includes('urgente') || lower.includes('travões') || lower.includes('travoes') || lower.includes('imobilizad');
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `${clean} ${fsInfo}`.trim(),
+        prioridade: isUrg ? 'Alta' : 'Normal',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  // 3. Orçamentos / Propostas
+  if (lower.includes('orçamento') || lower.includes('orcamento') || lower.includes('orçamentar') || lower.includes('orcamentar') || lower.includes('proposta') || lower.includes('cotacao') || lower.includes('cotação')) {
+    const isUrg = lower.includes('urgente') || lower.includes('rapido') || lower.includes('hoje');
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `Elaborar e enviar orçamento: ${clean} ${fsInfo}`.trim(),
+        prioridade: isUrg ? 'Urgente' : 'Alta',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  // 4. Encomenda / Pedido de Peças
+  if (lower.includes('encomendar') || lower.includes('pedir peca') || lower.includes('pedir peça') || lower.includes('comprar') || lower.includes('falta peça') || lower.includes('falta peca') || lower.includes('em falta')) {
+    const isUrg = lower.includes('urgente') || lower.includes('imediato');
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `Encomendar peças/material: ${clean} ${fsInfo}`.trim(),
+        prioridade: isUrg ? 'Urgente' : 'Alta',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  // 5. Envio / Expedição de Peças
+  if (lower.includes('enviar peça') || lower.includes('enviar peca') || lower.includes('enviar material') || lower.includes('despachar') || lower.includes('levar')) {
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `Enviar/Expedir peças: ${clean} ${fsInfo}`.trim(),
+        prioridade: 'Urgente',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  // 6. Contacto / Comunicação
+  if (lower.includes('ligar') || lower.includes('contactar') || lower.includes('contacto') || lower.includes('telefonar') || lower.includes('avisar cliente')) {
+    const cleanDesc = quotedContent || clean;
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `${cleanDesc} ${fsInfo}`.trim(),
+        prioridade: 'Alta',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  // 7. Agendamento / Intervenção / Reparação / Verificação / Ação Geral
+  if (
+    lower.includes('agendar') || lower.includes('marcar') || lower.includes('ir ao estaleiro') ||
+    lower.includes('deslocacao') || lower.includes('deslocação') || lower.includes('verificar') ||
+    lower.includes('testar') || lower.includes('reparar') || lower.includes('substituir') ||
+    lower.includes('trocar') || lower.includes('precisa') || lower.includes('tem de') ||
+    lower.includes('tem que') || lower.includes('fazer') || lower.includes('pendente')
+  ) {
+    return {
+      hasActionableTask: true,
+      tarefa: {
+        descricao: `${clean} ${fsInfo}`.trim(),
+        prioridade: 'Normal',
+        responsavel,
+        dataLimite: limitDate,
+        notasAdicionais: baseNotasAdicionais
+      }
+    };
+  }
+
+  return { hasActionableTask: false };
+}
+
+/**
+ * Cria automaticamente a Tarefa na lista `tarefas` se as notas forem interpretadas como tarefa e ainda não existir tarefa para essa folha
+ */
+function ensureTaskFromNotes(tarefas, notasText, context = {}) {
+  if (!Array.isArray(tarefas)) return false;
+  const interpretation = interpretNotesAsTask(notasText, context);
+  if (!interpretation.hasActionableTask || !interpretation.tarefa) return false;
+
+  const numUpper = (context.numeroFolha || '').trim().toUpperCase();
+  const cleanNote = (notasText || '').trim().toLowerCase();
+
+  const alreadyExists = tarefas.some(t => {
+    const descUpper = (t.descricao || '').toUpperCase();
+    const notesUpper = (t.notasAdicionais || '').toUpperCase();
+    if (numUpper && (descUpper.includes(numUpper) || notesUpper.includes(numUpper))) {
+      return true;
+    }
+    if (cleanNote && (t.descricao || '').toLowerCase().includes(cleanNote)) {
+      return true;
+    }
+    return false;
+  });
+
+  if (alreadyExists) return false;
+
+  const nextNum = generateNextTaskNumber(tarefas);
+  const tecRaw = (context.tecnico || '').trim();
+  const criadoPorIniciais = tecRaw && tecRaw.length <= 4 ? tecRaw.toUpperCase() : 'HP';
+  const criadoPorNome = tecRaw || 'Hugo Portugal';
+
+  const novaTarefa = {
+    id: `tar_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+    numero: nextNum,
+    descricao: interpretation.tarefa.descricao,
+    prioridade: interpretation.tarefa.prioridade,
+    responsavel: interpretation.tarefa.responsavel || 'Hugo Portugal',
+    dataLimite: interpretation.tarefa.dataLimite,
+    notasAdicionais: interpretation.tarefa.notasAdicionais,
+    status: 'Pendente',
+    criadoPorIniciais,
+    criadoPorNome,
+    dataCriacao: context.dataFolha || new Date().toISOString().split('T')[0],
+    atualizadoEm: new Date().toISOString()
+  };
+
+  tarefas.unshift(novaTarefa);
+  console.log(`[EmailImporter] ✅ Tarefa ${novaTarefa.numero} criada automaticamente a partir das Notas Internas da FS ${context.numeroFolha || ''}: "${novaTarefa.descricao}"`);
+  return novaTarefa;
 }
 
 /**
@@ -558,10 +813,12 @@ export async function repairAt26143AndBrokenImports() {
     let empresas = await getAppData(pb, 'oficina_hp_empresas', []);
     let equipamentos = await getAppData(pb, 'oficina_hp_equipamentos', []);
     let folhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
+    let tarefas = await getAppData(pb, 'oficina_hp_tarefas', []);
 
     if (!Array.isArray(folhas)) folhas = [];
     if (!Array.isArray(equipamentos)) equipamentos = [];
     if (!Array.isArray(empresas)) empresas = [];
+    if (!Array.isArray(tarefas)) tarefas = [];
 
     // 1. Remover equipamento duplicado truncado "VRWG3SNBCF"
     const cleanEquipamentos = equipamentos.filter(
@@ -580,6 +837,7 @@ export async function repairAt26143AndBrokenImports() {
     const nowIso = new Date().toISOString();
     const existingIdx = folhas.findIndex(f => (f.numero || '').toUpperCase() === 'AT26143');
     const folhaId = existingIdx >= 0 ? folhas[existingIdx].id : 'fs_at26143';
+    const at26143Notas = 'Viatura necessita de bomba de travões nova, a mesma está danificada, reparação da traseira, dobradiças do taipal que foram arrancadas.';
 
     const repairedAt26143 = {
       ...(existingIdx >= 0 ? folhas[existingIdx] : {}),
@@ -603,9 +861,9 @@ export async function repairAt26143AndBrokenImports() {
       localizacao: 'Estaleiro Benfica Campus: Q.ta da Trindade, 2840-600 Seixal',
       localizacaoTipo: 'estaleiro',
       distanciaKms: existingIdx >= 0 && folhas[existingIdx].distanciaKms ? folhas[existingIdx].distanciaKms : 510,
-      anomalias: 'Verificação de anomalia, sem travões e dobradiças traseiras arrancadas.\nNotas Técnicas: Viatura necessita de bomba de travões nova, a mesma está danificada, reparação da traseira, dobradiças do taipal que foram arrancadas.',
-      notasCliente: 'Viatura necessita de bomba de travões nova, a mesma está danificada, reparação da traseira, dobradiças do taipal que foram arrancadas.',
-      notasInternas: 'Importada automaticamente via email (hugoportugal@gmail.com). Técnico: SF. Local de Assistência: Q.ta da Trindade, 2840-600 Seixal.',
+      anomalias: `Verificação de anomalia, sem travões e dobradiças traseiras arrancadas.\nNotas Técnicas: ${at26143Notas}`,
+      notasCliente: at26143Notas,
+      notasInternas: at26143Notas,
       servicos: [
         {
           id: 'srv_at26143_1',
@@ -632,8 +890,32 @@ export async function repairAt26143AndBrokenImports() {
       folhas.unshift(repairedAt26143);
     }
 
+    // 3. Limpar texto genérico "Importada automaticamente via email..." noutras folhas importadas e transferir notas reais para notasInternas
+    let tasksChanged = false;
+    for (const f of folhas) {
+      if (f.notasInternas && /^Importada automaticamente via email/i.test(f.notasInternas.trim())) {
+        f.notasInternas = f.notasCliente ? f.notasCliente.trim() : '';
+        f.atualizadoEm = nowIso;
+        f.updatedAt = nowIso;
+      }
+      if (f.notasInternas && f.notasInternas.trim().length > 4) {
+        const emp = empresas.find(e => e.id === f.empresaId);
+        const created = ensureTaskFromNotes(tarefas, f.notasInternas, {
+          numeroFolha: f.numero,
+          matricula: f.matricula,
+          nomeEmpresa: emp?.nome || '',
+          tecnico: f.tecnicoPlaneado || f.servicos?.[0]?.tecnico || 'HP',
+          dataFolha: f.data
+        });
+        if (created) tasksChanged = true;
+      }
+    }
+
     await setAppData(pb, 'oficina_hp_equipamentos', cleanEquipamentos);
     await setAppData(pb, 'oficina_hp_folhas_servico', folhas);
+    if (tasksChanged) {
+      await setAppData(pb, 'oficina_hp_tarefas', tarefas);
+    }
 
     // Guardar fotos dedicadas por ID e por Número para carregamento rápido em todos os PCs
     const photoPayload = {
@@ -709,7 +991,10 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
         e => (e.matricula || '').trim().toUpperCase() !== 'VRWG3SNBCF'
       );
       let folhas = await getAppData(pb, 'oficina_hp_folhas_servico', []);
+      let tarefas = await getAppData(pb, 'oficina_hp_tarefas', []);
       let logs = await getAppData(pb, 'oficina_hp_email_import_logs', []);
+      if (!Array.isArray(tarefas)) tarefas = [];
+      let tasksCreatedCount = 0;
 
       const { PDFParse } = await import('pdf-parse');
 
@@ -894,7 +1179,12 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
               fotos: allPhotos.length > 0 ? allPhotos : (existingIdx >= 0 ? (folhas[existingIdx].fotos || []) : []),
               fotosCliente: existingIdx >= 0 ? (folhas[existingIdx].fotosCliente || []) : [],
               notasCliente: parsed.notasCliente || (existingIdx >= 0 ? (folhas[existingIdx].notasCliente || '') : ''),
-              notasInternas: `Importada automaticamente via email (${fromAddress}) a partir do programa antigo. Técnico: ${parsed.tecnico || 'N/A'}.${parsed.localAssistencia ? ` Local: ${parsed.localAssistencia}.` : ''}`,
+              notasInternas:
+                parsed.notasInternas ||
+                parsed.notasCliente ||
+                (existingIdx >= 0 && folhas[existingIdx].notasInternas && !/^Importada automaticamente via email/i.test(folhas[existingIdx].notasInternas)
+                  ? folhas[existingIdx].notasInternas
+                  : ''),
               previsaoRevisaoKms: (parsed.kms || 0) + 5000,
               previsaoRevisaoHoras: (parsed.horas || 0) + 250,
               tecnicoPlaneado: parsed.tecnico || undefined,
@@ -911,6 +1201,18 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
             } else {
               folhas.unshift(folhaData);
               console.log(`[EmailImporter] 📄 Nova Folha de Serviço criada: ${parsed.numero} (${parsed.matricula} - ${emp.nome} | ${parsed.servicos.length} serviços | ${folhaData.fotos.length} fotos)`);
+            }
+
+            // Se tiver notas internas e forem interpretadas como tarefa, criar a tarefa automaticamente
+            if (folhaData.notasInternas && folhaData.notasInternas.trim().length > 4 && !dryRun) {
+              const createdTask = ensureTaskFromNotes(tarefas, folhaData.notasInternas, {
+                numeroFolha: folhaData.numero,
+                matricula: folhaData.matricula,
+                nomeEmpresa: emp.nome,
+                tecnico: parsed.tecnico || 'HP',
+                dataFolha: folhaData.data
+              });
+              if (createdTask) tasksCreatedCount++;
             }
 
             // Gravar fotografias extraídas nos registos dedicados de fotos da folha
@@ -933,6 +1235,7 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
               servicosCount: parsed.servicos.length,
               pecasCount: parsed.pecas.length,
               fotosCount: folhaData.fotos.length,
+              notasInternas: folhaData.notasInternas,
               subject
             });
 
@@ -956,12 +1259,13 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
         }
       }
 
-      if (importedSheets.length > 0 && !dryRun) {
+      if ((importedSheets.length > 0 || tasksCreatedCount > 0) && !dryRun) {
         await setAppData(pb, 'oficina_hp_folhas_servico', folhas);
         await setAppData(pb, 'oficina_hp_equipamentos', equipamentos);
         await setAppData(pb, 'oficina_hp_empresas', empresas);
+        await setAppData(pb, 'oficina_hp_tarefas', tarefas);
         await setAppData(pb, 'oficina_hp_email_import_logs', logs.slice(0, 100));
-        console.log(`[EmailImporter] ✅ Sincronização concluída com sucesso! ${importedSheets.length} folhas gravadas.`);
+        console.log(`[EmailImporter] ✅ Sincronização concluída com sucesso! ${importedSheets.length} folhas gravadas, ${tasksCreatedCount} tarefas geradas.`);
       }
 
       return {

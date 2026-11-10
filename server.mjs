@@ -199,6 +199,7 @@ const server = http.createServer(async (req, res) => {
       broadcastSync('oficina_hp_folhas_servico');
       broadcastSync('oficina_hp_equipamentos');
       broadcastSync('oficina_hp_empresas');
+      broadcastSync('oficina_hp_tarefas');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
     } catch (err) {

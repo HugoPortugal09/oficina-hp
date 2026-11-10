@@ -58,7 +58,7 @@ import { uploadFolhaPhotos, fetchFolhaPhotos } from '../services/photoStorageSer
 import { syncPullFromCloud } from '../services/pocketbaseSync';
 import { generateFolhaServicoPDF, generatePropostaPDF, generateFolhasServicoA3PDF, type FolhasServicoA3Row } from '../services/pdfService';
 import { resolvePortugalCoordinates, calculateDistanceKm, OFICINA_HP_BASE } from '../services/portugalGeoService';
-import { analyzeInternalNotesWithOllama, type TaskSuggestionFromNotes } from '../services/ollamaService';
+import { analyzeInternalNotesWithOllama, analyzeInternalNotesHeuristic, type TaskSuggestionFromNotes } from '../services/ollamaService';
 import { sendTaskNotificationEmail, sendEntregaFormacaoEmail, sendFolhaServicoEmail, checkIncomingEmailsNow } from '../services/emailService';
 import { estimateDistanceKm } from '../services/distanceService';
 import { getTipoStyles, getStatusBadgeVariant, getStatusLabel, getFaturacaoBadgeVariant } from '../utils/statusColors';
@@ -1164,7 +1164,9 @@ export const Oficina: React.FC<OficinaProps> = ({
         nomeEmpresa: selectedCompany?.nome
       });
       setAiNoteSuggestion(res);
-      if (!res.hasActionableTask) {
+      if (res.hasActionableTask && res.tarefa) {
+        handleCreateTaskFromAi(res, true);
+      } else if (!res.hasActionableTask) {
         setTaskCreatedFeedback('A IA avaliou as notas internas mas não detetou tarefas pendentes automáticas.');
         setTimeout(() => setTaskCreatedFeedback(null), 4000);
       }
@@ -1175,9 +1177,31 @@ export const Oficina: React.FC<OficinaProps> = ({
     }
   };
 
-  const handleCreateTaskFromAi = (suggestion?: TaskSuggestionFromNotes) => {
+  const handleCreateTaskFromAi = (suggestion?: TaskSuggestionFromNotes, skipIfExists = false): Tarefa | null => {
     const target = suggestion || aiNoteSuggestion;
-    if (!target || !target.tarefa) return;
+    if (!target || !target.tarefa) return null;
+
+    const existingTasks = db.get<Tarefa>(STORAGE_KEYS.TAREFAS) || [];
+    const folhaNumUpper = (editingFolha.numero || '').trim().toUpperCase();
+    const targetDescLower = (target.tarefa.descricao || '').trim().toLowerCase();
+    const rawNoteLower = (editingFolha.notasInternas || '').trim().toLowerCase();
+
+    if (skipIfExists) {
+      const duplicate = existingTasks.find(t => {
+        const dLower = (t.descricao || '').trim().toLowerCase();
+        const nLower = (t.notasAdicionais || '').trim().toLowerCase();
+        if (dLower === targetDescLower) return true;
+        if (folhaNumUpper && (t.descricao || '').toUpperCase().includes(folhaNumUpper) && rawNoteLower && nLower.includes(rawNoteLower)) {
+          return true;
+        }
+        return false;
+      });
+      if (duplicate) {
+        setTaskCreatedFeedback(`Tarefa ${duplicate.numero} ("${duplicate.descricao}") já se encontra criada no menu Tarefas.`);
+        setTimeout(() => setTaskCreatedFeedback(null), 5000);
+        return duplicate;
+      }
+    }
 
     const newNum = db.generateSequenceNumber(STORAGE_KEYS.TAREFAS, 'TAR');
     // Quem escreveu o campo (notas internas) que depois foi enviado para a IA:
@@ -1214,8 +1238,9 @@ export const Oficina: React.FC<OficinaProps> = ({
       currentUser
     });
 
-    setTaskCreatedFeedback(`Tarefa ${newNum} ("${novaTarefa.descricao}") criada com sucesso no menu Tarefas!`);
+    setTaskCreatedFeedback(`Tarefa ${newNum} ("${novaTarefa.descricao}") criada automaticamente no menu Tarefas!`);
     setTimeout(() => setTaskCreatedFeedback(null), 6000);
+    return novaTarefa;
   };
 
   const handleSaveFolha = () => {
@@ -1341,6 +1366,23 @@ export const Oficina: React.FC<OficinaProps> = ({
       uploadFolhaPhotos(folhaToSave.id, folhaToSave.numero, folhaToSave.fotos).catch(console.warn);
     }
 
+    // Se a folha tiver Notas Internas e estas forem interpretadas como uma Tarefa, criar automaticamente a Tarefa (sem duplicar)
+    let autoCreatedTask: Tarefa | null = null;
+    if (folhaToSave.notasInternas && folhaToSave.notasInternas.trim().length > 4) {
+      const targetEmpresaForNotes = empresas.find(e => e.id === folhaToSave.empresaId);
+      const suggestion =
+        aiNoteSuggestion?.hasActionableTask && aiNoteSuggestion.tarefa
+          ? aiNoteSuggestion
+          : analyzeInternalNotesHeuristic(folhaToSave.notasInternas, {
+              numeroFolha: folhaToSave.numero,
+              matricula: folhaToSave.matricula,
+              nomeEmpresa: targetEmpresaForNotes?.nome
+            });
+      if (suggestion.hasActionableTask && suggestion.tarefa) {
+        autoCreatedTask = handleCreateTaskFromAi(suggestion, true);
+      }
+    }
+
     // Update equipment mileage / hours and delivery/training in fleet
     if (targetEquip) {
       const equipUpdate: Partial<Equipamento> = {
@@ -1388,8 +1430,9 @@ export const Oficina: React.FC<OficinaProps> = ({
         setTimeout(() => setSaveFeedback(null), 8000);
       });
     } else {
-      setSaveFeedback(`Folha ${folhaToSave.numero} gravada com sucesso!`);
-      setTimeout(() => setSaveFeedback(null), 4000);
+      const taskMsg = autoCreatedTask ? ` Tarefa ${autoCreatedTask.numero} criada automaticamente a partir das Notas Internas!` : '';
+      setSaveFeedback(`Folha ${folhaToSave.numero} gravada com sucesso!${taskMsg}`);
+      setTimeout(() => setSaveFeedback(null), 5000);
     }
 
     handleCloseModal();
