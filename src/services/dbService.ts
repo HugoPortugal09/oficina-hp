@@ -1133,8 +1133,14 @@ export const db = {
           }
           return expectedTipo !== f.tipo ? { ...f, tipo: expectedTipo } : f;
         });
+        const of70 = healed.find(f => (f.numero || '').toUpperCase() === 'OF26070');
+        if (of70 && (of70.matricula || '').toUpperCase() !== '90-TQ-55') {
+          of70.matricula = '90-TQ-55';
+          of70.atualizadoEm = new Date().toISOString();
+          changed = true;
+        }
         if (changed) {
-          localStorage.setItem(STORAGE_KEYS.FOLHAS_SERVICO, JSON.stringify(healed));
+          this.save(STORAGE_KEYS.FOLHAS_SERVICO, healed);
         }
       }
     } catch (e) {

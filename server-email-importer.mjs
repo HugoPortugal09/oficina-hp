@@ -911,6 +911,42 @@ export async function repairAt26143AndBrokenImports() {
       }
     }
 
+    // 4. Garantir que a viatura 90-TQ-55 (Goupil G4 - MUNICIPIO DE LOUSADA) existe e que a folha OF26070 tem a matrícula correta 90-TQ-55
+    const lousadaEmp = empresas.find(
+      e => e.id === 'E076' || (e.nome && e.nome.toUpperCase().includes('LOUSADA'))
+    );
+    let eq90Tq55 = cleanEquipamentos.find(
+      e => (e.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === '90TQ55'
+    );
+    if (!eq90Tq55 && lousadaEmp) {
+      eq90Tq55 = {
+        id: 'eq_90_tq_55_lousada',
+        matricula: '90-TQ-55',
+        marca: 'Goupil',
+        modelo: 'G4',
+        nSerie: '',
+        tipo: 'Goupil G4',
+        kmsAtuais: 0,
+        horasAtuais: 0,
+        empresaId: lousadaEmp.id
+      };
+      cleanEquipamentos.push(eq90Tq55);
+    }
+
+    const of26070Idx = folhas.findIndex(f => (f.numero || '').toUpperCase() === 'OF26070');
+    if (of26070Idx >= 0) {
+      const f70 = folhas[of26070Idx];
+      if ((f70.matricula || '').toUpperCase() !== '90-TQ-55') {
+        f70.matricula = '90-TQ-55';
+        if (eq90Tq55) f70.equipamentoId = eq90Tq55.id;
+        if (lousadaEmp) f70.empresaId = lousadaEmp.id;
+        f70.marca = 'Goupil';
+        f70.modelo = 'G4';
+        f70.atualizadoEm = nowIso;
+        f70.updatedAt = nowIso;
+      }
+    }
+
     await setAppData(pb, 'oficina_hp_equipamentos', cleanEquipamentos);
     await setAppData(pb, 'oficina_hp_folhas_servico', folhas);
     if (tasksChanged) {
@@ -1010,16 +1046,24 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
           const mailDate = parsedMail.date ? parsedMail.date.toISOString() : new Date().toISOString();
           const emailBodyText = parsedMail.text || (parsedMail.html ? parsedMail.html.replace(/<[^>]+>/g, '\n') : '');
 
-          // Se já foi lido, verificar rapidamente pelo assunto se corresponde a uma folha já completa
+          // Se já foi lido, verificar rapidamente pelo assunto se corresponde a uma folha já completa e com a mesma matrícula
           if (!isUnread) {
             const subjRefMatch = subject.match(/#([A-Z0-9_\-]+)/i);
             if (!subjRefMatch) continue;
             const refNum = subjRefMatch[1].toUpperCase();
+            const subjPlateMatch = subject.match(/#[A-Z0-9_\-]+\s*-\s*([A-Z0-9\-]{4,30})/i);
+            const subjPlateNorm = subjPlateMatch ? subjPlateMatch[1].replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
             const existingFolha = folhas.find(f => (f.numero || '').toUpperCase() === refNum);
+            const existingPlateNorm = (existingFolha?.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const plateMatchesSubject =
+              !subjPlateNorm ||
+              existingPlateNorm === subjPlateNorm ||
+              (subjPlateNorm.length >= 10 && existingPlateNorm.startsWith(subjPlateNorm));
             const isComplete =
               existingFolha &&
               existingFolha.matricula &&
               existingFolha.matricula.length !== 10 &&
+              plateMatchesSubject &&
               Array.isArray(existingFolha.servicos) &&
               existingFolha.servicos.length > 0 &&
               Array.isArray(existingFolha.fotos) &&
@@ -1079,19 +1123,19 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
               continue;
             }
 
-            // 1. Resolver Equipamento existente na Base de Dados (por matrícula completa, Nº de série ou prefixo VIN)
-            const normMat = (parsed.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            // 1. Resolver Equipamento existente na Base de Dados (NUNCA substituir por outra matrícula distinta do mesmo cliente via nSerie)
+            const normMat = (parsed.matricula && parsed.matricula !== 'SEM-MATRICULA' ? parsed.matricula : '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
             const normSerie = (parsed.nSerie || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
             let eq = equipamentos.find(e => {
               const eMat = (e.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
               const eSerie = (e.nSerie || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
               if (normMat && eMat === normMat) return true;
-              if (normMat && eSerie === normMat) return true;
-              if (normSerie && eSerie === normSerie) return true;
-              if (normSerie && eMat === normSerie) return true;
+              if (normMat && eSerie === normMat && (!eMat || eMat === eSerie)) return true;
               if (normMat.length >= 10 && eMat.length > normMat.length && eMat.startsWith(normMat)) return true;
-              if (normMat.length >= 10 && eSerie.length > normMat.length && eSerie.startsWith(normMat)) return true;
+              if (normMat.length >= 10 && eSerie.length > normMat.length && eSerie.startsWith(normMat) && (!eMat || eMat.startsWith(normMat))) return true;
+              // Só procurar por Nº de Série se o email não trouxer matrícula ou se o equipamento na BD não tiver matrícula diferente
+              if (!normMat && normSerie && (eSerie === normSerie || eMat === normSerie)) return true;
               return false;
             });
 
@@ -1118,8 +1162,11 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
             }
 
             if (eq) {
-              // Preservar matrícula, marca e modelo reais do equipamento existente na base de dados
-              parsed.matricula = eq.matricula || parsed.matricula;
+              // Só expandir a matrícula se a matrícula do email for um prefixo truncado (ex: VIN de 10 chars -> 17 chars)
+              const eqMatNorm = (eq.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+              if (!normMat || (normMat.length >= 10 && eqMatNorm.length > normMat.length && eqMatNorm.startsWith(normMat))) {
+                parsed.matricula = eq.matricula || parsed.matricula;
+              }
               parsed.marca = eq.marca || parsed.marca;
               parsed.modelo = (eq.modelo || parsed.modelo).trim();
               if (eq.nSerie && !parsed.nSerie) parsed.nSerie = eq.nSerie;

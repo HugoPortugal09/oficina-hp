@@ -573,21 +573,23 @@ export const Oficina: React.FC<OficinaProps> = ({
     let resolvedMatricula = (fs.matricula || '').trim();
     let resolvedLocalizacao = fs.localizacao;
 
-    // Tenta encontrar o equipamento quer por ID, quer por matrícula completa, número de série ou prefixo VIN (>=8 chars)
+    // Tenta encontrar o equipamento por matrícula exata ou prefixo VIN truncado (>=8 chars), sem substituir por outra matrícula distinta via nSerie
     const cleanPlate = resolvedMatricula.toUpperCase();
     const normPlate = cleanPlate.replace(/[^A-Z0-9]/gi, '');
-    const match = equipamentos.find(
-      e => (resolvedEquipId && e.id === resolvedEquipId) ||
-           (cleanPlate && e.matricula && e.matricula.trim().toUpperCase() === cleanPlate) ||
-           (normPlate && e.matricula && e.matricula.replace(/[^A-Z0-9]/gi, '') === normPlate) ||
-           (fs.nSerie && e.nSerie && e.nSerie.trim().toUpperCase() === fs.nSerie.trim().toUpperCase()) ||
-           (normPlate.length >= 8 && e.matricula && e.matricula.replace(/[^A-Z0-9]/gi, '').toUpperCase().startsWith(normPlate)) ||
-           (normPlate.length >= 8 && e.nSerie && e.nSerie.replace(/[^A-Z0-9]/gi, '').toUpperCase().startsWith(normPlate))
-    );
+    const match = equipamentos.find(e => {
+      const eMatNorm = (e.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const eSerieNorm = (e.nSerie || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (normPlate && eMatNorm === normPlate) return true;
+      if (normPlate.length >= 8 && eMatNorm.length > normPlate.length && eMatNorm.startsWith(normPlate)) return true;
+      if (normPlate.length >= 8 && eSerieNorm.length > normPlate.length && eSerieNorm.startsWith(normPlate) && (!eMatNorm || eMatNorm.startsWith(normPlate))) return true;
+      if (resolvedEquipId && e.id === resolvedEquipId && (!normPlate || eMatNorm === normPlate || (normPlate.length >= 8 && eMatNorm.startsWith(normPlate)))) return true;
+      return false;
+    });
 
     if (match) {
       resolvedEquipId = match.id;
-      if (match.matricula && (!resolvedMatricula || match.matricula.length > resolvedMatricula.length)) {
+      const matchMatNorm = (match.matricula || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (match.matricula && (!normPlate || (normPlate.length >= 8 && matchMatNorm.length > normPlate.length && matchMatNorm.startsWith(normPlate)))) {
         resolvedMatricula = match.matricula;
       }
       if (!resolvedEmpresaId && match.empresaId) resolvedEmpresaId = match.empresaId;
