@@ -431,6 +431,8 @@ export const Oficina: React.FC<OficinaProps> = ({
   const [isGeneratingA3Pdf, setIsGeneratingA3Pdf] = useState(false);
   const [sendingEmailFolhaId, setSendingEmailFolhaId] = useState<string | null>(null);
   const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
+  const [activeRequisicaoDropdownId, setActiveRequisicaoDropdownId] = useState<string | null>(null);
+  const [activeFaturacaoDropdownId, setActiveFaturacaoDropdownId] = useState<string | null>(null);
 
   const filePhotoInputRef = useRef<HTMLInputElement>(null);
   const efCameraInputRef = useRef<HTMLInputElement>(null);
@@ -1149,6 +1151,224 @@ export const Oficina: React.FC<OficinaProps> = ({
 
     setSaveFeedback(`Estado da FS ${fs.numero} atualizado para "${getStatusLabel(newStatus)}"`);
     setTimeout(() => setSaveFeedback(null), 3500);
+  };
+
+  // Quick Requisição Change directly from Table or Grid without opening Folha
+  const handleQuickRequisicaoChange = (
+    fs: FolhaServico,
+    newRequisicao: 'Sim' | 'Não',
+    e?: React.MouseEvent
+  ) => {
+    if (e) e.stopPropagation();
+    setActiveRequisicaoDropdownId(null);
+
+    const currentReq = fs.requisicao || 'Não';
+    if (currentReq === newRequisicao) return;
+
+    const updatedFields: Partial<FolhaServico> = {
+      requisicao: newRequisicao
+    };
+
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, fs.id, updatedFields);
+    setFolhas(prev => prev.map(f => f.id === fs.id ? { ...f, ...updatedFields } : f));
+
+    setSaveFeedback(`Requisição da FS ${fs.numero} atualizada para "${newRequisicao}"`);
+    setTimeout(() => setSaveFeedback(null), 3500);
+  };
+
+  // Quick Faturação Change directly from Table or Grid without opening Folha (Admin only)
+  const handleQuickFaturacaoChange = (
+    fs: FolhaServico,
+    newFaturacao: StatusFaturacao,
+    e?: React.MouseEvent
+  ) => {
+    if (e) e.stopPropagation();
+    setActiveFaturacaoDropdownId(null);
+
+    if (currentUser?.role !== 'administrador') return;
+
+    const currentFat = fs.faturacao || 'Pendente';
+    if (currentFat === newFaturacao) return;
+
+    const updatedFields: Partial<FolhaServico> = {
+      faturacao: newFaturacao
+    };
+
+    db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, fs.id, updatedFields);
+    setFolhas(prev => prev.map(f => f.id === fs.id ? { ...f, ...updatedFields } : f));
+
+    setSaveFeedback(`Faturação da FS ${fs.numero} atualizada para "${newFaturacao}"`);
+    setTimeout(() => setSaveFeedback(null), 3500);
+  };
+
+  const renderQuickRequisicaoDropdown = (
+    fs: FolhaServico,
+    options: { align?: 'left' | 'right'; openUpward?: boolean; compactLabel?: boolean } = {}
+  ) => {
+    const { align = 'left', openUpward = false, compactLabel = false } = options;
+    const isOpen = activeRequisicaoDropdownId === fs.id;
+    const currentReq: 'Sim' | 'Não' = fs.requisicao === 'Sim' ? 'Sim' : 'Não';
+
+    return (
+      <div className="relative inline-block text-left" onClick={e => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setActiveStatusDropdownId(null);
+            setActiveFaturacaoDropdownId(null);
+            setActiveRequisicaoDropdownId(prev => prev === fs.id ? null : fs.id);
+          }}
+          className="group/req inline-flex items-center gap-1 focus:outline-none rounded-full cursor-pointer transition-transform active:scale-95"
+          title="Clique para alterar o estado da requisição sem abrir a folha"
+        >
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold border font-mono transition-all group-hover/req:ring-2 group-hover/req:ring-hp-400/50 group-hover/req:brightness-110 ${
+            compactLabel ? 'text-[9px] px-1.5' : 'text-[10px]'
+          } ${
+            currentReq === 'Sim'
+              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+              : 'bg-slate-900 text-slate-400 border-slate-700/60'
+          }`}>
+            <span>{compactLabel ? `Req: ${currentReq}` : currentReq}</span>
+            <ChevronDown className={`w-3 h-3 opacity-60 group-hover/req:opacity-100 transition-transform ${isOpen ? 'rotate-180 text-hp-400' : ''}`} />
+          </span>
+        </button>
+
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveRequisicaoDropdownId(null);
+              }}
+            />
+            <div
+              className={`absolute z-50 min-w-[155px] bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-150 ${
+                openUpward ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+              } ${align === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2'}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-2.5 py-1 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center justify-between gap-2">
+                <span>Requisição</span>
+                <span className="font-mono text-hp-400 font-extrabold">{fs.numero}</span>
+              </div>
+              <div className="py-1 space-y-0.5">
+                {(['Não', 'Sim'] as const).map(reqOption => {
+                  const isSelected = currentReq === reqOption;
+                  return (
+                    <button
+                      key={reqOption}
+                      type="button"
+                      onClick={(e) => handleQuickRequisicaoChange(fs, reqOption, e)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-hp-600/20 text-white font-bold border border-hp-500/40 shadow-sm'
+                          : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                          reqOption === 'Sim' ? 'bg-emerald-400' : 'bg-slate-400'
+                        }`} />
+                        <span>{reqOption}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderQuickFaturacaoDropdown = (
+    fs: FolhaServico,
+    options: { align?: 'left' | 'right'; openUpward?: boolean } = {}
+  ) => {
+    const { align = 'left', openUpward = false } = options;
+    const isOpen = activeFaturacaoDropdownId === fs.id;
+    const currentFat = fs.faturacao || 'Pendente';
+
+    return (
+      <div className="relative inline-block text-left" onClick={e => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setActiveStatusDropdownId(null);
+            setActiveRequisicaoDropdownId(null);
+            setActiveFaturacaoDropdownId(prev => prev === fs.id ? null : fs.id);
+          }}
+          className="group/fat inline-flex items-center gap-1 focus:outline-none rounded-full cursor-pointer transition-transform active:scale-95"
+          title="Clique para alterar o estado de faturação sem abrir a folha"
+        >
+          <Badge
+            variant={getFaturacaoBadgeVariant(currentFat)}
+            className="group-hover/fat:ring-2 group-hover/fat:ring-hp-400/50 group-hover/fat:brightness-110 transition-all cursor-pointer shadow-sm py-0.5 px-2.5 flex items-center gap-1.5"
+          >
+            <span>{currentFat}</span>
+            <ChevronDown className={`w-3 h-3 opacity-60 group-hover/fat:opacity-100 transition-transform ${isOpen ? 'rotate-180 text-hp-400' : ''}`} />
+          </Badge>
+        </button>
+
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveFaturacaoDropdownId(null);
+              }}
+            />
+            <div
+              className={`absolute z-50 min-w-[205px] bg-slate-900/95 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-1.5 animate-in fade-in zoom-in-95 duration-150 ${
+                openUpward ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+              } ${align === 'right' ? 'right-0' : 'left-0'}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-2.5 py-1 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider text-amber-300/90 flex items-center justify-between gap-2">
+                <span>Faturação</span>
+                <span className="font-mono text-hp-400 font-extrabold">{fs.numero}</span>
+              </div>
+              <div className="py-1 max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar">
+                {FATURACAO_OPTIONS.map(fatOption => {
+                  const isSelected = currentFat === fatOption;
+                  const variant = getFaturacaoBadgeVariant(fatOption);
+                  return (
+                    <button
+                      key={fatOption}
+                      type="button"
+                      onClick={(e) => handleQuickFaturacaoChange(fs, fatOption, e)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-hp-600/20 text-white font-bold border border-hp-500/40 shadow-sm'
+                          : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                          variant === 'success' ? 'bg-emerald-400' :
+                          variant === 'orange' ? 'bg-orange-400' :
+                          variant === 'info' ? 'bg-sky-400' :
+                          variant === 'danger' ? 'bg-rose-400' :
+                          variant === 'default' ? 'bg-slate-400' : 'bg-amber-400'
+                        }`} />
+                        <span className="truncate">{fatOption}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-hp-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   // AI Analysis of Internal Notes
@@ -2407,6 +2627,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setActiveRequisicaoDropdownId(null);
+                            setActiveFaturacaoDropdownId(null);
                             setActiveStatusDropdownId(prev => prev === fs.id ? null : fs.id);
                           }}
                           className="group/status inline-flex items-center gap-1 focus:outline-none rounded-full cursor-pointer transition-transform active:scale-95"
@@ -2474,18 +2696,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                         )}
                       </div>
                       <div className="flex items-center gap-1 flex-wrap justify-end">
-                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
-                          fs.requisicao === 'Sim'
-                            ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
-                            : 'bg-slate-900 text-slate-400 border-slate-700/60'
-                        }`}>
-                          Req: {fs.requisicao || 'Não'}
-                        </span>
-                        {currentUser?.role === 'administrador' && fs.faturacao && (
-                          <Badge variant={getFaturacaoBadgeVariant(fs.faturacao)}>
-                            {fs.faturacao}
-                          </Badge>
-                        )}
+                        {renderQuickRequisicaoDropdown(fs, { align: 'right', compactLabel: true })}
+                        {currentUser?.role === 'administrador' && renderQuickFaturacaoDropdown(fs, { align: 'right' })}
                       </div>
                       <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatDate(fs.data)}</p>
                     </div>
@@ -2622,6 +2834,8 @@ export const Oficina: React.FC<OficinaProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
+                              setActiveRequisicaoDropdownId(null);
+                              setActiveFaturacaoDropdownId(null);
                               setActiveStatusDropdownId(prev => prev === fs.id ? null : fs.id);
                             }}
                             className="group/status inline-flex items-center gap-1 focus:outline-none rounded-full cursor-pointer transition-transform active:scale-95"
@@ -2691,20 +2905,12 @@ export const Oficina: React.FC<OficinaProps> = ({
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border font-mono ${
-                          fs.requisicao === 'Sim'
-                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
-                            : 'bg-slate-900 text-slate-400 border-slate-700/60'
-                        }`}>
-                          {fs.requisicao || 'Não'}
-                        </span>
+                      <td className="py-3 px-4 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                        {renderQuickRequisicaoDropdown(fs, { align: 'left', openUpward: isNearBottom })}
                       </td>
                       {currentUser?.role === 'administrador' && (
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <Badge variant={getFaturacaoBadgeVariant(fs.faturacao)}>
-                            {fs.faturacao || 'Pendente'}
-                          </Badge>
+                        <td className="py-3 px-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                          {renderQuickFaturacaoDropdown(fs, { align: 'left', openUpward: isNearBottom })}
                         </td>
                       )}
                       <td className="py-3 px-4 font-mono text-slate-400">{formatDate(fs.data)}</td>
