@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { readFileWithSmartEncoding } from '../utils/textEncoding';
 import {
   Settings,
   Building2,
@@ -432,21 +433,21 @@ export const Configuracoes: React.FC<ConfiguracoesProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const content = ev.target?.result as string;
+      try {
+        const content = await readFileWithSmartEncoding(file);
         const ok = db.importDatabase(content);
         if (ok) {
-          alert('Cópia de segurança importada com sucesso! A recarregar dados...');
+          alert('Cópia de segurança importada com sucesso (carateres especiais normalizados)! A recarregar dados...');
           window.location.reload();
         } else {
           alert('Ficheiro JSON inválido ou corrompido.');
         }
-      };
-      reader.readAsText(file);
+      } catch {
+        alert('Erro ao ler o ficheiro JSON.');
+      }
     }
   };
 

@@ -8,6 +8,105 @@ const POCKETBASE_URL = process.env.POCKETBASE_URL || 'https://oficina-hp-pocketb
 const EMAIL_USER = process.env.EMAIL_EMISSOR || 'oficinahpapp@gmail.com';
 const EMAIL_PASS = (process.env.EMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 
+const MOJIBAKE_MAP = [
+  [/Ã§/g, 'ç'], [/Ã‡/g, 'Ç'], [/Ã£/g, 'ã'], [/Ãƒ/g, 'Ã'],
+  [/Ãµ/g, 'õ'], [/Ã•/g, 'Õ'], [/Ã¡/g, 'á'], [/Ã\x81/g, 'Á'],
+  [/Ã /g, 'à'], [/Ã€/g, 'À'], [/Ã¢/g, 'â'], [/Ã‚/g, 'Â'],
+  [/Ã©/g, 'é'], [/Ã‰/g, 'É'], [/Ãª/g, 'ê'], [/ÃŠ/g, 'Ê'],
+  [/Ã­/g, 'í'], [/Ã\x8d/g, 'Í'], [/Ã³/g, 'ó'], [/Ã“/g, 'Ó'],
+  [/Ã´/g, 'ô'], [/Ã”/g, 'Ô'], [/Ãº/g, 'ú'], [/Ãš/g, 'Ú'],
+  [/Ã¼/g, 'ü'], [/Ãœ/g, 'Ü'], [/Âº/g, 'º'], [/Âª/g, 'ª'],
+  [/Â°/g, '°'], [/â‚¬/g, '€'], [/â€“/g, '–'], [/â€”/g, '—'],
+  [/DOBRADIÃA/g, 'DOBRADIÇA'], [/DobradiÃa/g, 'Dobradiça'], [/dobradiÃa/g, 'dobradiça'],
+  [/ÃA(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]|$)/g, 'ÇA']
+];
+
+const REPLACEMENT_CHAR_RULES = [
+  [/Entrega e Forma\uFFFD+a?o/gi, 'Entrega e Formação'],
+  [/Forma\uFFFD+a?o/gi, (m) => (m === m.toUpperCase() ? 'FORMAÇÃO' : 'Formação')],
+  [/DOBRADI\uFFFD+A/g, 'DOBRADIÇA'],
+  [/Dobradi\uFFFD+a/g, 'Dobradiça'],
+  [/dobradi\uFFFD+a/g, 'dobradiça'],
+  [/Manuten\uFFFD+a?o/gi, 'Manutenção'],
+  [/Repara\uFFFD+a?o/gi, 'Reparação'],
+  [/Verifica\uFFFD+a?o/gi, 'Verificação'],
+  [/Substitui\uFFFD+a?o/gi, 'Substituição'],
+  [/Inspe\uFFFD+a?o/gi, 'Inspeção'],
+  [/Dire\uFFFD+a?o/gi, 'Direção'],
+  [/Inje\uFFFD+a?o/gi, 'Injeção'],
+  [/Fatura\uFFFD+a?o/gi, 'Faturação'],
+  [/Requisi\uFFFD+a?o/gi, 'Requisição'],
+  [/Observa\uFFFD+a?o/gi, 'Observação'],
+  [/Valida\uFFFD+a?o/gi, 'Validação'],
+  [/Prepara\uFFFD+a?o/gi, 'Preparação'],
+  [/Calibra\uFFFD+a?o/gi, 'Calibração'],
+  [/Configura\uFFFD+a?o/gi, 'Configuração'],
+  [/Solu\uFFFD+a?o/gi, 'Solução'],
+  [/Revis\uFFFD+o/gi, 'Revisão'],
+  [/Suspens\uFFFD+o/gi, 'Suspensão'],
+  [/Transmiss\uFFFD+o/gi, 'Transmissão'],
+  [/Press\uFFFD+o/gi, 'Pressão'],
+  [/Conclu\uFFFD+do/gi, 'Concluído'],
+  [/N\uFFFD+o\b/g, 'Não'], [/n\uFFFD+o\b/g, 'não'], [/N\uFFFD+O\b/g, 'NÃO'],
+  [/Pe\uFFFD+as\b/g, 'Peças'], [/pe\uFFFD+as\b/g, 'peças'], [/PE\uFFFD+AS\b/g, 'PEÇAS'],
+  [/Pe\uFFFD+a\b/g, 'Peça'], [/pe\uFFFD+a\b/g, 'peça'], [/PE\uFFFD+A\b/g, 'PEÇA'],
+  [/Cabe\uFFFD+a/gi, 'Cabeça'], [/Bra\uFFFD+o/gi, 'Braço'],
+  [/Servi\uFFFD+os/gi, 'Serviços'], [/Servi\uFFFD+o/gi, 'Serviço'],
+  [/T\uFFFD+cnic/gi, 'Técnic'], [/El\uFFFD+tric/gi, 'Elétric'], [/Hidr\uFFFD+ulic/gi, 'Hidráulic'],
+  [/N\uFFFD+mer/gi, 'Númer'], [/S\uFFFD+rie/gi, 'Série'], [/Matr\uFFFD+cul/gi, 'Matrícul'],
+  [/Ve\uFFFD+cul/gi, 'Veícul'], [/\uFFFD+leo\b/gi, 'Óleo'], [/L\uFFFD+mpada/gi, 'Lâmpada'],
+  [/V\uFFFD+lvula/gi, 'Válvula'], [/M\uFFFD+dulo/gi, 'Módulo'], [/Dep\uFFFD+sito/gi, 'Depósito'],
+  [/([a-zA-Z])\uFFFD{2}o\b/g, '$1ção'],
+  [/([a-zA-Z])\uFFFD{2}es\b/g, '$1ções'],
+  [/([a-zA-Z])\uFFFDão\b/g, '$1ção'],
+  [/([a-zA-Z])\uFFFDões\b/g, '$1ções'],
+  [/([a-zA-Z])\uFFFDo\b/g, '$1ão'],
+  [/([a-zA-Z])\uFFFDa\b/g, '$1ça']
+];
+
+function sanitizePortugueseText(input) {
+  if (!input || typeof input !== 'string') return input;
+  if (input.startsWith('data:image/') || input.startsWith('data:application/') || input.startsWith('http://') || input.startsWith('https://')) {
+    return input;
+  }
+  let out = input;
+  if (out.includes('Ã') || out.includes('Â') || out.includes('â€') || out.includes('â‚')) {
+    for (const [pattern, replacement] of MOJIBAKE_MAP) {
+      out = out.replace(pattern, replacement);
+    }
+  }
+  if (out.includes('\uFFFD')) {
+    for (const [pattern, replacement] of REPLACEMENT_CHAR_RULES) {
+      out = out.replace(pattern, replacement);
+    }
+  }
+  return out;
+}
+
+function sanitizeObjectDeep(value) {
+  if (typeof value === 'string') return sanitizePortugueseText(value);
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((item) => {
+      const s = sanitizeObjectDeep(item);
+      if (s !== item) changed = true;
+      return s;
+    });
+    return changed ? next : value;
+  }
+  if (value && typeof value === 'object') {
+    let changed = false;
+    const result = {};
+    for (const [k, v] of Object.entries(value)) {
+      const s = sanitizeObjectDeep(v);
+      if (s !== v) changed = true;
+      result[k] = s;
+    }
+    return changed ? result : value;
+  }
+  return value;
+}
+
 /**
  * Normaliza e limpa texto com possíveis quebras de kerning de PDF
  */
@@ -947,10 +1046,34 @@ export async function repairAt26143AndBrokenImports() {
       }
     }
 
-    await setAppData(pb, 'oficina_hp_equipamentos', cleanEquipamentos);
-    await setAppData(pb, 'oficina_hp_folhas_servico', folhas);
+    await setAppData(pb, 'oficina_hp_equipamentos', sanitizeObjectDeep(cleanEquipamentos));
+    await setAppData(pb, 'oficina_hp_folhas_servico', sanitizeObjectDeep(folhas));
     if (tasksChanged) {
-      await setAppData(pb, 'oficina_hp_tarefas', tarefas);
+      await setAppData(pb, 'oficina_hp_tarefas', sanitizeObjectDeep(tarefas));
+    }
+
+    // Limpeza de codificação (carateres especiais) nas restantes coleções do PocketBase
+    const extraCollections = [
+      'oficina_hp_pecas_catalogo',
+      'oficina_hp_empresas',
+      'oficina_hp_clientes',
+      'oficina_hp_propostas',
+      'oficina_hp_pedidos_pecas',
+      'oficina_hp_guias_envio',
+      'oficina_hp_contratos',
+      'oficina_hp_visitas',
+      'oficina_hp_kits_manutencao',
+      'oficina_hp_tarefas'
+    ];
+    for (const colKey of extraCollections) {
+      const data = await getAppData(pb, colKey, null);
+      if (Array.isArray(data) && data.length > 0) {
+        const cleaned = sanitizeObjectDeep(data);
+        if (cleaned !== data) {
+          await setAppData(pb, colKey, cleaned);
+          console.log(`[EmailImporter] 🧹 Carateres especiais normalizados em ${colKey}`);
+        }
+      }
     }
 
     // Guardar fotos dedicadas por ID e por Número para carregamento rápido em todos os PCs
@@ -1242,12 +1365,13 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
               updatedAt: nowIso
             };
 
+            const sanitizedFolhaData = sanitizeObjectDeep(folhaData);
             if (existingIdx >= 0) {
-              folhas[existingIdx] = folhaData;
-              console.log(`[EmailImporter] 🔄 Folha ${parsed.numero} atualizada (${parsed.matricula} | ${parsed.servicos.length} serviços | ${folhaData.fotos.length} fotos).`);
+              folhas[existingIdx] = sanitizedFolhaData;
+              console.log(`[EmailImporter] 🔄 Folha ${parsed.numero} atualizada (${parsed.matricula} | ${parsed.servicos.length} serviços | ${sanitizedFolhaData.fotos.length} fotos).`);
             } else {
-              folhas.unshift(folhaData);
-              console.log(`[EmailImporter] 📄 Nova Folha de Serviço criada: ${parsed.numero} (${parsed.matricula} - ${emp.nome} | ${parsed.servicos.length} serviços | ${folhaData.fotos.length} fotos)`);
+              folhas.unshift(sanitizedFolhaData);
+              console.log(`[EmailImporter] 📄 Nova Folha de Serviço criada: ${parsed.numero} (${parsed.matricula} - ${emp.nome} | ${parsed.servicos.length} serviços | ${sanitizedFolhaData.fotos.length} fotos)`);
             }
 
             // Se tiver notas internas e forem interpretadas como tarefa, criar a tarefa automaticamente

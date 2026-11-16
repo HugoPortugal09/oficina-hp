@@ -1,6 +1,7 @@
 import { getPocketBase } from './pocketbase';
 import { STORAGE_KEYS } from './dbService';
 import { safeLocalStorageSet } from '../utils/storageUtils';
+import { sanitizeObjectDeep } from '../utils/textEncoding';
 
 export interface SyncStatus {
   isSyncing: boolean;
@@ -282,7 +283,7 @@ export async function syncPullFromCloud(options?: { force?: boolean }): Promise<
               if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
             } catch {}
 
-            const merged = mergeCollectionData(currentLocal, serverData);
+            const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(serverData));
             const newStr = JSON.stringify(merged);
             if (currentLocalStr !== newStr) {
               safeLocalStorageSet(key, newStr);
@@ -320,7 +321,7 @@ export async function syncPullFromCloud(options?: { force?: boolean }): Promise<
               if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
             } catch {}
 
-            const merged = mergeCollectionData(currentLocal, record.data);
+            const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(record.data));
             const newCloudStr = JSON.stringify(merged);
             if (currentLocalStr !== newCloudStr) {
               safeLocalStorageSet(record.key, newCloudStr);

@@ -20,6 +20,7 @@ import { USERS } from '../types';
 import { syncPushToCloud } from './pocketbaseSync';
 import { safeLocalStorageSet, optimizeLocalStorageQuota } from '../utils/storageUtils';
 import { sanitizeFolhaServico } from '../utils/validationUtils';
+import { sanitizeObjectDeep } from '../utils/textEncoding';
 
 const STORAGE_KEYS = {
   EMPRESAS: 'oficina_hp_empresas',
@@ -1149,6 +1150,33 @@ export const db = {
 
     // Close all historical folhas once as requested by user
     try {
+      if (!localStorage.getItem('oficina_hp_encoding_sanitized_v1')) {
+        const keysToSanitize = [
+          STORAGE_KEYS.EMPRESAS,
+          STORAGE_KEYS.CLIENTES,
+          STORAGE_KEYS.EQUIPAMENTOS,
+          STORAGE_KEYS.FOLHAS_SERVICO,
+          STORAGE_KEYS.PROPOSTAS,
+          STORAGE_KEYS.PECAS_CATALOGO,
+          STORAGE_KEYS.PEDIDOS_PECAS,
+          STORAGE_KEYS.GUIAS_ENVIO,
+          STORAGE_KEYS.CONTRATOS,
+          STORAGE_KEYS.TAREFAS,
+          STORAGE_KEYS.VISITAS,
+          STORAGE_KEYS.KITS_MANUTENCAO
+        ];
+        for (const k of keysToSanitize) {
+          const items = this.get<any>(k);
+          if (Array.isArray(items) && items.length > 0) {
+            const cleaned = sanitizeObjectDeep(items);
+            if (cleaned !== items) {
+              this.save(k, cleaned);
+            }
+          }
+        }
+        localStorage.setItem('oficina_hp_encoding_sanitized_v1', 'true');
+      }
+
       if (!localStorage.getItem('oficina_hp_closed_all_v1')) {
         const existingFs = this.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO);
         if (existingFs && existingFs.length > 0) {
@@ -1248,7 +1276,7 @@ export const db = {
 
   importDatabase(jsonString: string): boolean {
     try {
-      const data = JSON.parse(jsonString);
+      const data = sanitizeObjectDeep(JSON.parse(jsonString));
       if (data.empresas) this.save(STORAGE_KEYS.EMPRESAS, data.empresas);
       if (data.clientes) this.save(STORAGE_KEYS.CLIENTES, data.clientes);
       if (data.equipamentos) this.save(STORAGE_KEYS.EQUIPAMENTOS, data.equipamentos);
