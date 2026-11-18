@@ -75,6 +75,16 @@ function isInvalidItem(item) {
 
 function smartMergeTwoItems(olderItem, newerItem) {
   const merged = { ...olderItem, ...newerItem };
+  if ('_test' in merged) {
+    delete merged._test;
+  }
+
+  // Garantir que newerItem prevalece nos estados e carimbos temporais
+  if (newerItem?.status !== undefined) merged.status = newerItem.status;
+  if (newerItem?.requisicao !== undefined) merged.requisicao = newerItem.requisicao;
+  if (newerItem?.faturacao !== undefined) merged.faturacao = newerItem.faturacao;
+  if (newerItem?.updatedAt !== undefined) merged.updatedAt = newerItem.updatedAt;
+  if (newerItem?.atualizadoEm !== undefined) merged.atualizadoEm = newerItem.atualizadoEm;
 
   // Nunca permitir que uma matrícula truncada (ex: VRWG3SNBCF) substitua a matrícula completa (ex: VRWG3SNBCF0000339)
   const oldMat = String(olderItem?.matricula || '').trim().toUpperCase();

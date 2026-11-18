@@ -672,8 +672,9 @@ export const Oficina: React.FC<OficinaProps> = ({
     try {
       const res = await checkIncomingEmailsNow();
       await syncPullFromCloud({ force: true });
-      const updatedFolhas = db.get<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO) || [];
-      setFolhas(updatedFolhas);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { key: STORAGE_KEYS.FOLHAS_SERVICO } }));
+      }
       if (res.success) {
         if (res.count && res.count > 0) {
           alert(`🎉 Sucesso! ${res.count} folha(s) de serviço importada(s)/atualizada(s) do Gmail com estado Concluído.`);
@@ -1138,6 +1139,8 @@ export const Oficina: React.FC<OficinaProps> = ({
     const updatedFields: Partial<FolhaServico> = {
       status: newStatus,
       historicoEstados: history,
+      updatedAt: now,
+      atualizadoEm: now,
       ...(isConcluido ? {
         equipamentoFinalizado: 'Sim',
         dataConclusao: fs.dataConclusao ? formatDate(fs.dataConclusao) : getTodayFormatted(),
@@ -1146,8 +1149,6 @@ export const Oficina: React.FC<OficinaProps> = ({
     };
 
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, fs.id, updatedFields);
-
-    setFolhas(prev => prev.map(f => f.id === fs.id ? { ...f, ...updatedFields } : f));
 
     setSaveFeedback(`Estado da FS ${fs.numero} atualizado para "${getStatusLabel(newStatus)}"`);
     setTimeout(() => setSaveFeedback(null), 3500);
@@ -1165,12 +1166,14 @@ export const Oficina: React.FC<OficinaProps> = ({
     const currentReq = fs.requisicao || 'Não';
     if (currentReq === newRequisicao) return;
 
+    const now = new Date().toISOString();
     const updatedFields: Partial<FolhaServico> = {
-      requisicao: newRequisicao
+      requisicao: newRequisicao,
+      updatedAt: now,
+      atualizadoEm: now
     };
 
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, fs.id, updatedFields);
-    setFolhas(prev => prev.map(f => f.id === fs.id ? { ...f, ...updatedFields } : f));
 
     setSaveFeedback(`Requisição da FS ${fs.numero} atualizada para "${newRequisicao}"`);
     setTimeout(() => setSaveFeedback(null), 3500);
@@ -1190,12 +1193,14 @@ export const Oficina: React.FC<OficinaProps> = ({
     const currentFat = fs.faturacao || 'Pendente';
     if (currentFat === newFaturacao) return;
 
+    const now = new Date().toISOString();
     const updatedFields: Partial<FolhaServico> = {
-      faturacao: newFaturacao
+      faturacao: newFaturacao,
+      updatedAt: now,
+      atualizadoEm: now
     };
 
     db.update<FolhaServico>(STORAGE_KEYS.FOLHAS_SERVICO, fs.id, updatedFields);
-    setFolhas(prev => prev.map(f => f.id === fs.id ? { ...f, ...updatedFields } : f));
 
     setSaveFeedback(`Faturação da FS ${fs.numero} atualizada para "${newFaturacao}"`);
     setTimeout(() => setSaveFeedback(null), 3500);

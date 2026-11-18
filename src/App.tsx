@@ -435,12 +435,12 @@ export default function App() {
     db.initSeed();
     loadAllData();
 
-    // 1. Initial Bidirectional Sync (Push local changes first to preserve them, then pull complete server state)
-    syncPushAllToServer()
-      .then(() => syncPullFromCloud())
+    // 1. Initial Bidirectional Sync (Pull authoritative server state first, then push any missing local updates)
+    syncPullFromCloud({ force: true })
+      .then(() => syncPushAllToServer())
       .then(() => loadAllData())
       .catch(() => {
-        syncPullFromCloud().then(() => loadAllData()).catch(() => {});
+        syncPushAllToServer().then(() => loadAllData()).catch(() => {});
       });
 
     // 2. Realtime SSE Subscription from PocketBase
@@ -460,8 +460,10 @@ export default function App() {
     const handleSync = () => {
       if (syncThrottleTimer) return;
       syncThrottleTimer = setTimeout(() => { syncThrottleTimer = null; }, 3000);
-      syncPullFromCloud().then(() => loadAllData()).catch(() => {});
-      syncPushAllToServer().catch(() => {});
+      syncPullFromCloud({ force: true })
+        .then(() => syncPushAllToServer())
+        .then(() => loadAllData())
+        .catch(() => {});
     };
 
     const handleVisibilityChange = () => {
@@ -470,10 +472,10 @@ export default function App() {
       }
     };
 
-    // 5. Periodic Background Sync (every 60 seconds - relaxed from 8s since Realtime SSE already syncs instantly)
+    // 5. Periodic Background Sync (every 15 seconds)
     const syncInterval = setInterval(() => {
-      syncPullFromCloud().catch(() => {});
-    }, 60000);
+      syncPullFromCloud({ force: true }).then(() => loadAllData()).catch(() => {});
+    }, 15000);
 
     // 6. Background Automation Runner (Monday 07:30 weekly planeamento, response times, etc.)
     const stopAutomationRunner = startAutomationRunner();

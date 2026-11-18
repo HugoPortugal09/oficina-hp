@@ -118,7 +118,9 @@ export function sanitizeFolhaServico<T extends Record<string, any>>(folha: T): T
   }
 
   // 3. Garantir carimbo temporal de atualização
-  copy.updatedAt = new Date().toISOString();
+  const now = new Date().toISOString();
+  copy.updatedAt = now;
+  copy.atualizadoEm = now;
 
   return copy;
 }

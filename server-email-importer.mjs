@@ -919,10 +919,16 @@ export async function repairAt26143AndBrokenImports() {
     if (!Array.isArray(empresas)) empresas = [];
     if (!Array.isArray(tarefas)) tarefas = [];
 
+    let equipChanged = false;
+    let folhasChanged = false;
+
     // 1. Remover equipamento duplicado truncado "VRWG3SNBCF"
     const cleanEquipamentos = equipamentos.filter(
       e => (e.matricula || '').trim().toUpperCase() !== 'VRWG3SNBCF'
     );
+    if (cleanEquipamentos.length !== equipamentos.length) {
+      equipChanged = true;
+    }
 
     // 2. Encontrar empresa KNOWER PROJECTS, S.A. (E127) e equipamento real VRWG3SNBCF0000339
     const knowerEmp = empresas.find(
@@ -938,55 +944,70 @@ export async function repairAt26143AndBrokenImports() {
     const folhaId = existingIdx >= 0 ? folhas[existingIdx].id : 'fs_at26143';
     const at26143Notas = 'Viatura necessita de bomba de travões nova, a mesma está danificada, reparação da traseira, dobradiças do taipal que foram arrancadas.';
 
-    const repairedAt26143 = {
-      ...(existingIdx >= 0 ? folhas[existingIdx] : {}),
-      id: folhaId,
-      numero: 'AT26143',
-      tipo: 'Assistência Técnica',
-      data: '2026-11-05',
-      dataAbertura: '2026-11-05',
-      dataConclusao: '2026-11-05',
-      status: 'Concluído',
-      requisicao: existingIdx >= 0 ? (folhas[existingIdx].requisicao || 'Não') : 'Não',
-      faturacao: existingIdx >= 0 ? (folhas[existingIdx].faturacao || 'Pendente') : 'Pendente',
-      empresaId: knowerEmp?.id || realG3Equip?.empresaId || 'E127',
-      equipamentoId: realG3Equip?.id || '62474c40-9026-4794-8843-1037df768611',
-      matricula: 'VRWG3SNBCF0000339',
-      marca: 'Goupil',
-      modelo: 'G3',
-      nSerie: 'VRWG3SNBCF0000339',
-      kmsAtuais: 1899,
-      horasAtuais: 275,
-      localizacao: 'Estaleiro Benfica Campus: Q.ta da Trindade, 2840-600 Seixal',
-      localizacaoTipo: 'estaleiro',
-      distanciaKms: existingIdx >= 0 && folhas[existingIdx].distanciaKms ? folhas[existingIdx].distanciaKms : 510,
-      anomalias: `Verificação de anomalia, sem travões e dobradiças traseiras arrancadas.\nNotas Técnicas: ${at26143Notas}`,
-      notasCliente: at26143Notas,
-      notasInternas: at26143Notas,
-      servicos: [
-        {
-          id: 'srv_at26143_1',
-          descricao: 'Verificação de anomalia.',
-          horas: 1,
-          tecnico: 'SF',
-          concluido: true,
-          dataConclusao: '2026-11-05'
-        }
-      ],
-      servicosAdicionais: existingIdx >= 0 ? (folhas[existingIdx].servicosAdicionais || []) : [],
-      pecas: existingIdx >= 0 && folhas[existingIdx].pecas?.length ? folhas[existingIdx].pecas : [],
-      pecasAdicionais: existingIdx >= 0 ? (folhas[existingIdx].pecasAdicionais || []) : [],
-      fotos: AT26143_PHOTOS,
-      fotosCliente: [],
-      tecnicoPlaneado: 'SF',
-      atualizadoEm: nowIso,
-      updatedAt: nowIso
-    };
+    const existingAt43 = existingIdx >= 0 ? folhas[existingIdx] : null;
+    const isAt43AlreadyHealthy = Boolean(
+      existingAt43 &&
+      (existingAt43.matricula || '').toUpperCase() === 'VRWG3SNBCF0000339' &&
+      Array.isArray(existingAt43.servicos) &&
+      existingAt43.servicos.length > 0 &&
+      Array.isArray(existingAt43.fotos) &&
+      existingAt43.fotos.length > 0 &&
+      existingAt43.notasInternas &&
+      !/^Importada automaticamente via email/i.test(existingAt43.notasInternas.trim())
+    );
 
-    if (existingIdx >= 0) {
-      folhas[existingIdx] = repairedAt26143;
-    } else {
-      folhas.unshift(repairedAt26143);
+    if (!isAt43AlreadyHealthy) {
+      const repairedAt26143 = {
+        ...(existingAt43 || {}),
+        id: folhaId,
+        numero: 'AT26143',
+        tipo: 'Assistência Técnica',
+        data: '2026-11-05',
+        dataAbertura: '2026-11-05',
+        dataConclusao: existingAt43?.dataConclusao || '2026-11-05',
+        status: existingAt43?.status || 'Concluído',
+        requisicao: existingAt43?.requisicao || 'Não',
+        faturacao: existingAt43?.faturacao || 'Pendente',
+        empresaId: knowerEmp?.id || realG3Equip?.empresaId || 'E127',
+        equipamentoId: realG3Equip?.id || '62474c40-9026-4794-8843-1037df768611',
+        matricula: 'VRWG3SNBCF0000339',
+        marca: 'Goupil',
+        modelo: 'G3',
+        nSerie: 'VRWG3SNBCF0000339',
+        kmsAtuais: 1899,
+        horasAtuais: 275,
+        localizacao: 'Estaleiro Benfica Campus: Q.ta da Trindade, 2840-600 Seixal',
+        localizacaoTipo: 'estaleiro',
+        distanciaKms: existingAt43?.distanciaKms ? existingAt43.distanciaKms : 510,
+        anomalias: `Verificação de anomalia, sem travões e dobradiças traseiras arrancadas.\nNotas Técnicas: ${at26143Notas}`,
+        notasCliente: at26143Notas,
+        notasInternas: at26143Notas,
+        servicos: [
+          {
+            id: 'srv_at26143_1',
+            descricao: 'Verificação de anomalia.',
+            horas: 1,
+            tecnico: 'SF',
+            concluido: true,
+            dataConclusao: '2026-11-05'
+          }
+        ],
+        servicosAdicionais: existingAt43?.servicosAdicionais || [],
+        pecas: existingAt43?.pecas?.length ? existingAt43.pecas : [],
+        pecasAdicionais: existingAt43?.pecasAdicionais || [],
+        fotos: AT26143_PHOTOS,
+        fotosCliente: existingAt43?.fotosCliente || [],
+        tecnicoPlaneado: 'SF',
+        atualizadoEm: existingAt43?.atualizadoEm || nowIso,
+        updatedAt: existingAt43?.updatedAt || nowIso
+      };
+
+      if (existingIdx >= 0) {
+        folhas[existingIdx] = repairedAt26143;
+      } else {
+        folhas.unshift(repairedAt26143);
+      }
+      folhasChanged = true;
     }
 
     // 3. Limpar texto genérico "Importada automaticamente via email..." noutras folhas importadas e transferir notas reais para notasInternas
@@ -996,6 +1017,7 @@ export async function repairAt26143AndBrokenImports() {
         f.notasInternas = f.notasCliente ? f.notasCliente.trim() : '';
         f.atualizadoEm = nowIso;
         f.updatedAt = nowIso;
+        folhasChanged = true;
       }
       if (f.notasInternas && f.notasInternas.trim().length > 4) {
         const emp = empresas.find(e => e.id === f.empresaId);
@@ -1030,6 +1052,7 @@ export async function repairAt26143AndBrokenImports() {
         empresaId: lousadaEmp.id
       };
       cleanEquipamentos.push(eq90Tq55);
+      equipChanged = true;
     }
 
     const of26070Idx = folhas.findIndex(f => (f.numero || '').toUpperCase() === 'OF26070');
@@ -1043,11 +1066,18 @@ export async function repairAt26143AndBrokenImports() {
         f70.modelo = 'G4';
         f70.atualizadoEm = nowIso;
         f70.updatedAt = nowIso;
+        folhasChanged = true;
       }
     }
 
-    await setAppData(pb, 'oficina_hp_equipamentos', sanitizeObjectDeep(cleanEquipamentos));
-    await setAppData(pb, 'oficina_hp_folhas_servico', sanitizeObjectDeep(folhas));
+    const sanitizedEquip = sanitizeObjectDeep(cleanEquipamentos);
+    if (equipChanged || sanitizedEquip !== cleanEquipamentos) {
+      await setAppData(pb, 'oficina_hp_equipamentos', sanitizedEquip);
+    }
+    const sanitizedFolhas = sanitizeObjectDeep(folhas);
+    if (folhasChanged || sanitizedFolhas !== folhas) {
+      await setAppData(pb, 'oficina_hp_folhas_servico', sanitizedFolhas);
+    }
     if (tasksChanged) {
       await setAppData(pb, 'oficina_hp_tarefas', sanitizeObjectDeep(tarefas));
     }
@@ -1188,9 +1218,7 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
               existingFolha.matricula.length !== 10 &&
               plateMatchesSubject &&
               Array.isArray(existingFolha.servicos) &&
-              existingFolha.servicos.length > 0 &&
-              Array.isArray(existingFolha.fotos) &&
-              existingFolha.fotos.length > 0;
+              existingFolha.servicos.length > 0;
             if (isComplete) continue;
           }
 
@@ -1327,7 +1355,7 @@ export async function checkAndImportEmails({ dryRun = false } = {}) {
               data: parsed.data,
               dataAbertura: parsed.data,
               dataConclusao: parsed.data,
-              status: 'Concluído',
+              status: existingIdx >= 0 ? (folhas[existingIdx].status || 'Concluído') : 'Concluído',
               requisicao: existingIdx >= 0 ? (folhas[existingIdx].requisicao || 'Não') : 'Não',
               empresaId: emp.id,
               equipamentoId: eq?.id || '',

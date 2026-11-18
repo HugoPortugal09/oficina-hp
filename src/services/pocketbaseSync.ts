@@ -152,7 +152,6 @@ async function executePush(key: string, data: any): Promise<boolean> {
     const payloadData = data;
 
     // 1. Centralized Node.js Server Push (Authoritative Storage with intelligent merge)
-    let serverUpdated = false;
     try {
       if (typeof fetch !== 'undefined') {
         const res = await fetch(`/api/data/${encodeURIComponent(key)}`, {
@@ -161,7 +160,6 @@ async function executePush(key: string, data: any): Promise<boolean> {
           body: JSON.stringify({ data: payloadData })
         });
         if (res.ok) {
-          serverUpdated = true;
           const json = await res.json();
           if (json.data && Array.isArray(json.data) && typeof localStorage !== 'undefined') {
             safeLocalStorageSet(key, JSON.stringify(json.data));
@@ -172,29 +170,31 @@ async function executePush(key: string, data: any): Promise<boolean> {
       console.warn(`[Server Sync] Aviso ao enviar ${key} para o servidor:`, err);
     }
 
-    // 2. Secondary Cloud Backup: PocketBase
-    try {
-      const pb = getPocketBase();
-      let existingRecord = null;
+    // 2. Secondary Cloud Backup: PocketBase (background non-blocking so timeouts never stall sync)
+    (async () => {
       try {
-        existingRecord = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="${key}"`);
-      } catch {}
+        const pb = getPocketBase();
+        let existingRecord = null;
+        try {
+          existingRecord = await pb.collection(SYNC_COLLECTION).getFirstListItem(`key="${key}"`);
+        } catch {}
 
-      if (existingRecord) {
-        await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
-          data: payloadData,
-          timestamp: new Date().toISOString()
-        });
-      } else {
-        await pb.collection(SYNC_COLLECTION).create({
-          key: key,
-          data: payloadData,
-          timestamp: new Date().toISOString()
-        });
+        if (existingRecord) {
+          await pb.collection(SYNC_COLLECTION).update(existingRecord.id, {
+            data: payloadData,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          await pb.collection(SYNC_COLLECTION).create({
+            key: key,
+            data: payloadData,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch {
+        // PocketBase may have strict write rules or timeout; server storage already guaranteed persistence
       }
-    } catch {
-      // PocketBase may have strict write rules; server storage already guaranteed persistence
-    }
+    })();
 
     syncStatus.lastSyncTime = new Date();
     syncStatus.connected = true;
@@ -258,96 +258,111 @@ export async function fetchRecordFromCloud<T = any>(key: string): Promise<T | nu
   return null;
 }
 
+let activePullPromise: Promise<boolean> | null = null;
+
 /**
  * Pulls all data from the central server and cloud into local storage
  */
 export async function syncPullFromCloud(options?: { force?: boolean }): Promise<boolean> {
-  if (syncStatus.isSyncing && !options?.force) return false;
+  if (activePullPromise) {
+    await activePullPromise;
+    if (!options?.force) return true;
+  }
+
   syncStatus.isSyncing = true;
 
-  try {
-    let hasChanges = false;
-
-    // 1. Primary Pull from Central Node.js Server (/api/data-all)
+  activePullPromise = (async () => {
     try {
-      if (typeof fetch !== 'undefined') {
-        const res = await fetch('/api/data-all');
-        if (res.ok) {
-          const json = await res.json();
-          const serverStore = json.data || {};
-          for (const [key, serverData] of Object.entries(serverStore)) {
-            if (!key.startsWith('oficina_hp_') || key.startsWith('folha_photos_')) continue;
-            const currentLocalStr = localStorage.getItem(key);
-            let currentLocal = null;
-            try {
-              if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
-            } catch {}
+      let hasChanges = false;
+      const serverKeysLoaded = new Set<string>();
 
-            const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(serverData));
-            const newStr = JSON.stringify(merged);
-            if (currentLocalStr !== newStr) {
-              safeLocalStorageSet(key, newStr);
-              hasChanges = true;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[Sync] Falha no pull do servidor central:', err);
-    }
-
-    // 2. Secondary Pull from PocketBase (if reachable)
-    try {
-      const pb = getPocketBase();
-      let records: any[] = [];
+      // 1. Primary Pull from Central Node.js Server (/api/data-all)
       try {
-        records = await pb.collection(SYNC_COLLECTION).getFullList({
-          filter: 'key ~ "oficina_hp_"',
-          sort: '-created'
-        });
-      } catch {
-        records = await pb.collection(SYNC_COLLECTION).getFullList({
-          sort: '-created'
-        });
-      }
+        if (typeof fetch !== 'undefined') {
+          const res = await fetch('/api/data-all');
+          if (res.ok) {
+            const json = await res.json();
+            const serverStore = json.data || {};
+            for (const [key, serverData] of Object.entries(serverStore)) {
+              if (!key.startsWith('oficina_hp_') || key.startsWith('folha_photos_')) continue;
+              serverKeysLoaded.add(key);
+              const currentLocalStr = localStorage.getItem(key);
+              let currentLocal = null;
+              try {
+                if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
+              } catch {}
 
-      if (records && records.length > 0) {
-        for (const record of records) {
-          if (record.key && record.data) {
-            if (!record.key.startsWith('oficina_hp_') || record.key.startsWith('folha_photos_')) continue;
-            const currentLocalStr = localStorage.getItem(record.key);
-            let currentLocal = null;
-            try {
-              if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
-            } catch {}
-
-            const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(record.data));
-            const newCloudStr = JSON.stringify(merged);
-            if (currentLocalStr !== newCloudStr) {
-              safeLocalStorageSet(record.key, newCloudStr);
-              hasChanges = true;
+              const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(serverData));
+              const newStr = JSON.stringify(merged);
+              if (currentLocalStr !== newStr) {
+                safeLocalStorageSet(key, newStr);
+                hasChanges = true;
+              }
             }
           }
         }
+      } catch (err) {
+        console.warn('[Sync] Falha no pull do servidor central:', err);
       }
-    } catch {
-      // PocketBase is optional
-    }
 
-    if (hasChanges && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { source: 'cloud_sync' } }));
-    }
+      // 2. Secondary Pull from PocketBase ONLY for keys not returned by central server (/api/data-all)
+      try {
+        const pb = getPocketBase();
+        let records: any[] = [];
+        try {
+          records = await pb.collection(SYNC_COLLECTION).getFullList({
+            filter: 'key ~ "oficina_hp_"',
+            sort: '-created'
+          });
+        } catch {
+          records = await pb.collection(SYNC_COLLECTION).getFullList({
+            sort: '-created'
+          });
+        }
 
-    syncStatus.lastSyncTime = new Date();
-    syncStatus.connected = true;
-    syncStatus.error = null;
-    syncStatus.isSyncing = false;
-    return true;
-  } catch (err: any) {
-    syncStatus.isSyncing = false;
-    syncStatus.error = err?.message || 'Erro de sincronização';
-    return false;
-  }
+        if (records && records.length > 0) {
+          for (const record of records) {
+            if (record.key && record.data) {
+              if (!record.key.startsWith('oficina_hp_') || record.key.startsWith('folha_photos_')) continue;
+              if (serverKeysLoaded.has(record.key)) continue;
+              const currentLocalStr = localStorage.getItem(record.key);
+              let currentLocal = null;
+              try {
+                if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
+              } catch {}
+
+              const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(record.data));
+              const newCloudStr = JSON.stringify(merged);
+              if (currentLocalStr !== newCloudStr) {
+                safeLocalStorageSet(record.key, newCloudStr);
+                hasChanges = true;
+              }
+            }
+          }
+        }
+      } catch {
+        // PocketBase is optional
+      }
+
+      if ((hasChanges || options?.force) && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oficina_hp_db_changed', { detail: { source: 'cloud_sync' } }));
+      }
+
+      syncStatus.lastSyncTime = new Date();
+      syncStatus.connected = true;
+      syncStatus.error = null;
+      syncStatus.isSyncing = false;
+      return true;
+    } catch (err: any) {
+      syncStatus.isSyncing = false;
+      syncStatus.error = err?.message || 'Erro de sincronização';
+      return false;
+    } finally {
+      activePullPromise = null;
+    }
+  })();
+
+  return activePullPromise;
 }
 
 /**
@@ -376,7 +391,7 @@ export function subscribeToRealtimeSync(): () => void {
                   if (currentLocalStr) currentLocal = JSON.parse(currentLocalStr);
                 } catch {}
 
-                const merged = mergeCollectionData(currentLocal, json.data);
+                const merged = mergeCollectionData(currentLocal, sanitizeObjectDeep(json.data));
                 const newStr = JSON.stringify(merged);
                 if (currentLocalStr !== newStr) {
                   safeLocalStorageSet(payload.key, newStr);

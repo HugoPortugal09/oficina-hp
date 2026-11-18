@@ -683,8 +683,8 @@ export const db = {
   save<T>(key: string, items: T[]): void {
     safeLocalStorageSet(key, JSON.stringify(items));
     notifyChange(key);
-    // Push automatically to PocketBase Cloud in background
-    syncPushToCloud(key, items).catch(err => {
+    // Push automatically to Cloud/Server immediately in background
+    syncPushToCloud(key, items, { immediate: true }).catch(err => {
       console.warn('[Cloud Sync Push Background Error]', err);
     });
   },
@@ -696,10 +696,12 @@ export const db = {
 
   insert<T extends { id?: string } = any>(key: string, item: T): T {
     let sanitizedItem: any = { ...item };
+    const now = new Date().toISOString();
     if (key === STORAGE_KEYS.FOLHAS_SERVICO) {
       sanitizedItem = sanitizeFolhaServico(sanitizedItem);
     } else {
-      sanitizedItem.updatedAt = new Date().toISOString();
+      sanitizedItem.updatedAt = now;
+      sanitizedItem.atualizadoEm = now;
     }
     const list = this.get<T>(key);
     const updated = [sanitizedItem as T, ...list];
@@ -709,13 +711,18 @@ export const db = {
 
   update<T = any>(key: string, id: string, item: Partial<T>): T | undefined {
     const list = this.get<any>(key);
-    const index = list.findIndex((i: any) => i.id === id);
+    const itemNumUpper = (item as any)?.numero ? String((item as any).numero).trim().toUpperCase() : '';
+    const index = list.findIndex((i: any) =>
+      i.id === id || (itemNumUpper && i.numero && String(i.numero).trim().toUpperCase() === itemNumUpper)
+    );
     if (index === -1) return undefined;
     let merged = { ...list[index], ...item };
+    const now = new Date().toISOString();
     if (key === STORAGE_KEYS.FOLHAS_SERVICO) {
       merged = sanitizeFolhaServico(merged);
     } else {
-      merged.updatedAt = new Date().toISOString();
+      merged.updatedAt = now;
+      merged.atualizadoEm = now;
     }
     list[index] = merged as T;
     this.save(key, list);

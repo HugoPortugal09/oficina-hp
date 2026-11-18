@@ -257,33 +257,109 @@ export function purgeAllHeavyMediaFromLocalStorage(): void {
 }
 
 /**
+ * Remove propriedades residuais (ex: _test) e media base64 pesada inline para manter
+ * o localStorage leve (< 1.5 MB), preservando as fotografias no IndexedDB.
+ */
+export function stripHeavyInlineMedia<T>(key: string, items: T): T {
+  if (!Array.isArray(items)) return items;
+
+  if (key === STORAGE_KEYS.FOLHAS_SERVICO) {
+    const isLargeList = items.length > 100;
+    return items.map((item: any, idx: number) => {
+      if (!item || typeof item !== 'object') return item;
+      let changed = false;
+      const copy: any = { ...item };
+
+      if ('_test' in copy) {
+        delete copy._test;
+        changed = true;
+      }
+
+      const isConcludedOrOld =
+        copy.status === 'Concluído' ||
+        copy.status === 'Feito' ||
+        String(copy.status || '').startsWith('FEITO') ||
+        idx >= 40;
+
+      if (Array.isArray(copy.fotos) && copy.fotos.length > 0) {
+        const hasHeavyPhoto = copy.fotos.some((p: any) => typeof p === 'string' && p.length > 60000);
+        if (hasHeavyPhoto || (isLargeList && isConcludedOrOld)) {
+          if (copy.id) {
+            savePhotosToIndexedDB(copy.id, copy.fotos, copy.numero).catch(() => {});
+          }
+          if (isLargeList && isConcludedOrOld) {
+            copy.fotos = [];
+            changed = true;
+          } else if (hasHeavyPhoto) {
+            copy.fotos = copy.fotos.filter((p: any) => typeof p !== 'string' || p.length <= 60000);
+            changed = true;
+          }
+        }
+      }
+
+      if (Array.isArray(copy.fotosCliente) && copy.fotosCliente.length > 0) {
+        const hasHeavyClientPhoto = copy.fotosCliente.some((p: any) => typeof p === 'string' && p.length > 60000);
+        if (hasHeavyClientPhoto || (isLargeList && isConcludedOrOld)) {
+          if (isLargeList && isConcludedOrOld) {
+            copy.fotosCliente = [];
+            changed = true;
+          } else if (hasHeavyClientPhoto) {
+            copy.fotosCliente = copy.fotosCliente.filter((p: any) => typeof p !== 'string' || p.length <= 60000);
+            changed = true;
+          }
+        }
+      }
+
+      return changed ? copy : item;
+    }) as unknown as T;
+  }
+
+  return items;
+}
+
+/**
  * Safe setter for localStorage that automatically handles QuotaExceededError
  * through multi-stage quota recovery.
  */
 export function safeLocalStorageSet(key: string, value: string): void {
+  let payloadToStore = value;
+  if (key === STORAGE_KEYS.FOLHAS_SERVICO && value.length > 1400000) {
+    try {
+      const parsed = JSON.parse(value);
+      const stripped = stripHeavyInlineMedia(key, parsed);
+      payloadToStore = JSON.stringify(stripped);
+    } catch {}
+  }
+
   try {
-    localStorage.setItem(key, value);
+    localStorage.setItem(key, payloadToStore);
   } catch (e: any) {
     if (isQuotaError(e)) {
       console.warn(`[Storage Recovery] Quota exceeded while setting "${key}". Optimizing storage...`);
+      try {
+        const parsed = JSON.parse(payloadToStore);
+        const stripped = stripHeavyInlineMedia(key, parsed);
+        payloadToStore = JSON.stringify(stripped);
+      } catch {}
       optimizeLocalStorageQuota();
 
       try {
-        localStorage.setItem(key, value);
+        localStorage.setItem(key, payloadToStore);
       } catch (e2: any) {
         if (isQuotaError(e2)) {
           console.warn(`[Storage Recovery] Quota still exceeded. Performing aggressive purge...`);
           purgeAllHeavyMediaFromLocalStorage();
 
           try {
-            localStorage.setItem(key, value);
+            localStorage.setItem(key, payloadToStore);
           } catch (e3: any) {
             console.warn(`[Storage Recovery] Still exceeded. Stripping media from payload for key "${key}"...`);
             try {
-              const parsed = JSON.parse(value);
+              const parsed = JSON.parse(payloadToStore);
               if (Array.isArray(parsed)) {
                 const stripped = parsed.map((item: any) => {
                   const copy = { ...item };
+                  if ('_test' in copy) delete copy._test;
                   if (Array.isArray(copy.fotos) && copy.fotos.length > 0 && copy.id) {
                     savePhotosToIndexedDB(copy.id, copy.fotos, copy.numero).catch(() => {});
                   }
